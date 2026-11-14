@@ -7,6 +7,7 @@ import {
 
 export const SEE_RANGE = 30;          // map units within which a line is visible / a remark overheard
 export const HEARD_MAX = 4;
+export const OFFERS_MAX = 3;          // offer texts one observation shows (§15b)
 export const HEARD_WINDOW = { visit: 90, route: 30 };   // sim minutes
 
 const REMARK_TEXT = {
@@ -91,6 +92,19 @@ function tripText(trip) {
 
 function heardList(heard) {
   return Array.isArray(heard) ? heard.slice(0, HEARD_MAX).map(String) : [];
+}
+
+// Offer texts the agent has received, in world order; omitted from the state when there are none.
+function offerList(offers) {
+  return Array.isArray(offers) ? offers.filter(Boolean).slice(0, OFFERS_MAX).map(String) : [];
+}
+
+// "about $20", or with an offer that changes the words: "about $10 with the offer (usually about $20)".
+function costWords(price, listPrice) {
+  const now = priceWords(price);
+  if (listPrice == null || !(Number(price) < Number(listPrice))) return now;
+  const usual = priceWords(listPrice);
+  return now === usual ? now : `${now} with the offer (usually ${usual})`;
 }
 
 // ---------- remarks ----------
@@ -186,7 +200,7 @@ function placeObj(p, tolerance) {
     name: p.name || String(p.id),
     known_for: p.about,
     offers: tags.join(', '),
-    cost: priceWords(p.price),
+    cost: costWords(p.price, p.listPrice),
     distance: distanceWords(p.dist),
     line: visible ? waitWords(est) : UNSEEN_LINE,
     // People judge a line by the head count they can see (SWARMSCOPE_SPEC.md v0.15/v0.18).
@@ -196,7 +210,8 @@ function placeObj(p, tolerance) {
   });
 }
 
-// The §5 visit observation.
+// The §5 visit observation. ctx.places[].listPrice (optional) is the price before any offer, and
+// ctx.offers (optional) the texts of the offers this agent receives (§15b).
 export function visitObservation(ctx) {
   const c = ctx || {};
   const moment = c.moment || {};
@@ -213,6 +228,7 @@ export function visitObservation(ctx) {
     }),
     now: nowText(moment),
     places: (Array.isArray(c.places) ? c.places : []).map(p => placeObj(p || {}, moment.tolerance)),
+    offers: offerList(c.offers),
     heard: heardList(c.heard)
   });
 }
@@ -226,7 +242,7 @@ function rightNow(ff, now) {
   return tripWords(n) + tag;
 }
 
-// The §5 route observation (trip start, choosing among r0..rN).
+// The §5 route observation (trip start, choosing among r0..rN). ctx.offers as in visitObservation.
 export function routeObservation(ctx) {
   const c = ctx || {};
   return compact({
@@ -239,6 +255,7 @@ export function routeObservation(ctx) {
       usual_time: tripWords(r.ff),
       right_now: rightNow(r.ff, r.now)
     })),
+    offers: offerList(c.offers),
     heard: heardList(c.heard)
   });
 }

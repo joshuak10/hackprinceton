@@ -63,17 +63,30 @@ Usage: swarm <command> [options]
   import-matterport --from-raw <file.json> [...]
                                     Starter world with walls from a Matterport model (no API call
                                     with --from-raw)
-  import-mesh <file.obj> [--out FILE]
+  import-mesh <file.obj> [--out FILE] [--up z|y]
                                     Starter world with walls sliced from a 3D mesh (check by eye)
   compile "<description>" [--out FILE] [--force]
                                     Write a world with Claude (needs ANTHROPIC_API_KEY)
+  advise <world> [options]          Ask Claude what to change: runs the baseline, tests each proposed
+                                    change on the same seeds, and writes advice.md and advice.json into
+                                    the baseline runs (needs ANTHROPIC_API_KEY; without it, use /advise
+                                    in Claude Code)
+      --question "..."              What to answer (default: the world's question)
+      --seeds N, --seed S           Seeds S..S+N-1 for the baseline and every test (default 3 from 7)
+      --provider rules|jev          Who decides in the baseline and experiments (default rules)
+      --confirm-with jev            Re-run the top recommendations with Jev before finishing
+      --max-experiments N           Test budget (default 6, at most 20)
+      --model ID                    Claude model (default claude-fable-5-2)
+      --follow-up "..." --from FILE Reply to earlier advice (its advice.json); the advisor tests more
+                                    and returns updated advice
+      --out DIR                     Runs folder (default runs)
   serve [--port 4173]               Start the local viewer
   sanity [--model jev-latest]       Live Jev checks (makes a few hundred API calls)
 
 <world> is a path to a world JSON file or an example name (${exampleNames().join(', ')}).
 <run> is a run folder, a run id under the runs folder, or "latest".
 --json prints machine-readable output. --out also sets where report, agent, runs and --from look.
-Keys come from .env.local: TYPESAFE_API_KEY (Jev) and ANTHROPIC_API_KEY (compile only).
+Keys come from .env.local: TYPESAFE_API_KEY (Jev) and ANTHROPIC_API_KEY (compile and advise).
 Set SWARM_DEBUG=1 to print stack traces.
 `;
 
@@ -83,6 +96,17 @@ Without a key, let Claude Code write the world instead: open this repo in Claude
   /swarm <the place and the question>
 Claude reads worlds/SCHEMA.md, writes worlds/<slug>.json, validates and estimates it, runs it
 with Jev, and reports findings.`;
+
+function adviseWithoutKey(ref, question) {
+  const q = question ? ` "${String(question).replace(/"/g, "'")}"` : ' [your question]';
+  return `swarm advise needs ANTHROPIC_API_KEY in .env.local.
+
+Without a key, let Claude Code be the advisor instead: open this repo in Claude Code and run
+  /advise ${ref ?? '<world or run>'}${q}
+Claude Code runs the baseline on 3 seeds with rules, reads swarm report, tests each change with
+swarm compare on the same seeds (at most 6 experiments), asks before any Jev run estimated over $1,
+and writes advice.md by the same rules (.claude/commands/advise.md).`;
+}
 
 class CliError extends Error {}
 
@@ -104,6 +128,10 @@ const COMMANDS = {
   agent: { min: 2, max: 2, flags: ['out', 'json'], run: cmdAgent },
   runs: { min: 0, max: 0, flags: ['out', 'json'], run: cmdRuns },
   compile: { min: 1, max: Infinity, flags: ['out', 'force', 'json'], run: cmdCompile },
+  advise: {
+    min: 1, max: 1, run: cmdAdvise,
+    flags: ['question', 'seeds', 'seed', 'provider', 'confirm-with', 'max-experiments', 'model', 'follow-up', 'from', 'out', 'json']
+  },
   building: {
     min: 0, max: 0, run: cmdBuildingLazy,
     flags: ['model', 'plan-raw', 'profile', 'scenario', 'floor', 'overrides', 'out', 'save-raw']
@@ -113,7 +141,7 @@ const COMMANDS = {
     min: 0, max: 1, run: (a, f) => cmdImportLazy('cmdImportMatterport', a, f),
     flags: ['floor', 'mode', 'out', 'save-raw', 'from-raw']
   },
-  'import-mesh': { min: 1, max: 1, flags: ['out'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
+  'import-mesh': { min: 1, max: 1, flags: ['out', 'up'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
   serve: { min: 0, max: 0, flags: ['port'], run: cmdServe },
   sanity: { min: 0, max: 0, flags: ['model'], run: cmdSanity }
 };
@@ -578,6 +606,102 @@ async function cmdCompile(words, flags) {
   print(`Wrote ${shortPath(out)} (${attempts} attempt(s), ${warnings.length} warning(s))`);
   for (const w of warnings) print(`  - ${w}`);
   print(`Next: swarm validate ${shortPath(out)}  then  swarm estimate ${shortPath(out)}`);
+  return 0;
+}
+
+// Prints the advisor's steps as they happen: what is being tested and the measured effect.
+function adviceStepPrinter(out, effectText) {
+  const kpiKeys = ['abandonRate', 'avgWait', 'avgTrip', 'avgDelay'];
+  const effects = kpis => kpiKeys.filter(k => kpis?.[k]).map(k => effectText(k, kpis[k])).join(' · ');
+  return e => {
+    switch (e.type) {
+      case 'say': out(`  ${String(e.text).split('\n')[0].slice(0, 200)}`); break;
+      case 'test':
+        out(`#${e.n} testing: ${e.label}`);
+        out(`   why: ${e.why}`);
+        for (const a of e.applied ?? []) out(`   change: ${a}`);
+        for (const s of e.skipped ?? []) out(`   skipped: ${JSON.stringify(s)}`);
+        break;
+      case 'result': out(`   ${effects(e.kpis)}`); out(`   verdict: ${e.verdict} (${e.testedWith})`); break;
+      case 'rejected': out(`  not run: "${e.label}" applied nothing`); break;
+      case 'look': out(`  looking at agent ${e.agentId} in ${e.runId}`); break;
+      case 'list': out(`  listing people: ${e.segment} by ${e.sortBy} (${fmtInt(e.count)} matched)`); break;
+      case 'confirm': out(`confirming #${e.n} with ${e.provider}: ${e.label}`); break;
+      case 'confirmed':
+        out(`   ${effects(e.kpis)}`);
+        out(`   ${e.agrees ? 'agrees on direction' : `disagrees on ${e.disagreeOn.map(k => KPI_LABELS[k] ?? k).join(', ')}`}`);
+        break;
+      case 'nudge': out('  (asking the advisor to finish)'); break;
+      case 'finish': out('Advisor finished.'); break;
+      default: break;
+    }
+  };
+}
+
+function readAdvice(file) {
+  const advice = readJsonFile(resolve(file), 'advice');
+  if (!advice || typeof advice.answer !== 'string' || !Array.isArray(advice.experiments)) {
+    throw new CliError(`${file} is not an advice.json written by swarm advise`);
+  }
+  return advice;
+}
+
+async function cmdAdvise([ref], flags) {
+  if (!hasKey('ANTHROPIC_API_KEY')) {
+    process.stderr.write(adviseWithoutKey(ref, flags.question) + '\n');
+    return 1;
+  }
+  const { advise, writeAdvice, adviceMarkdown, effectText, DEFAULT_MODEL, MAX_EXPERIMENTS_LIMIT } = await import('../run/advisor.js');
+  const providerName = flags.provider ?? 'rules';
+  if (!['rules', 'jev'].includes(providerName)) throw new CliError('advise runs experiments with --provider rules or --provider jev');
+  const confirmName = flags['confirm-with'] ?? null;
+  if (confirmName && !['rules', 'jev'].includes(confirmName)) throw new CliError('--confirm-with takes jev (or rules)');
+  if (flags['follow-up'] !== undefined && !flags.from) throw new CliError('--follow-up needs --from <advice.json> (the earlier advice)');
+  if (flags.from && flags['follow-up'] === undefined) throw new CliError('--from <advice.json> needs --follow-up "<your reply>"');
+  const maxExperiments = intFlag(flags, 'max-experiments', 6, 1);
+  if (maxExperiments > MAX_EXPERIMENTS_LIMIT) throw new CliError(`--max-experiments is at most ${MAX_EXPERIMENTS_LIMIT}`);
+  const { file, raw } = readWorld(ref);
+  const spec = checkedSpec(raw, shortPath(file));
+  const seeds = seedRange(intFlag(flags, 'seed', 7), intFlag(flags, 'seeds', DEFAULT_COMPARE_SEEDS, 1));
+  const previous = flags.from ? readAdvice(flags.from) : null;
+  const root = flags.out ?? 'runs';
+  const model = flags.model ?? DEFAULT_MODEL;
+  // --model names the Claude model here, so the Jev provider gets its defaults rather than this command's flags.
+  const provider = providerFor(providerName, {});
+  const confirm = confirmName ? providerFor(confirmName, {}) : null;
+  const out = flags.json ? text => process.stderr.write(text + '\n') : print;
+
+  const progress = progressPrinter();
+  const recorderFor = s => createRecorder({ root, spec, seed: s, providerName, label: 'advise baseline' });
+  const started = Date.now();
+  const base = await withAbort(progress, signal => runSeeds({ spec, seeds, provider, recorderFor, onProgress: progress.onProgress, signal }));
+  out(`${spec.title} · advise · baseline with ${providerName} · seeds ${seeds[0]}..${seeds.at(-1)}`);
+  out(`Mean ± sd: ${meanSdLine(base.summary)}`);
+  out(`#1 bottleneck: ${frequencyLine(base.summary)}`);
+  for (const r of base.runs) {
+    const warning = fallbackWarning(r.metrics);
+    if (warning) out(`seed ${r.seed}: ${warning}`);
+  }
+  out(`Recorded ${base.runs.map(r => shortPath(r.runDir)).join(', ')}`);
+  out(`Advisor ${model}: at most ${maxExperiments} experiment${maxExperiments === 1 ? '' : 's'}, each on seeds ${seeds[0]}..${seeds.at(-1)} with ${providerName}` +
+    `${confirm ? `; top changes confirmed with ${confirmName}` : ''}`);
+  out('');
+
+  const advice = await advise({
+    world: raw, question: flags.question ?? null, seeds, provider, confirmWith: confirm, maxExperiments, model,
+    apiKey: process.env.ANTHROPIC_API_KEY, runs: base.runs, onStep: adviceStepPrinter(out, effectText),
+    previous, followUp: previous ? flags['follow-up'] : null
+  });
+  const written = base.runs.map(r => writeAdvice(r.runDir, advice));
+  if (flags.json) {
+    printJson({ advice, files: written });
+    return 0;
+  }
+  print();
+  process.stdout.write(adviceMarkdown(advice));
+  print();
+  print(`Saved ${shortPath(written[0].md)} and advice.json (a copy in each baseline run) · ${((Date.now() - started) / 1000).toFixed(1)} s`);
+  print(`Reply with: swarm advise ${ref} --follow-up "<what to change or try next>" --from ${shortPath(written[0].json)}`);
   return 0;
 }
 

@@ -162,7 +162,8 @@ const TWO_GATES = {
 };
 
 // Recorded before archetypes[].exits existed (rules, seed 7): sha256 (first 16 hex) of
-// JSON.stringify(sim.metrics()) and of JSON.stringify(sim.frames), whole.
+// JSON.stringify(sim.metrics()) and of JSON.stringify(sim.frames), whole. Metrics fields added later
+// (segments and offers, §15) are left out before hashing.
 const BEFORE_EXITS = {
   'er-network': { metrics: 'c0877539ffffd9c3', frames: '6bc3d5f27edc9b3e' },
   'food-hall-lunch': { metrics: '8320f2286bb3225d', frames: 'ca3ab6350c930e73' }
@@ -204,7 +205,9 @@ function distToPolyline(p, pts) {
   return best;
 }
 
-const withoutNew = m => { const { walls, doors, ...rest } = m; return rest; };
+// Metrics fields added after the recorded hashes: walls and doors (§13, §14), segments and offers (§15).
+const withoutAdvisor = m => { const { segments, offers, ...rest } = m; return rest; };
+const withoutNew = m => { const { walls, doors, ...rest } = withoutAdvisor(m); return rest; };
 const framesWithoutNew = f => ({ ...f, walls: undefined, doors: undefined, list: f.list.map(({ d, ...r }) => r) });
 
 // ---------- tests ----------
@@ -733,7 +736,7 @@ describe('worlds without exits give the same metrics as before exits existed', (
   for (const name of Object.keys(BEFORE_EXITS)) {
     test(`${name}: rules, seed 7`, () => {
       const sim = new Sim(loadWorld(name), { seed: 7 }).runToEnd();
-      assert.equal(hash16(JSON.stringify(sim.metrics())), BEFORE_EXITS[name].metrics);
+      assert.equal(hash16(JSON.stringify(withoutAdvisor(sim.metrics()))), BEFORE_EXITS[name].metrics);
       assert.equal(hash16(JSON.stringify(sim.frames)), BEFORE_EXITS[name].frames);
       assert.ok(sim.spec.archetypes.every(a => Array.isArray(a.exits) && a.exits.length === 0));
     });

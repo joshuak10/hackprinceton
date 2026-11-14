@@ -560,6 +560,28 @@ describe('cracks narrower than 2 x clearance are sealed', () => {
     assert.ok(createNav([seg(0.25, 50, 100, 50)], { clearance: 0.1 }).path(0.05, 45, 0.05, 55), '0.25 is wider than 2c');
   });
 
+  test('dense clutter does not seal every pair of nearby walls (500 walls in a 5 x 5 patch, c = 1)', () => {
+    // Sealing every wall end to every wall within 2c gave about 300 seals per wall here, and 11
+    // million seals (55 s, 2 GB) for 4000 walls; only seals not crossed by a nearer one are kept.
+    const rng = mulberry32(17);
+    const walls = Array.from({ length: 500 }, () => {
+      const x = 47.5 + rng() * 5, y = 47.5 + rng() * 5, a = rng() * Math.PI * 2, len = 0.3 + rng() * 2.7;
+      return seg(x, y, x + Math.cos(a) * len, y + Math.sin(a) * len);
+    });
+    const t0 = performance.now();
+    const nav = createNav(walls, { clearance: 1 });
+    const build = performance.now() - t0;
+    assert.ok(nav.seals.length < 20 * walls.length, `${nav.seals.length} seals for ${walls.length} walls`);
+    assert.ok(build < 2500, `createNav took ${build} ms`);
+    // Paths across the patch go around it, crossing no wall and no seal.
+    for (const [x1, y1, x2, y2] of [[40, 50, 60, 50], [40, 40, 60, 60]]) {
+      const p = nav.path(x1, y1, x2, y2);
+      assert.ok(p && p.length > Math.hypot(x2 - x1, y2 - y1), 'a detour around the patch');
+      assertWallFree(walls, p.points);
+      assertWallFree(nav.seals, p.points, 'seals');
+    }
+  });
+
   test('property: no path goes through a crack narrower than 2c (independent connectors)', () => {
     let paths = 0, checked = 0;
     for (let layout = 0; layout < 15; layout++) {

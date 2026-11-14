@@ -2,6 +2,8 @@
 // Inline by default (external: false), in which case the Sim decides internally and runSwarm never
 // calls decideMany. With { external: true } it goes through the decision protocol, which is how
 // the protocol is tested and how `swarm estimate` counts requests (docs/PROTOTYPE.md §6).
+// Targeted offers (§15b) need nothing here: the Sim's rule policy already prices each place at what the
+// agent would pay after its offers, both inline and in req.auto.action.
 
 // The rule answer for one request. `arrive` requests have auto: null, so action stays undefined.
 export function ruleAction(req) {

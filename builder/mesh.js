@@ -5,11 +5,15 @@
 //
 // meshToWalls pipeline: parse -> find the up axis and the floor -> cut at each height -> keep the
 // first height's cuts that lie within mergeTolerance of a cut at every other height -> chain and
-// straighten them -> merge collinear pieces -> drop pieces under minLength -> close cracks at wall
-// ends up to snapTolerance -> round to the millimeter.
+// straighten them -> merge collinear pieces -> drop pieces under minLength that close no outline ->
+// close cracks at wall ends up to snapTolerance -> round to the millimeter.
 //
-// parseObj and meshToWalls are pure (no Node imports), so the browser could load them too.
+// meshToWorld turns that result into a starter visit world in map units: the walls, plus placeholder
+// places at the most open spots that can be reached on foot (the mesh has no rooms or doors).
+//
+// parseObj, meshToWalls and meshToWorld are pure (no Node imports), so the browser could load them too.
 // fetchMeshObj talks to the Matterport Model API and only loads node:zlib when it has to unzip.
+import { createNav } from '../engine/walls.js';
 
 const COS_10 = Math.cos(10 * Math.PI / 180);   // "horizontal" = normal within 10 degrees of up
 const UP_MARGIN = 1.5;                         // one up-axis score must beat the other by this factor
@@ -569,6 +573,49 @@ function mergeCollinear(pieces, tol) {
   return out;
 }
 
+// Drop walls shorter than minLength, except those that close an outline. A short piece whose two ends
+// join two different kept walls is a door jamb across a thick wall, a column face or the side of a
+// solid object: dropping it would open the inside of that wall or object to walkers (the cavity
+// between a thick wall's two faces would lead out of every doorway in it). A short piece with a free
+// end, or one lying along a single other wall (both ends within tol of it), closes nothing and goes.
+// Removal repeats until stable, since a short piece may hang only on other short pieces. A kept short
+// piece's end within tol of another wall's endpoint moves onto it exactly: a shared endpoint is a
+// closed corner that snapEnds leaves alone, so a jamb does not poke into its doorway.
+function dropShort(walls, minLength, tol) {
+  const short = walls.map(w => Math.hypot(w.x2 - w.x1, w.y2 - w.y1) < minLength);
+  if (!short.includes(true)) return walls;
+  const grid = buildGrid(walls.map(w => [w.x1, w.y1, w.x2, w.y2]), 1, tol);
+  const alive = walls.map(() => true);
+  const joined = (x, y, i) => nearbyPieces(grid, x, y, x, y, tol).filter(j =>
+    j !== i && alive[j] && distToSegment(x, y, walls[j].x1, walls[j].y1, walls[j].x2, walls[j].y2) <= tol);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let i = 0; i < walls.length; i++) {
+      if (!short[i] || !alive[i]) continue;
+      const a = joined(walls[i].x1, walls[i].y1, i), b = joined(walls[i].x2, walls[i].y2, i);
+      if (!a.length || !b.length || a.some(j => b.includes(j))) { alive[i] = false; changed = true; }
+    }
+  }
+  for (let i = 0; i < walls.length; i++) {
+    if (!short[i] || !alive[i]) continue;
+    const w = walls[i];
+    for (const end of [1, 2]) {
+      const x = end === 1 ? w.x1 : w.x2, y = end === 1 ? w.y1 : w.y2;
+      let best = null, bestD = tol;
+      for (const j of joined(x, y, i)) {
+        if (short[j]) continue;
+        for (const [ex, ey] of [[walls[j].x1, walls[j].y1], [walls[j].x2, walls[j].y2]]) {
+          const d = Math.hypot(ex - x, ey - y);
+          if (d <= bestD) { bestD = d; best = [ex, ey]; }
+        }
+      }
+      if (!best) continue;
+      if (end === 1) { w.x1 = best[0]; w.y1 = best[1]; } else { w.x2 = best[0]; w.y2 = best[1]; }
+    }
+  }
+  return walls.filter((_, i) => alive[i]);
+}
+
 // Ray from (px, py) along unit (ux, uy): distance to segment w, or Infinity.
 function rayHit(px, py, ux, uy, w) {
   const ex = w.x2 - w.x1, ey = w.y2 - w.y1;
@@ -727,8 +774,7 @@ export function meshToWalls(objText, options = {}) {
   });
 
   const pieces = slicePieces(consistentCuts(slices, mergeTolerance), mergeTolerance);
-  const merged = mergeCollinear(pieces, mergeTolerance)
-    .filter(w => Math.hypot(w.x2 - w.x1, w.y2 - w.y1) >= minLength);
+  const merged = dropShort(mergeCollinear(pieces, mergeTolerance), minLength, mergeTolerance);
   const walls = snapEnds(merged, snapTolerance, mergeTolerance / 5)
     .map(w => {
       const a = [round3(w.x1), round3(w.y1)], b = [round3(w.x2), round3(w.y2)];
@@ -757,6 +803,166 @@ export function meshToWalls(objText, options = {}) {
     warnings.push('no wall survived at every slice height; bounds are the whole mesh');
   }
   return result(walls, bounds, up, round3(floorHeight), levels.map(round3));
+}
+
+// ---------- starter world ----------
+
+const WORLD_MARGIN = 8;          // map units around the walls, so there is room to stand outside
+const WALK_M_PER_MIN = 80;
+const MAX_TRAVEL_SPEED = 600;    // the spec's travelSpeed maximum (§14d)
+const CLEARANCE_M = 0.15;        // a quarter of a narrow 0.6 m door: the mesh has no door widths
+const SPOT_FREE_M = 0.45;        // a placeholder place needs this much room around it
+const SPOT_APART_M = 2.5;        // ... and this far from the next one
+const MAX_SPOTS = 9;             // one entrance plus up to eight places
+const SAMPLE_STEP = 0.5;         // map units between samples when looking for open spots
+const r4 = v => Math.round(v * 1e4) / 1e4 + 0;
+
+// Distance from (x, y) to the nearest wall, capped at `cap`, using buckets of size cap.
+function distanceField(walls, cap) {
+  const buckets = new Map();
+  walls.forEach((w, i) => {
+    for (let cx = Math.floor(Math.min(w.x1, w.x2) / cap); cx <= Math.floor(Math.max(w.x1, w.x2) / cap); cx++) {
+      for (let cy = Math.floor(Math.min(w.y1, w.y2) / cap); cy <= Math.floor(Math.max(w.y1, w.y2) / cap); cy++) {
+        const k = `${cx},${cy}`;
+        (buckets.get(k) || buckets.set(k, []).get(k)).push(i);
+      }
+    }
+  });
+  return (x, y) => {
+    let d = cap;
+    const cx = Math.floor(x / cap), cy = Math.floor(y / cap);
+    for (let i = cx - 1; i <= cx + 1; i++) {
+      for (let j = cy - 1; j <= cy + 1; j++) {
+        for (const k of buckets.get(`${i},${j}`) || []) {
+          const w = walls[k];
+          d = Math.min(d, distToSegment(x, y, w.x1, w.y1, w.x2, w.y2));
+        }
+      }
+    }
+    return d;
+  };
+}
+
+/**
+ * A starter visit world from meshToWalls output. The plan is fitted into the 0-100 map (aspect kept,
+ * y flipped so it is not mirrored on the canvas, WORLD_MARGIN units of open ground around it).
+ * The mesh says nothing about rooms or doors, so the places are placeholders at the most open spots
+ * that can be reached on foot from the entrance. The entrance stands outside the building when the
+ * mesh shows a way in, otherwise at the most open spot inside. Warnings are attached as a
+ * non-enumerable `warnings` array, as floorplanToWorld does.
+ * @param {ReturnType<typeof meshToWalls>} result
+ * @param {{ title?: string, question?: string, file?: string }} [opts]
+ */
+export function meshToWorld(result, { title, question, file } = {}) {
+  if (!result || !Array.isArray(result.walls)) throw new TypeError('meshToWorld: expected the result of meshToWalls');
+  if (!result.walls.length || !result.bounds) throw new RangeError('meshToWorld: the mesh gave no walls, so there is no floor plan to build a world on');
+  const warnings = [...(result.warnings || [])];
+  const b = result.bounds, usable = 100 - 2 * WORLD_MARGIN;
+  const scale = usable / Math.max(b.maxX - b.minX, b.maxY - b.minY, 1e-6);
+  const tx = WORLD_MARGIN + (usable - (b.maxX - b.minX) * scale) / 2 - b.minX * scale;
+  const ty = WORLD_MARGIN + (usable - (b.maxY - b.minY) * scale) / 2 + b.maxY * scale;
+  const mpu = 1 / scale;
+  // One affine map for every point, so walls that share an end still share it afterwards.
+  const walls = result.walls.map(w => ({ x1: r4(tx + w.x1 * scale), y1: r4(ty - w.y1 * scale), x2: r4(tx + w.x2 * scale), y2: r4(ty - w.y2 * scale), source: 'mesh-slice' }))
+    .filter(w => w.x1 !== w.x2 || w.y1 !== w.y2);
+  if (walls.length > 4000) warnings.push(`${walls.length} wall segments is above the world maximum of 4000; raise minLength or slice one storey`);
+  const clearance = Math.max(0.02, Math.min(1, Math.floor((CLEARANCE_M / mpu) * 1e4) / 1e4));
+  const nav = createNav(walls, { clearance });
+
+  // Open spots: local maxima of the distance to the nearest wall, most open first, kept apart.
+  const free = Math.max(SPOT_FREE_M / mpu, clearance + 0.05);
+  const dist = distanceField(walls, Math.max(2, Math.min(25, 6 / mpu)));
+  const n = Math.floor(94 / SAMPLE_STEP) + 1;
+  const at = (i, j) => [3 + i * SAMPLE_STEP, 3 + j * SAMPLE_STEP];
+  const D = new Float64Array(n * n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) D[j * n + i] = dist(...at(i, j));
+  const peaks = [];
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const d = D[j * n + i];
+      if (d < free) continue;
+      let top = true;
+      for (let dj = -1; dj <= 1 && top; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          const a = i + di, c = j + dj;
+          if ((di || dj) && a >= 0 && c >= 0 && a < n && c < n && D[c * n + a] > d) { top = false; break; }
+        }
+      }
+      if (top) { const [x, y] = at(i, j); peaks.push({ x, y, d }); }
+    }
+  }
+  peaks.sort((p, q) => q.d - p.d || p.y - q.y || p.x - q.x);
+  const apart = SPOT_APART_M / mpu;
+  const wx = walls.flatMap(w => [w.x1, w.x2]), wy = walls.flatMap(w => [w.y1, w.y2]);
+  const box = { x0: Math.min(...wx), x1: Math.max(...wx), y0: Math.min(...wy), y1: Math.max(...wy) };
+  const inside = p => p.x > box.x0 && p.x < box.x1 && p.y > box.y0 && p.y < box.y1;
+  const spots = [];
+  for (const p of peaks.filter(inside)) {
+    if (spots.every(s => Math.hypot(s.x - p.x, s.y - p.y) >= Math.max(apart, s.d, p.d))) spots.push(p);
+  }
+  if (!spots.length) throw new RangeError(`meshToWorld: no open spot inside the walls has ${SPOT_FREE_M} m of room around it`);
+
+  // The entrance: outside when a point in the margin around the building reaches the most open spot.
+  const seed = spots[0];
+  const lo = WORLD_MARGIN / 2;
+  const outsideCandidates = [[50, lo], [50, 100 - lo], [lo, 50], [100 - lo, 50], [lo, lo], [100 - lo, lo], [lo, 100 - lo], [100 - lo, 100 - lo]]
+    .map(([x, y]) => ({ x: Math.max(3, Math.min(97, x)), y: Math.max(3, Math.min(97, y)) }))
+    .filter(p => dist(p.x, p.y) >= free)
+    .map(p => ({ ...p, walk: nav.distance(p.x, p.y, seed.x, seed.y) }))
+    .filter(p => Number.isFinite(p.walk))
+    .sort((p, q) => p.walk - q.walk);
+  let gate, places;
+  if (outsideCandidates.length) {
+    gate = { id: 'outside', name: 'Outside (placeholder entrance)', kind: 'gate', x: r4(outsideCandidates[0].x), y: r4(outsideCandidates[0].y) };
+    places = spots;
+  } else {
+    gate = { id: 'entrance', name: 'Entrance (placeholder)', kind: 'gate', x: r4(seed.x), y: r4(seed.y) };
+    places = spots.slice(1);
+    warnings.push('no way in from outside the walls was found (a closed shell, or the doors are missing from the scan); the placeholder entrance is inside, at the most open spot');
+  }
+  const reachable = places.filter(p => nav.path(gate.x, gate.y, p.x, p.y));
+  if (reachable.length < places.length) {
+    warnings.push(`${places.length - reachable.length} open spot(s) cannot be reached on foot from the entrance (closed rooms, shafts or scan holes) and were left out`);
+  }
+  let services = reachable.slice(0, MAX_SPOTS - 1);
+  if (!services.length) {
+    // A single open area: put one place a little way from the entrance, where there is room.
+    const alt = peaks.find(p => Math.hypot(p.x - gate.x, p.y - gate.y) >= 2 * free && nav.path(gate.x, gate.y, p.x, p.y));
+    if (!alt) throw new RangeError('meshToWorld: found no second open spot reachable from the entrance');
+    services = [alt];
+  }
+  const nodes = [gate, ...services.map((p, k) => ({
+    id: `area_${k + 1}`, name: `Open area ${k + 1}`, kind: 'service', x: r4(p.x), y: r4(p.y),
+    servers: 2, serviceTime: 5, tags: ['area'],
+    about: `Open floor area about ${(2 * p.d * mpu).toFixed(1)} m across, found in the mesh (placeholder: replace with a real place)`.slice(0, 160)
+  }))];
+
+  const name = typeof file === 'string' && file.trim() ? file.trim().split(/[\\/]/).pop() : 'mesh';
+  const world = {
+    title: (typeof title === 'string' && title.trim() ? title.trim() : `Floor plan sliced from ${name}`).slice(0, 80),
+    question: (typeof question === 'string' && question.trim() ? question.trim() : 'Which parts of this floor build up lines, and where do people give up?').slice(0, 400),
+    context: `A floor whose walls were sliced from a 3D scan at ${(result.levels || []).length || 2} heights. People cannot walk through walls.`.slice(0, 300),
+    mode: 'visit',
+    duration: 90,
+    clockStart: 540,
+    travelSpeed: r4(Math.min(MAX_TRAVEL_SPEED, Math.max(0.2, WALK_M_PER_MIN / mpu))),
+    arrivals: { total: 100, start: 0, end: 45, shape: 'peak' },
+    nodes,
+    archetypes: [{
+      id: 'visitors', name: 'Visitors', share: 1, description: 'Placeholder group: replace with the people who use this floor.',
+      visits: Math.min(3, services.length), patience: 30, info: 0.5
+    }],
+    walls,
+    geo: { metersPerUnit: +mpu.toPrecision(6), clearance, floor: null, source: 'mesh-slice' },
+    provenance: {
+      walls: 'data', 'geo.metersPerUnit': 'data', 'geo.clearance': 'assumed', travelSpeed: 'assumed',
+      'nodes[*].x': 'assumed', 'nodes[*].y': 'assumed', 'nodes[*].servers': 'assumed', 'nodes[*].serviceTime': 'assumed',
+      arrivals: 'assumed', archetypes: 'assumed', duration: 'assumed', clockStart: 'assumed'
+    }
+  };
+  if (WALK_M_PER_MIN / mpu > MAX_TRAVEL_SPEED) warnings.push(`walking speed ${WALK_M_PER_MIN} m/min is ${(WALK_M_PER_MIN / mpu).toFixed(0)} map units/min, above the spec's maximum of ${MAX_TRAVEL_SPEED}; using ${MAX_TRAVEL_SPEED}`);
+  Object.defineProperty(world, 'warnings', { value: warnings, enumerable: false });
+  return world;
 }
 
 // ---------- Matterport Model API ----------

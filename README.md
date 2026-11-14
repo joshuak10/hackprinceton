@@ -59,6 +59,18 @@ Anything that can be written as places with lines (`visit` mode) or a network of
 
 An MCP server (`npm run mcp`, registered in `.mcp.json` as `swarmscope`) exposes the same steps as tools for other agents.
 
+## Ask for advice
+
+Finding the bottleneck is half the job. `advise` hands the run to a Claude advisor that answers your question, proposes changes, tests each one in the simulator on the same seeds (the same simulated crowd), and says what to try next. Every recommendation carries its measured effect, and a change only counts as helping when it beats the seed-to-seed spread.
+
+```sh
+node bin/swarm.js advise food-hall-lunch --question "Which diners walk away most, and can a deal win them back?"
+node bin/swarm.js advise food-hall-lunch --confirm-with jev        # re-run the top changes with Jev
+node bin/swarm.js advise food-hall-lunch --follow-up "What about the ramen counter?" --from runs/<runId>/advice.json
+```
+
+It needs `ANTHROPIC_API_KEY` (default model `claude-fable-5-2`). Experiments use the free rules provider unless you pass `--provider jev`, and at most `--max-experiments` (default 6) run. The advice is saved as `advice.md` and `advice.json` in each baseline run, and the viewer shows it. It can test targeted offers too: a simulated message or discount for one kind of simulated person (a group or a cast member's type, never a real individual). **No API key?** In Claude Code, run `/advise <world or run> [question]` and Claude Code does the same steps with `swarm report` and `swarm compare` ([`.claude/commands/advise.md`](.claude/commands/advise.md)).
+
 ## Simulate a real building
 
 Foot traffic through one real building (for example Matterport model `6FNMVoyPrL1`, "Office/Retail - 45,726SF"), using its walls, its doorways and its CoStar record. Simulated people never pass through a wall. Details are in `docs/PROTOTYPE.md` §13 and §14.

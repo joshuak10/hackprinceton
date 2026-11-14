@@ -54,10 +54,15 @@ function given(obs, candidates) {
   return list ? `, given ${list}` : '';
 }
 
+// Questions about where to go also name `offers` (§15b) when the observation has it. Without offers the
+// text is unchanged, so request bodies, request hashes and recorded runs stay the same.
 const CHOICE_INSTRUCTIONS = {
-  next_place: obs => `Where does the person in \`person\` go next${given(obs, ['now', 'places', 'heard'])}?`,
-  route: () => 'Which route in `routes` does the person in `person` take for `trip`?'
+  next_place: obs => `Where does the person in \`person\` go next${given(obs, ['now', 'places', 'heard', 'offers'])}?`,
+  route: obs => `Which route in \`routes\` does the person in \`person\` take for \`trip\`${given(obs, ['offers'])}?`
 };
+
+// A yes/no line question, with ", given `offers`" before the question mark when the observation has offers.
+const yesNoInstructions = (q, obs) => q.instructions.replace(/\?$/, `${given(obs, ['offers'])}?`);
 
 // Where a remark would be about: "at <place name>" or "on <stretch name>". Names come from the
 // spec when available, otherwise from the observation, otherwise the raw id.
@@ -106,7 +111,7 @@ export function buildJevRequest(req, { model = 'jev-latest', spec = null, shuffl
   if (asks.yesNo) {
     const q = YES_NO_QUESTIONS[asks.yesNo];
     if (!q) throw new Error(`unknown yes/no question "${asks.yesNo}"`);
-    questions[asks.yesNo] = { type: 'noul', instructions: q.instructions, criteria: { ...q.criteria } };
+    questions[asks.yesNo] = { type: 'noul', instructions: yesNoInstructions(q, obs), criteria: { ...q.criteria } };
   }
   if (asks.choice) {
     const text = CHOICE_INSTRUCTIONS[asks.choice];

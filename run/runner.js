@@ -179,14 +179,18 @@ export async function runSeeds({ spec, seeds, provider, recorderFor = null, onPr
 }
 
 // Before/after on the same seeds. `recorderFor(seed, side)` gets side 'before' or 'after'.
+// `runs.before` / `runs.after` keep each seed's run entry (metrics included) so effects can be paired seed by
+// seed; `offers` are the offers the patch added, as the engine normalized them (ids and names resolved).
 export async function compareRuns({ spec, patch, seeds, provider, recorderFor = null, ...rest }) {
   const { normalizeSpec, applyPatch } = await import('../engine/spec.js');
   const base = normalizeSpec(spec);
   const { spec: patched, applied, skipped } = applyPatch(base, patch);
   const side = name => recorderFor && (seed => recorderFor(seed, name));
-  const before = (await runSeeds({ ...rest, spec: base, seeds, provider, recorderFor: side('before') })).summary;
-  const after = (await runSeeds({ ...rest, spec: patched, seeds, provider, recorderFor: side('after') })).summary;
+  const b = await runSeeds({ ...rest, spec: base, seeds, provider, recorderFor: side('before') });
+  const a = await runSeeds({ ...rest, spec: patched, seeds, provider, recorderFor: side('after') });
+  const before = b.summary, after = a.summary;
   const delta = {};
   for (const k of Object.keys(before.kpis)) delta[k] = after.kpis[k].mean - before.kpis[k].mean;
-  return { applied, skipped, before, after, delta };
+  const offers = (patched.offers ?? []).slice((base.offers ?? []).length);
+  return { applied, skipped, before, after, delta, runs: { before: b.runs, after: a.runs }, offers };
 }

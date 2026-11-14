@@ -396,3 +396,81 @@ describe('agentLog', () => {
     assert.equal(agentRecord(runDir, 99), null);
   });
 });
+
+// ---------- segments and offers (§15a, §15b) ----------
+
+describe('reportMarkdown segments and offers', () => {
+  const seg = (id, name, group, over) => ({
+    id, name, group, count: 20, avgWait: 10, avgSpent: 12, avgVisits: 1.5, walkAwaysPerPerson: 0.1, shareNeverServed: 0.05, avgFrustration: 1,
+    topPlaces: [{ id: 'thunder', name: 'Thunder Spine', visits: 15 }, { id: 'wheel', name: 'Sky Wheel', visits: 9 }], ...over
+  });
+  const SEGMENTS = {
+    byGroup: [
+      seg('fam', 'Families', 'fam', { count: 40, avgWait: 9.5, walkAwaysPerPerson: 0.1, avgSpent: 31.5 }),
+      seg('teen', 'Teens', 'teen', { count: 40, avgWait: 6, walkAwaysPerPerson: 0.5, avgSpent: 8.25, avgFrustration: 2.6 })
+    ],
+    byCast: [
+      seg('priya', 'Priya Shah', 'fam', { avgWait: 12, walkAwaysPerPerson: 0, avgSpent: 40 }),
+      seg('kai', 'Kai Lee', 'teen', { avgWait: 5, walkAwaysPerPerson: 0.6, avgSpent: 6, shareNeverServed: 0.25 })
+    ]
+  };
+  const SPEC_OFFERS = {
+    ...SPEC,
+    offers: [{ id: 'wheel_deal', text: 'Sky Wheel: no line right now, half price for teens', to: { groups: ['teen'], cast: [] }, place: 'wheel', priceOff: 0.5 }]
+  };
+
+  test('adds who had the worst time, by group and by cast member, worst first', () => {
+    const md = reportMarkdown(writeRun('segments', { metrics: { ...METRICS, segments: SEGMENTS } }));
+    const sec = section(md, 'Who had the worst time');
+    assert.ok(sec.includes('A segment is a kind of simulated person (a group, or everyone who copies one cast member), not a real individual.'));
+    // Teens: 6 + 30 × 0.5 = 21 beats Families: 9.5 + 3 = 12.5
+    assert.ok(sec.indexOf('| Teens | 40 | 6.0 min | 0.5 | 5% | 2.6 (very frustrated) |') < sec.indexOf('| Families | 40 | 9.5 min |'), sec);
+    assert.match(sec, /### By cast member \(everyone who copies them\)/);
+    assert.match(sec, /\| Kai Lee \| Teens \| 20 \| 5\.0 min \| 0\.6 \| 25% \|/);
+    assert.ok(sec.indexOf('Kai Lee') < sec.indexOf('Priya Shah'));
+  });
+
+  test('adds who spent the most, highest average first, with top places', () => {
+    const md = reportMarkdown(writeRun('spending', { metrics: { ...METRICS, segments: SEGMENTS } }));
+    const sec = section(md, 'Who spent the most');
+    assert.match(sec, /\| Segment \| People \| Avg spent \| Avg visits \| Top places \|/);
+    assert.ok(sec.indexOf('| Families | 40 | $31.50 |') < sec.indexOf('| Teens | 40 | $8.25 |'), sec);
+    assert.match(sec, /\| Priya Shah \| Families \| 20 \| \$40\.00 \| 1\.5 \| Thunder Spine 15 · Sky Wheel 9 \|/);
+  });
+
+  test('adds an offers table when metrics.offers is not empty', () => {
+    const metrics = { ...METRICS, offers: [{ id: 'wheel_deal', reached: 30, wentToPlace: 12 }] };
+    const md = reportMarkdown(writeRun('offers', { metrics, spec: SPEC_OFFERS }));
+    const sec = section(md, 'Offers');
+    assert.match(sec, /\| Offer \| What they are told \| To \| Place \| Price off \| Reached \| Went to the place \| Share \|/);
+    assert.match(sec, /\| wheel_deal \| Sky Wheel: no line right now, half price for teens \| Teens \| Sky Wheel \| 50% \| 30 \| 12 \| 40% \|/);
+    assert.doesNotMatch(reportMarkdown(writeRun('offers-empty', { metrics: { ...METRICS, offers: [] } })), /## Offers/);
+  });
+
+  test('runs without segments or offers report exactly as before', () => {
+    const md = reportMarkdown(runDir);
+    assert.doesNotMatch(md, /Who had the worst time|Who spent the most|## Offers/);
+    const groups = md.indexOf('## Outcomes by group');
+    assert.ok(groups > 0 && md.indexOf('## Remarks') > groups);
+    assert.ok(!md.slice(groups, md.indexOf('## Remarks')).includes('A segment is'));
+  });
+
+  test('route segments show trip and delay, most delay first, and no spending table', () => {
+    const spec = { ...SPEC, mode: 'route', edges: [{ from: 'a', to: 'b', name: 'Kessel Bridge' }] };
+    const metrics = {
+      mode: 'route', avgTrip: 30, avgDelay: 8, arrived: 100, edges: [], archetypes: [], decisions: { total: 0, byProvider: {}, byKind: {} },
+      segments: {
+        byGroup: [
+          { id: 'fam', name: 'Families', group: 'fam', count: 50, avgTrip: 25, avgDelay: 4, avgFrustration: null },
+          { id: 'teen', name: 'Teens', group: 'teen', count: 50, avgTrip: 35, avgDelay: 12, avgFrustration: 1.2 }
+        ],
+        byCast: []
+      }
+    };
+    const md = reportMarkdown(writeRun('route-segments', { metrics, spec, decisions: [], remarks: [], agents: [] }));
+    const sec = section(md, 'Who had the worst time');
+    assert.match(sec, /\| Segment \| People \| Avg trip \| Avg delay \| Frustration \|/);
+    assert.ok(sec.indexOf('| Teens | 50 | 35.0 min | 12.0 min |') < sec.indexOf('| Families | 50 | 25.0 min | 4.0 min | – |'), sec);
+    assert.doesNotMatch(md, /Who spent the most/);
+  });
+});

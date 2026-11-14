@@ -27,6 +27,7 @@ const ui = {
   agentBody: $('#agentBody'), inspector: $('#inspector'), stats: $('#stats'), statsWarn: $('#statsWarn'),
   remarks: $('#remarks'), remarkCount: $('#remarkCount'),
   wallLegend: $('#wallLegend'), lgWall: $('#lgWall'), lgDoor: $('#lgDoor'), lgEntrance: $('#lgEntrance'),
+  insight: $('#insight'), whoCard: $('#whoCard'), whoToggle: $('#whoToggle'), whoTable: $('#whoTable'), adviceBody: $('#adviceBody'),
   doorBox: $('#doorBox'), doorRank: $('#doorRank'), doorNote: $('#doorNote')
 };
 
@@ -42,7 +43,8 @@ const state = {
   worlds: [], runs: [], health: null, provider: 'rules', pasted: null, validated: null,
   run: null, t: 0, playing: false, speed: 1, lastTs: 0, dirty: true,
   agentReq: 0, agentData: null, decisionCards: [], remarksShown: -1, nowSlots: null,
-  pollTimer: null, following: null, colors: null, door: null
+  pollTimer: null, following: null, colors: null, door: null,
+  whoView: 'byGroup', whoSort: null, advice: null, adviceReq: 0
 };
 
 // ---------- small helpers ----------
@@ -503,6 +505,8 @@ async function loadRun(id, { autoplay = true, quiet = false } = {}) {
   renderDoors();
   setChart();
   renderStats();
+  renderWho();
+  loadAdvice(id);
   resetInspector();
   ui.runSel.value = state.runs.some(r => r.runId === id) ? id : '';
   try { history.replaceState(null, '', `#run=${enc(id)}`); } catch { /* sandboxed */ }
@@ -741,6 +745,11 @@ function renderStats() {
   if (ps.latency) add('Latency', `p50 ${ms(ps.latency.p50)} · p95 ${ms(ps.latency.p95)}`);
   const wl = metrics?.walls;
   if (wl) add('Walls', `walls: ${fmt(wl.count)}, moves checked: ${fmt(wl.checkedMoves)}, violations: ${fmt(wl.violations)}`);
+  const offers = Array.isArray(metrics?.offers) ? metrics.offers : [];
+  if (offers.length) {
+    add('Offers', offers.map(o => `${o.id}: reached ${fmt(o.reached)}, went to the place ${fmt(o.wentToPlace)}`).join(' · '),
+      'People who received each offer, and how many of them then went to its place');
+  }
   add('Seed', String(meta.seed ?? '–'));
   add('Spec hash', meta.specHash ?? '–');
   add('Recorded', meta.createdAt ? new Date(meta.createdAt).toLocaleString() : '–');
@@ -753,6 +762,147 @@ function renderStats() {
   if (wl?.violations > 0) warns.push(`${fmt(wl.violations)} moves touched a wall. A completed run should have none: this is an engine bug.`);
   ui.statsWarn.hidden = !warns.length;
   ui.statsWarn.textContent = warns.join(' ');
+}
+
+// ---------- who: outcomes by kind of simulated person (§15a) ----------
+const frustrationText = v => (isNum(v) ? `${fmt(v, 1)}/4` : '–');
+const WHO_COLUMNS = {
+  visit: [
+    ['count', 'People', v => fmt(v)], ['avgWait', 'Avg wait', mins], ['walkAwaysPerPerson', 'Walk-aways each', v => fmt(v, 2)],
+    ['shareNeverServed', 'Never served', pct], ['avgSpent', 'Avg spent', v => (isNum(v) ? `$${fmt(v, 2)}` : '–')],
+    ['avgFrustration', 'Frustration', frustrationText]
+  ],
+  route: [
+    ['count', 'People', v => fmt(v)], ['avgTrip', 'Avg trip', mins], ['avgDelay', 'Avg delay', mins],
+    ['avgFrustration', 'Frustration', frustrationText]
+  ]
+};
+
+function whoRows() {
+  const seg = state.run?.metrics?.segments;
+  const rows = Array.isArray(seg?.[state.whoView]) ? [...seg[state.whoView]] : [];
+  const sort = state.whoSort;
+  if (sort) {
+    const dir = sort.desc ? -1 : 1;
+    rows.sort((a, b) => {
+      const x = a[sort.key], y = b[sort.key];
+      if (!isNum(x) && !isNum(y)) return 0;
+      if (!isNum(x)) return 1;
+      if (!isNum(y)) return -1;
+      return (x - y) * dir;
+    });
+  }
+  return rows;
+}
+
+function renderWho() {
+  const seg = state.run?.metrics?.segments;
+  const has = !!seg && (Array.isArray(seg.byGroup) || Array.isArray(seg.byCast));
+  ui.whoCard.hidden = !has;
+  updateInsightVisibility();
+  if (!has) { ui.whoTable.replaceChildren(); return; }
+  for (const b of ui.whoToggle.querySelectorAll('[data-who]')) {
+    const on = b.dataset.who === state.whoView;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+  const cols = WHO_COLUMNS[state.run.spec.mode === 'route' ? 'route' : 'visit'];
+  if (state.whoSort && !cols.some(c => c[0] === state.whoSort.key)) state.whoSort = null;
+  const head = h('tr', {}, h('th', { scope: 'col' }, state.whoView === 'byCast' ? 'Person in the cast' : 'Group'),
+    ...cols.map(([key, label]) => {
+      const sorted = state.whoSort?.key === key;
+      return h('th', { scope: 'col', 'aria-sort': sorted ? (state.whoSort.desc ? 'descending' : 'ascending') : null },
+        h('button', { type: 'button', onclick: () => sortWho(key) }, label + (sorted ? (state.whoSort.desc ? ' ↓' : ' ↑') : '')));
+    }));
+  const rows = whoRows();
+  const body = rows.length
+    ? rows.map(r => h('tr', {},
+      h('td', {}, r.name ?? r.id, state.whoView === 'byCast' && r.group ? h('span', { class: 'grp' }, r.group) : null),
+      ...cols.map(([key, , f]) => h('td', {}, f(r[key])))))
+    : [h('tr', {}, h('td', { colspan: cols.length + 1 }, 'No people in this view.'))];
+  ui.whoTable.replaceChildren(h('thead', {}, head), h('tbody', {}, body));
+}
+
+function sortWho(key) {
+  const cur = state.whoSort;
+  state.whoSort = cur?.key === key ? (cur.desc ? { key, desc: false } : null) : { key, desc: true };
+  renderWho();
+}
+
+// ---------- advice (§15c) ----------
+const textOf = x => (typeof x === 'string' ? x : x && typeof x === 'object' ? String(x.text ?? x.label ?? x.title ?? x.summary ?? '') : x == null ? '' : String(x));
+const asList = x => (Array.isArray(x) ? x.map(textOf).filter(Boolean) : textOf(x) ? [textOf(x)] : []);
+const num = v => (isNum(v) ? (Math.abs(v) >= 100 ? fmt(v, 0) : Math.abs(v) >= 10 ? fmt(v, 1) : fmt(v, 2)) : textOf(v) || '–');
+const signed = v => (isNum(v) ? `${v > 0 ? '+' : ''}${num(v)}` : '–');
+
+function updateInsightVisibility() {
+  ui.insight.hidden = !state.run;
+}
+
+async function loadAdvice(id) {
+  const req = ++state.adviceReq;
+  state.advice = null;
+  renderAdvice();
+  try {
+    const data = await api(`/api/runs/${enc(id)}/advice`);
+    if (req !== state.adviceReq || !data?.advice) return;
+    state.advice = data;
+    renderAdvice();
+  } catch { /* no advice for this run: the panel says how to get it */ }
+}
+
+function effectTable(effect) {
+  const rel = e => Math.abs(Number(e.change) / (Number(e.before) || 1)) || 0;
+  const entries = Object.entries(effect && typeof effect === 'object' ? effect : {}).filter(([, e]) => e && typeof e === 'object')
+    .sort((a, b) => rel(b[1]) - rel(a[1])).slice(0, 4);
+  if (!entries.length) return null;
+  return h('table', { class: 'effect' },
+    h('thead', {}, h('tr', {}, h('th', {}, 'Measure'), h('th', {}, 'Before'), h('th', {}, 'After'), h('th', {}, 'Change'))),
+    h('tbody', {}, entries.map(([kpi, e]) => h('tr', {},
+      h('td', {}, kpi), h('td', {}, num(e.before)), h('td', {}, num(e.after)),
+      h('td', { title: isNum(e.spread) ? `Spread across seeds: ${num(e.spread)}` : null },
+        signed(e.change), isNum(e.spread) ? ` ±${num(e.spread)}` : '')))));
+}
+
+function holdsText(v) {
+  if (v === true) return 'Holds across seeds';
+  if (v === false) return 'Does not hold across seeds';
+  return v == null || v === '' ? null : `Across seeds: ${textOf(v)}`;
+}
+
+function recCard(r, i) {
+  const conf = ['high', 'medium', 'low'].includes(r?.confidence) ? r.confidence : null;
+  const tested = r?.testedWith;
+  const testedText = Array.isArray(tested) ? tested.join(', ') : textOf(tested);
+  return h('article', { class: 'rec' },
+    h('div', { class: 'head' }, h('h3', {}, `${i + 1}. ${textOf(r?.label) || 'Untitled change'}`),
+      conf ? h('span', { class: `tag ${conf}` }, `${conf} confidence`) : null),
+    r?.why ? h('p', { class: 'why' }, textOf(r.why)) : null,
+    effectTable(r?.effect),
+    h('p', { class: 'muted small' },
+      [testedText ? `Tested with ${testedText}` : null, holdsText(r?.holdsAcrossSeeds), textOf(r?.costNote) || null].filter(Boolean).join(' · ')));
+}
+
+function renderAdvice() {
+  const box = ui.adviceBody;
+  updateInsightVisibility();
+  const a = state.advice?.advice;
+  if (!a) {
+    box.replaceChildren(h('p', { class: 'muted' },
+      'No advice for this run yet. Run swarm advise on this world, or type /advise in Claude Code.'));
+    return;
+  }
+  const list = (title, items) => items.length
+    ? h('div', { class: 'stack' }, h('h3', {}, title), h('ul', { class: 'advice-list' }, items.map(t => h('li', {}, t))))
+    : null;
+  const recs = Array.isArray(a.recommendations) ? a.recommendations : [];
+  const findings = asList(a.findings), cautions = asList(a.cautions), next = asList(a.nextSteps);
+  box.replaceChildren(
+    a.answer ? h('p', { class: 'answer' }, textOf(a.answer)) : null,
+    recs.length ? h('div', { class: 'recs' }, recs.map(recCard)) : null,
+    findings.length || cautions.length || next.length
+      ? h('div', { class: 'advice-cols' }, list('What we found', findings), list('Cautions', cautions), list('Try next', next)) : null,
+    h('p', { class: 'muted small' }, 'Advice ranks changes under the stated assumptions. It is not a forecast, and groups are simulated people, not real individuals.'));
 }
 
 // ---------- remarks ----------
@@ -1123,6 +1273,12 @@ ui.useBtn.addEventListener('click', usePasted);
 ui.pasteIn.addEventListener('input', () => { ui.useBtn.disabled = true; state.validated = null; setPasteStatus(''); });
 ui.compileBtn.addEventListener('click', compileDescription);
 ui.describeIn.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) compileDescription(); });
+ui.whoToggle.addEventListener('click', e => {
+  const b = e.target.closest('[data-who]');
+  if (!b || b.dataset.who === state.whoView) return;
+  state.whoView = b.dataset.who;
+  renderWho();
+});
 ui.playBtn.addEventListener('click', () => (state.playing ? pause() : play()));
 ui.scrub.addEventListener('input', () => { state.t = Number(ui.scrub.value) || 0; state.dirty = true; });
 ui.themeBtn.addEventListener('click', () => {

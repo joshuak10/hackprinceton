@@ -884,6 +884,13 @@ export function floorplanToWorld(plan, { mode = 'route', title, question, margin
       pair.set(key, { edge, width });
       return true;
     };
+    // A room-to-door edge reads as the walk it is, e.g. "Main corridor to Office 3 door", within 40 chars.
+    const sideName = (rid, x) => {
+      const from = roomById.get(rid).name.slice(0, 18);
+      if (x.exterior) return `${from} to ${x.name}`;
+      const other = x.sides.find(id => id !== rid);
+      return `${from} to ${roomById.get(other).name.slice(0, 13)} ${x.door.type === 'invisible' ? 'opening' : 'door'}`;
+    };
     const doorNodes = [];
     for (const x of doors) {
       const rs = x.sides.filter(id => roomNode.has(id));
@@ -892,7 +899,7 @@ export function floorplanToWorld(plan, { mode = 'route', title, question, margin
         for (const rid of rs) {
           const poly = legs([roomPos(rid), x.door]);
           if (!poly) { warn(`no wall-free path from room "${roomById.get(rid).name}" to ${x.name}; edge left out`); continue; }
-          if (addEdge(roomNode.get(rid), x.nodeId, `${x.name} (${roomById.get(rid).name} side)`, poly, x.widthM)) { connected.get(rid).add(x.k); any = true; }
+          if (addEdge(roomNode.get(rid), x.nodeId, sideName(rid, x), poly, x.widthM)) { connected.get(rid).add(x.k); any = true; }
         }
         if (any) doorNodes.push(x);
       } else if (rs.length === 2) {
@@ -958,10 +965,13 @@ export function floorplanToWorld(plan, { mode = 'route', title, question, margin
       if (degree.get(x.nodeId)) nodes.push({ id: x.nodeId, name: x.name, kind: x.exterior ? 'origin' : 'intersection', x: x.door.x, y: x.door.y });
     }
     Object.assign(provenance, { 'edges[*].via': 'data', 'edges[*].length': 'data', 'edges[*].capacity': 'assumed' });
+    // Link-by-link moves are a softmax over minutes with sharpness `rationality`. Indoor links are about
+    // 0.2 min, so the route default of 0.8 makes a wrong turn nearly as likely as the right one (on the
+    // fixture floor 6% of people got lost and most "delay" was wandering); 10 keeps people on course.
     Object.assign(world, {
       duration: 60, clockStart: 510, arrivals: { total: 200, start: 0, end: 30, shape: 'peak' },
       nodes, edges,
-      archetypes: [{ id: 'occupants', name: 'Occupants', share: 1, description: 'Placeholder group: replace with the people who use this floor.', info: 0.5, rationality: 0.8 }]
+      archetypes: [{ id: 'occupants', name: 'Occupants', share: 1, description: 'Placeholder group: replace with the people who use this floor.', info: 0.5, rationality: 10 }]
     });
   } else {
     let gates = doors.filter(x => x.exterior).map(x => ({ id: x.nodeId, name: x.name, kind: 'gate', x: x.door.x, y: x.door.y }));

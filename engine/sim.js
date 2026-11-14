@@ -12,6 +12,11 @@
 // route agents follow each edge's polyline; every movement polyline is checked and a touch throws
 // WallViolation. With `spec.doors`, visit walking paths count crossings at each doorway.
 // archetypes[].entries and .exits narrow where each group appears and which exits it leaves through.
+//
+// Offers and segments (§15a, §15b): an agent in an offer's audience, inside its window, sees the offer's
+// text and pays the discounted price at its place (in what it is shown, in the rules utility and in what
+// it spends). Every visit agent records what it spent and where it was served; metrics().segments
+// reports outcomes per group and per cast member, and metrics().offers how far each offer reached.
 import { seedRng, clamp, clockText, feelingWords } from './util.js';
 import { normalizeSpec } from './spec.js';
 import { sampleDecision } from './sample.js';
@@ -45,6 +50,8 @@ const DOOR_WINDOW = 5;        // minutes for a door's peak traffic
 const SAME_HIT = 1e-6;        // two door hits this close along a path are one crossing (a path vertex on the door)
 const DOOR_REACH = 0.3;       // a door end stopping this short of a wall (or the clearance, if larger) is carried on to it
 const DOOR_OVERLAP = 0.02;    // ... and this far past it, the jamb tolerance of §14g
+const NO_OFFERS = Object.freeze([]);
+const TOP_PLACES = 3;         // places listed per segment
 
 const wallObj = w => (Array.isArray(w) ? { x1: +w[0], y1: +w[1], x2: +w[2], y2: +w[3] } : w);
 const childMap = (m, k) => { let c = m.get(k); if (!c) m.set(k, c = new Map()); return c; };
@@ -174,6 +181,11 @@ export class Sim {
       return door;
     });
     this.doorPending = [];          // { t, door } crossings scheduled for a time not yet reached
+    // Targeted offers (§15b). `reached` and `went` hold agent ids. Without offers nothing changes.
+    this.offers = (Array.isArray(this.spec.offers) ? this.spec.offers : []).map(o => ({
+      ...o, groups: new Set(o.to.groups), cast: new Set(o.to.cast), everyone: !o.to.groups.length && !o.to.cast.length,
+      reached: new Set(), went: new Set()
+    }));
     // Walks follow cached polylines when walls or doors exist; otherwise the prototype's straight lines.
     this.pathMode = !route && Boolean(this.nav || this.doorList.length);
     this.paths = new Map();
@@ -377,7 +389,10 @@ export class Sim {
         for (const n of list) { w -= n.weight; if (w <= 0) { entry = n; break; } }
       }
       a.informed = rng() < arch.info; a.jit = rng();
-      Object.assign(a, { x: entry.x, y: entry.y, visited: new Set(), visitsLeft: arch.visits, lastPlace: entry.name, placesDone: [] });
+      Object.assign(a, {
+        x: entry.x, y: entry.y, visited: new Set(), visitsLeft: arch.visits, lastPlace: entry.name, placesDone: [],
+        spent: 0, servedAt: [], quote: null
+      });
       arch.count++; this.agents.push(a); this.active.push(a);
       this.log(a, `Arrived at ${entry.name}`);
       this.decide(a, 'start', null);
@@ -397,6 +412,7 @@ export class Sim {
       x: o.x, y: o.y, plan: null, planI: 0, path: [], worst: null, tripStart: null
     });
     arch.count++; this.agents.push(a); this.active.push(a);
+    this.noteOffers(a);
     this.log(a, `Left ${o.name} for ${d.name}`);
     const opts = this.routeOptions(o.idx, d.idx);
     if (this.external && opts.length > 1) return this.requestRoute(a, opts);
@@ -524,6 +540,29 @@ export class Sim {
     return out;
   }
 
+  // ---------------- offers ----------------
+  // The offers this agent receives at time t: it is in the audience (everyone when `to` is empty, else
+  // its group or its cast member is named) and t is inside [from, until].
+  offersFor(a, t = this.t) {
+    if (!this.offers.length) return NO_OFFERS;
+    return this.offers.filter(o => t >= o.from - 1e-9 && t <= o.until + 1e-9 &&
+      (o.everyone || o.groups.has(a.arch.id) || o.cast.has(a.persona.id)));
+  }
+
+  // Marks the offers this agent matches now as having reached it. Called at every decision moment.
+  noteOffers(a, t = this.t) {
+    for (const o of this.offersFor(a, t)) o.reached.add(a.id);
+  }
+
+  // What this agent pays at n at time t: the list price less the largest discount among its matching
+  // offers for n (discounts do not stack). Exactly n.price when no offer applies.
+  priceFor(a, n, t = this.t) {
+    if (!this.offers.length) return n.price;
+    let off = 0;
+    for (const o of this.offersFor(a, t)) if (o.place === n.id && o.priceOff > off) off = o.priceOff;
+    return off > 0 ? n.price * (1 - off) : n.price;
+  }
+
   // Rule-policy pick: softmax over utilities with sharpness `rationality`, drawn from the agent stream.
   autoPick(a) {
     const w = a.arch.weights, c = [], u = [];
@@ -533,7 +572,7 @@ export class Sim {
       const est = a.informed ? this.estWait(n) : 0;
       const dist = this.walkDist(a.x, a.y, n.x, n.y);
       c.push(n);
-      u.push(w.appeal * n.appeal * (1 + 0.6 * match) - w.wait * est / 20 - w.distance * dist / 40 - w.price * n.price / 20);
+      u.push(w.appeal * n.appeal * (1 + 0.6 * match) - w.wait * est / 20 - w.distance * dist / 40 - w.price * this.priceFor(a, n) / 20);
     }
     if (!c.length) return null;
     const mx = Math.max(...u);
@@ -553,6 +592,7 @@ export class Sim {
   // A choose moment: start (arrived), next (finished somewhere), balked, gaveup. `place` is the place just left.
   decide(a, why, place) {
     a.decisions++;
+    this.noteOffers(a);
     const exhausted = a.visitsLeft <= 0 || a.decisions > a.arch.visits * 2 + 3;
     if (!this.external) {
       const n = exhausted ? null : this.autoPick(a);
@@ -563,15 +603,19 @@ export class Sim {
     this.requestChoose(a, why, place, cands);
   }
 
-  // Only called for candidates, which are reachable, so the walk always starts.
-  goTo(a, n, quiet = false) {
+  // Only called for candidates, which are reachable, so the walk always starts. The price quoted is the
+  // one the agent saw when it chose (time `t`), and it is what the agent pays if served there.
+  goTo(a, n, quiet = false, t = this.t) {
     a.visited.add(n.idx); a.target = n;
+    a.quote = { id: n.id, price: this.priceFor(a, n, t) };
+    for (const o of this.offers) if (o.place === n.id && o.reached.has(a.id)) o.went.add(a.id);
     if (!this.startWalk(a, n.x, n.y, 'walk')) throw new Error(`Sim: no walking path from (${a.x}, ${a.y}) to ${n.id}`);
     if (!quiet) this.log(a, `Headed to ${n.name}` + (a.informed ? ` (~${Math.round(this.estWait(n))} min wait showing)` : ''));
   }
 
   arriveAt(a) {
     const n = a.target; n.arrivals++;
+    this.noteOffers(a);
     a.x = n.x; a.y = n.y; a.lastPlace = n.name;
     const est = this.estWait(n), tol = this.tolerance(a);
     if (this.external) {
@@ -647,6 +691,8 @@ export class Sim {
           if (a.tf <= t && !a.req) {
             n.served++; a.served++; a.visitsLeft--; this.servedTotal++;
             a.placesDone.push(n.name);
+            a.servedAt.push(n.id);
+            a.spent += a.quote?.id === n.id ? a.quote.price : n.price;
             this.log(a, `Finished at ${n.name}`);
             this.decide(a, 'next', n);
           } else still.push(a);
@@ -770,14 +816,16 @@ export class Sim {
     return selectHeard(this.recentRemarks(), viewer, this.names);
   }
 
-  // Valid candidates in node order, plus the current place for line/long.
+  // Valid candidates in node order, plus the current place for line/long. The current place shows the
+  // price the agent was quoted when it chose it, which is what it will pay.
   placesCtx(a, current, x, y) {
     const out = [];
     for (const n of this.services) {
       if (n !== current && !this.isCandidate(a, n)) continue;
       const dist = this.walkDist(x, y, n.x, n.y);
+      const price = n === current && a.quote?.id === n.id ? a.quote.price : this.priceFor(a, n);
       out.push({
-        id: n.id, name: n.name, about: n.about, tags: n.tags, price: n.price, dist, est: this.estWait(n),
+        id: n.id, name: n.name, about: n.about, tags: n.tags, price, listPrice: n.price, dist, est: this.estWait(n),
         ahead: n.queue.length,
         visible: a.informed || n === current || dist <= SEE_RADIUS, walkedAway30: this.walkedAway30(n)
       });
@@ -793,6 +841,7 @@ export class Sim {
       timeHere: this.t - a.born, timeInLines: a.waitTotal + inLine, placesDone: a.placesDone.slice(),
       moment: { why: null, placeName: null, est: null, tolerance: this.tolerance(a), waited: null, remaining: null, ...moment },
       places: places ? this.placesCtx(a, current, x, y) : [],
+      offers: this.offersFor(a).map(o => o.text),
       heard: this.heardFor(a, x, y)
     });
   }
@@ -817,6 +866,7 @@ export class Sim {
     };
     this.held.push({ req, a, node: f.node ?? null, routes: f.routes ?? null });
     if (kind !== 'arrive') {
+      this.noteOffers(a);
       a.req = id;
       if (kind !== 'long') a.state = 'think';
     }
@@ -882,6 +932,7 @@ export class Sim {
       observation: routeObservation({
         spec: this.spec, t: this.t, person: this.personCtx(a), trip: this.tripCtx(a),
         routes: routes.map((r, i) => ({ key: 'r' + i, label: r.label, ff: r.ff, now: a.informed ? this.pathNow(r.links) : null })),
+        offers: this.offersFor(a).map(x => x.text),
         heard: this.heardFor(a, o.x, o.y)
       }),
       auto: { action: 'r' + best }
@@ -928,9 +979,9 @@ export class Sim {
     if (a.req === req.id) a.req = null;
 
     let summary;
-    if (req.kind === 'choose') summary = this.applyChoose(a, s.action);
-    else if (req.kind === 'line') summary = this.applyLine(a, entry.node, s);
-    else if (req.kind === 'long') summary = this.applyLong(a, entry.node, s);
+    if (req.kind === 'choose') summary = this.applyChoose(a, s.action, req.t);
+    else if (req.kind === 'line') summary = this.applyLine(a, entry.node, s, req.t);
+    else if (req.kind === 'long') summary = this.applyLong(a, entry.node, s, req.t);
     else if (req.kind === 'route') summary = this.applyRoute(a, entry.routes, s.action, req);
     else summary = s.frustration != null ? `felt ${feelingWords(s.frustration)} about the trip` : 'reflected on the trip';
 
@@ -973,24 +1024,25 @@ export class Sim {
     return this.isCandidate(a, n) ? n : null;
   }
 
-  applyChoose(a, action) {
+  // `t` is the request's time: the prices the agent saw are the prices it is quoted.
+  applyChoose(a, action, t) {
     const n = this.placeFor(a, action);
-    if (n) { this.goTo(a, n, true); return `headed to ${n.name}`; }
+    if (n) { this.goTo(a, n, true, t); return `headed to ${n.name}`; }
     this.leave(a);
     return 'decided to leave';
   }
 
-  applyLine(a, n, s) {
+  applyLine(a, n, s, t) {
     const yes = s.yes ?? s.action === 'yes';
     if (yes) { this.enqueue(a, n); return `joined the line at ${n.name}`; }
     this.walkAway(a, n);
     const m = this.placeFor(a, s.action);
-    if (m) { this.goTo(a, m, true); return `skipped ${n.name}'s line for ${m.name}`; }
+    if (m) { this.goTo(a, m, true, t); return `skipped ${n.name}'s line for ${m.name}`; }
     this.leave(a);
     return `skipped ${n.name}'s line and left`;
   }
 
-  applyLong(a, n, s) {
+  applyLong(a, n, s, t) {
     const yes = s.yes ?? s.action === 'yes';
     const i = n.queue.indexOf(a);
     if (i < 0) return yes ? `kept waiting at ${n.name}` : `wanted to leave ${n.name}'s line but was already through`;
@@ -998,7 +1050,7 @@ export class Sim {
     if (yes) { a.longLimit = waited + this.tolerance(a); return `kept waiting at ${n.name}`; }
     n.queue.splice(i, 1); a.waitTotal += waited; this.walkAway(a, n);
     const m = this.placeFor(a, s.action);
-    if (m) { this.goTo(a, m, true); return `gave up on ${n.name} after ${Math.round(waited)} min for ${m.name}`; }
+    if (m) { this.goTo(a, m, true, t); return `gave up on ${n.name} after ${Math.round(waited)} min for ${m.name}`; }
     this.leave(a);
     return `gave up on ${n.name} after ${Math.round(waited)} min and left`;
   }
@@ -1168,6 +1220,7 @@ export class Sim {
         born: round2(a.born), done: a.tDone == null ? null : round2(a.tDone), trace: a.trace
       };
       if (this.mode === 'route' && a.trip != null) { o.trip = round2(a.trip); o.delay = round2(a.delay); }
+      if (this.mode === 'visit') { o.spent = round2(a.spent); o.visits = a.servedAt.slice(); }
       return o;
     });
   }
@@ -1192,6 +1245,40 @@ export class Sim {
     return out.sort((p, q) => q.crossings - p.crossings);
   }
 
+  // Outcomes per kind of simulated person (§15a): byGroup (archetypes) and byCast (everyone who copies
+  // one cast member). An average is null when nobody in the segment counts toward it; frustration counts
+  // only agents who were asked.
+  segments() {
+    const route = this.mode === 'route';
+    const byArch = new Map(this.arch.map(ar => [ar, []])), byPersona = new Map(this.personas.map(P => [P, []]));
+    for (const a of this.agents) { byArch.get(a.arch).push(a); byPersona.get(a.persona).push(a); }
+    const mean = (list, f) => (list.length ? list.reduce((s, a) => s + f(a), 0) / list.length : null);
+    const entry = (id, name, group, ag) => {
+      const avgFrustration = mean(ag.filter(a => a.frustration != null), a => a.frustration);
+      if (route) {
+        const arrived = ag.filter(a => a.trip != null);
+        return { id, name, group, count: ag.length, avgTrip: mean(arrived, a => a.trip), avgDelay: mean(arrived, a => a.delay), avgFrustration };
+      }
+      const visits = new Map();
+      for (const a of ag) for (const pid of a.servedAt) visits.set(pid, (visits.get(pid) || 0) + 1);
+      const topPlaces = [...visits]
+        .map(([pid, k]) => ({ node: this.byId.get(pid), visits: k }))
+        .sort((p, q) => q.visits - p.visits || p.node.idx - q.node.idx)
+        .slice(0, TOP_PLACES)
+        .map(({ node, visits: k }) => ({ id: node.id, name: node.name, visits: k }));
+      return {
+        id, name, group, count: ag.length,
+        avgWait: mean(ag, a => a.waitTotal), avgSpent: mean(ag, a => a.spent), avgVisits: mean(ag, a => a.servedAt.length),
+        walkAwaysPerPerson: mean(ag, a => a.abandons), shareNeverServed: mean(ag, a => (a.served === 0 ? 1 : 0)),
+        avgFrustration, topPlaces
+      };
+    };
+    return {
+      byGroup: this.arch.map(ar => entry(ar.id, ar.name, ar.id, byArch.get(ar))),
+      byCast: this.personas.map(P => entry(P.id, P.name, P.arch.id, byPersona.get(P)))
+    };
+  }
+
   metrics() {
     const el = Math.max(this.t, this.dt);
     const byKind = {};
@@ -1210,7 +1297,8 @@ export class Sim {
         byArchetype: Object.fromEntries(this.arch.map(ar => [ar.id, avgF(felt.filter(a => a.arch === ar))]))
       },
       walls: { count: this.walls.length, checkedMoves: this.wallStats.checkedMoves, violations: this.wallStats.violations },
-      doors: this.doorMetrics()
+      doors: this.doorMetrics(),
+      offers: this.offers.map(o => ({ id: o.id, reached: o.reached.size, wentToPlace: o.went.size }))
     };
 
     if (this.mode === 'visit') {
@@ -1242,7 +1330,7 @@ export class Sim {
       return {
         mode: 'visit', minutes: el, spawned, active: spawned - this.finished, finished: this.finished,
         served, arrivals, abandoned, abandonRate: arrivals ? abandoned / arrivals : 0,
-        avgWait: waitN ? waitSum / waitN : 0, nodes, archetypes, ...common
+        avgWait: waitN ? waitSum / waitN : 0, nodes, archetypes, segments: this.segments(), ...common
       };
     }
 
@@ -1275,6 +1363,7 @@ export class Sim {
       avgTrip: done.reduce((s, a) => s + a.trip, 0) / k, avgFreeflow: done.reduce((s, a) => s + a.ff, 0) / k,
       avgDelay: done.reduce((s, a) => s + a.delay, 0) / k, edges, archetypes,
       od: Object.values(od).map(o => ({ route: o.route, trips: o.trips, avgTrip: o.tripSum / o.trips, freeflow: o.ff })),
+      segments: this.segments(),
       ...common
     };
   }

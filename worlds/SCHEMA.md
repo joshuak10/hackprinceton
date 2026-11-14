@@ -4,7 +4,7 @@ A **world** is one JSON file that describes a place, the people who come to it, 
 
 The engine is lenient: unknown or out-of-range values are clamped or replaced with defaults, and `swarm validate` lists every such fix as a warning. A few problems are fatal errors (section 9). Run `node bin/swarm.js validate worlds/<name>.json` after every edit.
 
-Contents: [1 Modes](#1-choose-a-mode) · [2 Top level](#2-top-level-fields) · [3 Arrivals](#3-arrivals) · [4 Nodes](#4-nodes) · [5 Edges](#5-edges-route-mode) · [6 Archetypes](#6-archetypes) · [7 The cast](#7-the-cast-minds) · [8 How fields drive decisions](#8-how-the-fields-drive-decisions) · [9 Validation](#9-validation-ids-and-references) · [10 What-if patches](#10-what-if-patches) · [11 Size and cost](#11-size-and-cost) · [12 Examples](#12-examples) · [13 Checklist](#13-checklist) · [14 Buildings: walls and doors](#14-buildings-walls-doors-and-floor-plans)
+Contents: [1 Modes](#1-choose-a-mode) · [2 Top level](#2-top-level-fields) · [3 Arrivals](#3-arrivals) · [4 Nodes](#4-nodes) · [5 Edges](#5-edges-route-mode) · [6 Archetypes](#6-archetypes) · [7 The cast](#7-the-cast-minds) · [8 How fields drive decisions](#8-how-the-fields-drive-decisions) · [9 Validation](#9-validation-ids-and-references) · [10 What-if patches](#10-what-if-patches) · [11 Size and cost](#11-size-and-cost) · [12 Examples](#12-examples) · [13 Checklist](#13-checklist) · [14 Buildings: walls and doors](#14-buildings-walls-doors-and-floor-plans) · [15 Targeted offers](#15-targeted-offers) · [16 Results by kind of person](#16-results-by-kind-of-person-spent-visits-and-segments)
 
 ---
 
@@ -44,6 +44,7 @@ Not modeled yet: resources held for a long time while doing other things (a park
 | `geo` | object | none | Scale and path clearance for a floor plan (section 14). |
 | `doors` | array, ≤ 500 | none | Doorway segments where foot traffic is counted (section 14). |
 | `provenance` | object, ≤ 300 keys | none | Where each number came from: `data`, `vision`, `assumed` or `owner-reported` (section 14). |
+| `offers` | array, ≤ 50 | none | Targeted offers: a message, and optionally a discount at one place, for some kinds of people (section 15). |
 
 ## 3. Arrivals
 
@@ -169,7 +170,7 @@ The cast is the heart of a world. Each agent is assigned one persona: first a gr
 
 ## 8. How the fields drive decisions
 
-Agents decide through Jev at decision moments. The engine computes the facts and turns them into words: waits, distances, prices and patience appear as phrases like "long, about 45 min" and "more than they will put up with". Jev sees the person (cast fields, group name, app or not), `context`, the time, their history so far, the valid options, and up to 4 recent remarks they heard. It never sees `appeal`, `weights` or `rationality`; those drive only the rules policy.
+Agents decide through Jev at decision moments. The engine computes the facts and turns them into words: waits, distances, prices and patience appear as phrases like "long, about 45 min" and "more than they will put up with". Jev sees the person (cast fields, group name, app or not), `context`, the time, their history so far, the valid options, up to 4 recent remarks they heard, and up to 3 offers they received (section 15). It never sees `appeal`, `weights` or `rationality`; those drive only the rules policy.
 
 **Visit mode moments:**
 - **Choose** (arrive, finish somewhere, walk away from a line, give up): which place next, or leave. Options are places not yet visited whose `tags` match the archetype's `needs`, each with its `about`, `tags` ("offers"), price, distance and line (if visible).
@@ -185,7 +186,7 @@ Agents decide through Jev at decision moments. The engine computes the facts and
 
 **Tags, needs and likes.** `needs` is the hard rule: an ER patient with `needs: ["general", "trauma"]` never sees an urgent care tagged only `minor`. Every archetype with `needs` must match at least one service, or it can go nowhere. `likes` is a soft pull in the rules policy, and the tags show up in what agents read.
 
-**Appeal and price (rules policy).** Each candidate place gets utility `weights.appeal × appeal × (1 + 0.6 × liked tags) − weights.wait × wait ÷ 20 − weights.distance × distance ÷ 40 − weights.price × price ÷ 20`, where wait counts only for informed agents. The choice is a softmax with sharpness `rationality`. Set `appeal` to match the `about` text so both policies agree.
+**Appeal and price (rules policy).** Each candidate place gets utility `weights.appeal × appeal × (1 + 0.6 × liked tags) − weights.wait × wait ÷ 20 − weights.distance × distance ÷ 40 − weights.price × price ÷ 20`, where wait counts only for informed agents and price is what this person would pay after any offer (section 15). The choice is a softmax with sharpness `rationality`. Set `appeal` to match the `about` text so both policies agree.
 
 **Route mode moments.** At trip start, when there are 2 or more sensible routes (up to 3 distinct paths whose free-flow time is within 1.6 × the best + 2 minutes), Jev picks one. Each route shows its usual time and, for informed agents, the current time. At trip end, if the trip took over 1.25 × free-flow, Jev rates frustration and whether they talk about the worst stretch. Between those moments agents follow their route.
 
@@ -198,7 +199,7 @@ Agents decide through Jev at decision moments. The engine computes the facts and
 - an edge `from`/`to`, archetype `origins`/`destinations`, or cast `entry`/`origin`/`destination` that names a node that does not exist;
 - with `walls` (section 14): more than 4000 walls, a node closer than 0.05 to a wall, a route link that touches a wall, or a visit place that cannot be reached on foot from any gate or entry or cannot reach any gate or exit.
 
-**Warnings** (it runs, but something was changed or looks wrong): a value clamped to its range, an unknown field, a missing cast, a service node no archetype's `needs` can reach, a dropped or clamped wall, a dropped door, a door that touches a wall or is not in a gap between walls, and an archetype `entries` or `exits` reference that names nothing usable (an unknown node, or a node of the wrong kind). Each message names the field path, e.g. `nodes[3].servers: 0 is below the minimum 1; using 1`. Fix warnings unless you meant them.
+**Warnings** (it runs, but something was changed or looks wrong): a value clamped to its range, an unknown field, a missing cast, a service node no archetype's `needs` can reach, a dropped or clamped wall, a dropped door, a door that touches a wall or is not in a gap between walls, an archetype `entries` or `exits` reference that names nothing usable (an unknown node, or a node of the wrong kind), and an offer reference that names nothing usable (an unknown group or cast member, which is dropped; an offer whose whole audience is unknown, which is dropped; or a `place` that is not a service, which becomes no place). Each message names the field path, e.g. `nodes[3].servers: 0 is below the minimum 1; using 1`. Fix warnings unless you meant them.
 
 Reference nodes and archetypes by `id`. Give every node and archetype an explicit `id` so references never depend on slugging.
 
@@ -211,7 +212,8 @@ Reference nodes and archetypes by `id`. Give every node and archetype an explici
   { "kind": "node", "id": "thunder", "field": "servers", "value": 16 },
   { "kind": "edge", "id": "elm>pine", "field": "closed", "value": 1 },
   { "kind": "archetype", "id": "minor", "field": "info", "value": 0.9 },
-  { "kind": "global", "field": "arrivals.end", "value": 150 }
+  { "kind": "global", "field": "arrivals.end", "value": 150 },
+  { "kind": "offer", "offer": { "id": "eastgate_half", "text": "Eastgate Urgent Care: seen in 20 minutes, half the ER price", "to": { "groups": ["minor"] }, "place": "eastgate", "priceOff": 0.5 } }
 ]
 ```
 
@@ -221,8 +223,9 @@ Reference nodes and archetypes by `id`. Give every node and archetype an explici
 | `edge` | `"from>to"` (either direction) or edge name | `capacity`, `length`, `closed` (value 1 removes the edge) |
 | `archetype` | archetype id or name | `info`, `patience`, `rationality`, `visits`, `share` |
 | `global` | none | `arrivals.total`, `arrivals.start`, `arrivals.end`, `travelSpeed` |
+| `offer` | none | not a field op: `{ "kind": "offer", "offer": { … } }` adds one offer with the fields of section 15 (`id`, `text`, `to`, `place`, `priceOff`, `from`, `until`) |
 
-`value` must be a number. Anything else is skipped and reported. Good patches are cheap, concrete levers: one more server at the top bottleneck, a wait-time screen (raise `info`), staggered arrivals (`arrivals.end`), a closed shortcut.
+For field ops, `value` must be a number. Anything else is skipped and reported. An offer op is reported as applied, e.g. `Offer eastgate_half · 50% off at Eastgate Urgent Care · to Minor injury` (in `er-network`); it is skipped when the offer would be dropped (no text and no discount to describe, or nobody it names exists) or the world already has 50 offers. An offer op whose `id` is already used gets a suffix. Good patches are cheap, concrete levers: one more server at the top bottleneck, a wait-time screen (raise `info`), staggered arrivals (`arrivals.end`), a closed shortcut, or a message or deal for the kind of person who has the worst time or spends the most (an `offer`).
 
 ## 11. Size and cost
 
@@ -401,3 +404,64 @@ Messages name walls by their position in your `walls` list. In a world with wall
   ]
 }
 ```
+
+## 15. Targeted offers
+
+An **offer** simulates reaching one kind of person with a message or a deal: a text, a flyer, an app notification, a sign at the door. It is information plus an optional price change. It never forces anyone anywhere: people still decide, and a deal only changes the price they weigh.
+
+`offers` is an optional array of up to 50:
+
+| Field | Type and range | Default | Meaning |
+|---|---|---|---|
+| `id` | string | `offer1`, `offer2`, … | Unique; duplicates get a suffix. |
+| `text` | string, ≤ 160 chars | see below | **What the person is told**, in plain words: `"Eastgate Urgent Care: seen in 20 minutes, half the ER price"`. Longer text is cut to 160. When it is missing, an offer with a `place` and a `priceOff` is told `"<N>% off at <place name>"`; any other offer without text is dropped. |
+| `to.groups` | archetype ids (or exact names) | `[]` | Groups that receive it. |
+| `to.cast` | cast member ids (or exact names) | `[]` | Everyone who copies one of these cast members receives it. |
+| `place` | visit service node id (or exact name), or `null` | `null` | The place the offer is about. |
+| `priceOff` | 0–1 | 0 | Discount at `place` for the people who receive it: `0.5` is half price. Ignored without a `place`. |
+| `from`, `until` | minutes after `clockStart`, 0 to `duration` | 0 and `duration` | The window when it is in effect, ends included. `until` is never before `from`. |
+
+**Who receives it.** A person receives an offer when they are in its audience (their group is in `to.groups` or their cast member is in `to.cast`; a missing or empty `to` means everyone) and the time is inside the window. Unknown ids are warnings and are dropped. An offer whose named audience is entirely unknown is dropped with a warning, so a typo never turns a targeted offer into one for everyone.
+
+**What changes for them.**
+- **What they see.** Every decision they make inside the window shows `offers`: up to 3 offer texts in world order. A discounted place's cost reads `"about $15 with the offer (usually about $30)"`. Jev's questions about where to go (`next_place`, `join`, `keep_waiting`, `route`) name `offers` when it is there; without offers the questions are worded exactly as before.
+- **What they pay.** The discounted price applies in what they are shown, in the rules policy's utility (section 8) and in what they spend. When several of their offers cover the same place, the largest discount applies; discounts do not stack. People pay the price they were shown when they chose the place, even if the window closes while they walk or wait.
+- Nobody else is affected, and the same seed still gives the same people arriving at the same times.
+
+**Route worlds** have no service places, so their offers are messages only (`place` is always `null`): a driver in the audience sees the texts when choosing a route.
+
+**Results.** `metrics().offers` is `[{ id, reached, wentToPlace }]`, in world order (`[]` without offers). `reached` counts distinct people who received the offer at a decision moment (arriving, reaching a place, after being served or walking away, a long wait, a route choice). `wentToPlace` counts those of them who then headed to its place. Compare `reached` and `wentToPlace` before and after with `swarm compare` and an offer patch (section 10).
+
+**Example.** Students get half price at the dearer bakery for the first two hours:
+
+```json
+"offers": [
+  { "id": "student_half", "text": "Student deal: half price at Maison Crumb this morning",
+    "to": { "groups": ["students"] }, "place": "maison_crumb", "priceOff": 0.5, "from": 0, "until": 120 }
+]
+```
+
+## 16. Results by kind of person: spent, visits and segments
+
+Every run reports outcomes by **kind of simulated person**: a group (archetype), or everyone who copies one cast member. A segment is a kind of simulated person, never a real individual, and reports say so.
+
+**Per agent** (`agents.json`, visit mode): `spent` is the dollars the agent paid in total, the price at each place that served it after any offer (rounded to cents). `visits` is the ids of the places that served it, in order. `visits.length` equals `served`. Route agents have neither.
+
+**`metrics().segments`** is `{ byGroup: [...], byCast: [...] }`: one entry per archetype, in world order, and one per cast member (plus a stand-in for a group without a cast). Counts add up to the number of agents in both lists.
+
+| Visit field | Meaning |
+|---|---|
+| `id`, `name` | The archetype's or cast member's id and name. |
+| `group` | The archetype id the segment belongs to (its own id in `byGroup`). |
+| `count` | Agents in the segment. |
+| `avgWait` | Minutes in lines per person. |
+| `avgSpent` | Dollars spent per person. |
+| `avgVisits` | Places served at per person. |
+| `walkAwaysPerPerson` | Lines walked away from or given up on, per person. |
+| `shareNeverServed` | Share of people served nowhere (0–1). |
+| `avgFrustration` | 0 (calm) to 4 (furious), averaged over the people who were asked; `null` when nobody was (the inline rules provider never asks). |
+| `topPlaces` | Up to 3 places where the segment was served most: `[{ id, name, visits }]`, busiest first. |
+
+Route entries are `{ id, name, group, count, avgTrip, avgDelay, avgFrustration }`, with trip and delay minutes averaged over the people who arrived. Any average is `null` when nobody in the segment counts toward it (for example a cast member nobody copied in this run).
+
+Use them to answer "who" questions ("which people overspend the most?", "who gives up most often?"), then test a targeted offer for that kind of person (section 15) on the same seeds.

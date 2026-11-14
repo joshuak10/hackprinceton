@@ -88,6 +88,7 @@ const ROUTES = [
   ['POST', ['runs'], postRun],
   ['GET', ['runs', ':id', 'status'], getStatus],
   ['GET', ['runs', ':id', 'agents', ':agentId'], getAgent],
+  ['GET', ['runs', ':id', 'advice'], getAdvice],
   ['GET', ['runs', ':id', ':file'], getRunFile]
 ];
 
@@ -325,6 +326,22 @@ async function getRunFile(ctx, req, res, { id, file }) {
   if (!(await sendFile(req, res, join(runDir(ctx, id), file + '.json'), TYPES['.json']))) {
     throw new HttpError(404, ctx.jobs.get(id)?.state === 'running' ? `Run ${id} is still running.` : `Run ${id} has no ${file}.json.`);
   }
+}
+
+// The advisor's saved answer (§15c): advice.json is required, advice.md is its readable twin.
+async function getAdvice(ctx, req, res, { id }) {
+  const dir = runDir(ctx, id);
+  const readText = async name => {
+    try { return await readFile(join(dir, name), 'utf8'); } catch (err) {
+      if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+      throw err;
+    }
+  };
+  const json = await readText('advice.json');
+  if (json === null) throw new HttpError(404, `Run ${id} has no advice yet.`);
+  let advice;
+  try { advice = JSON.parse(json); } catch { throw new HttpError(500, `Run ${id} has an advice.json that is not valid JSON.`); }
+  send(res, 200, { advice, markdown: (await readText('advice.md')) ?? '' });
 }
 
 async function getAgent(ctx, req, res, { id, agentId }) {
