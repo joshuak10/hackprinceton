@@ -695,3 +695,13 @@ button, input, select { font: inherit; color: inherit; }
 #map.editing { cursor: default; }
 #map.editing.grab { cursor: grab; }
 #map.editing.grabbing { cursor: grabbing; }
+
+/* Suggestion run: pick which run to show, and the two runs side by side */
+.fb-compare { margin-top: 8px; }
+.fb-compare select { max-width: 100%; min-width: 0; flex: 1; }
+.fb-preview-text { flex: 1; }
+.fb-run { margin: 14px 0 4px; }
+.fb-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-variant-numeric: tabular-nums; }
+.fb-table th, .fb-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; }
+.fb-table th:first-child { text-align: left; font-weight: 500; color: var(--label); }
+.fb-table tr:first-child th { color: var(--muted); font-size: 13.5px; font-weight: 600; }

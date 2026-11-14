@@ -55,7 +55,7 @@ writeFileSync(join(MOCK, 'index.json'), JSON.stringify({
   cases: {
     building: { ...CASES.building, file: 'mock/building-synthetic.json', place: 'Synthetic office and retail building', source: 'synthetic' },
     parking: { ...CASES.parking, file: 'mock/parking-synthetic.json', place: 'Synthetic retail center', source: 'synthetic' },
-    ...(sushiMeta ? { sushi: { label: 'Sushi restaurant', question: sushiMeta.question, file: 'mock/sushi-restaurant.json', place: 'Sushi restaurant', source: 'drawn', runTitle: sushiMeta.title } } : {})
+    ...(sushiMeta ? { sushi: { label: 'Sushi restaurant', question: sushiMeta.question, file: 'mock/sushi-restaurant.json', place: 'Sushi restaurant', source: 'drawn', runTitle: sushiMeta.title, suggestion: 'promotion' } } : {})
   }
 }, null, 2) + '\n');
 

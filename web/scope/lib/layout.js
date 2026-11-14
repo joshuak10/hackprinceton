@@ -166,6 +166,9 @@ export function layoutKey(spec) {
   return JSON.stringify(seatedPlaces(spec).map(p => [p.id, p.seats.map(s => [tidy(s.x), tidy(s.y)])]));
 }
 export const sameLayout = (a, b) => layoutKey(a) === layoutKey(b);
+// The same room with the same offers running: a run with a promotion is not a run of the room as it stands.
+export const offerKey = spec => JSON.stringify((spec.offers || []).map(o => [o.text, o.place ?? null, o.priceOff ?? 0]));
+export const sameWorld = (a, b) => sameLayout(a, b) && offerKey(a) === offerKey(b);
 
 // What changed against the base, in plain words, one entry per place that changed.
 export function describeChanges(base, edited) {
@@ -196,7 +199,7 @@ export function outcome(metrics) {
 export function pairRuns(baseSpec, editedSpec, runs) {
   const newest = new Map();
   for (const r of runs) {
-    const side = sameLayout(r.spec, editedSpec) ? 'after' : sameLayout(r.spec, baseSpec) ? 'before' : null;
+    const side = sameWorld(r.spec, editedSpec) ? 'after' : sameWorld(r.spec, baseSpec) ? 'before' : null;
     if (!side || !r.metrics) continue;
     const provider = r.meta.provider === 'replay' ? 'jev' : r.meta.provider;
     const k = `${side}|${provider}|${r.meta.seed}`;

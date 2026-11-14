@@ -20,7 +20,8 @@
       "file": "mock/sushi-restaurant.json",
       "place": "Sushi restaurant",
       "source": "drawn",
-      "runTitle": "Friday dinner at an eight-seat sushi restaurant (drawn from a sketch)"
+      "runTitle": "Friday dinner at an eight-seat sushi restaurant (drawn from a sketch)",
+      "suggestion": "promotion"
     }
   }
 }

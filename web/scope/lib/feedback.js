@@ -1,9 +1,9 @@
-// Suggestions for the run on screen (docs/PROTOTYPE.md §9b, §15c; docs/INSIGHTS.md).
-// Nothing is requested until someone clicks Suggestions. Then, in order:
-//   1. the advisor's tested advice for this run (GET /api/runs/:id/advice, written by `swarm advise`);
-//   2. otherwise the quick read (POST /api/insights): one pass over the run's recorded numbers whose
-//      suggestions are untested experiments.
-// Based on Justin's feedback panel (frontend-updates); restyled to the display and gated on click.
+// Suggestions for the run on screen (docs/PROTOTYPE.md §9b; docs/INSIGHTS.md).
+// For now there is ONE hard-coded suggestion: one more server at the run's worst bottleneck. It is a fixed rule,
+// not written by AI. Running it starts a new run of the same world and seed with that one change; the display then
+// offers a dropdown to switch between the baseline and the suggestion run, with the headline numbers side by side.
+// The advisor (GET /api/runs/:id/advice) and the quick read (POST /api/insights) are not called from here for now.
+// Based on Justin's feedback panel (frontend-updates); restyled to the display.
 
 const LABELS = {
   abandonRate: 'Walk-away rate', avgWait: 'Average wait', served: 'Served', abandoned: 'Walked away', spawned: 'People',
@@ -39,7 +39,91 @@ export function feedbackTarget(bundle, caseInfo) {
   return caseInfo?.runs?.length && runId ? { runId } : { caseId: caseInfo?.id };
 }
 
-export function createFeedback() {
+// The one hard-coded suggestion: add a server at the place with the highest bottleneck score in the run's metrics
+// (wait minutes + 30 for each person who walked away), or the first place with a line when there are no metrics.
+export function hardCodedSuggestion(spec, metrics) {
+  const places = (spec?.nodes || []).filter(n => n.kind === 'service');
+  if (!places.length) return null;
+  const scored = (metrics?.nodes || []).filter(m => places.some(p => p.id === m.id)).sort((a, b) => (b.score || 0) - (a.score || 0));
+  const node = places.find(p => p.id === scored[0]?.id) || places[0];
+  const from = Number(node.servers) || 1;
+  const m = scored[0]?.id === node.id ? scored[0] : null;
+  return {
+    id: 'add-server', nodeId: node.id, nodeName: node.name || node.id, from, to: from + 1,
+    label: `Add one more server at ${node.name || node.id}`,
+    change: `${node.name || node.id}: ${from} server${from === 1 ? '' : 's'} to ${from + 1}`,
+    why: m
+      ? `${node.name || node.id} is this run's worst bottleneck: ${Math.round(m.abandoned || 0)} people walked away and the average wait was ${valueWords('avgWait', m.avgWait)}.`
+      : `${node.name || node.id} is the first place with a line in this world.`
+  };
+}
+
+// The other hard-coded suggestion, for a small business that can run an offer (the sushi restaurant): a promotion
+// told to every person in the run. It is a fixed rule, not written by AI. It adds a reason to come in and to wait.
+// It does not add seats or bring more people to the door, so it may not serve more people; the run shows what it
+// does. In the world it is three offers (docs/PROTOTYPE.md §15b): the message for everyone, and the discount at
+// each place, so the price a person is told and pays is the promotion price.
+export const PROMOTION_OFF = 0.2;
+export function promotionSuggestion(spec) {
+  const places = (spec?.nodes || []).filter(n => n.kind === 'service').slice(0, 2);     // a person is shown three offers at most
+  if (!places.length) return null;
+  const pct = Math.round(PROMOTION_OFF * 100);
+  const text = `Promotion today: ${pct}% off everything for everyone who comes in.`;
+  const names = places.map(p => p.name || p.id).join(' and ');
+  return {
+    id: 'promotion', short: 'Promotion', withLabel: 'With the promotion', runLabel: 'Simulate the promotion',
+    label: `Run a promotion: ${pct}% off today`,
+    why: 'A promotion gives people one more reason to come in and to wait for a place. It does not add seats or bring more people to the door, so it may not serve more people. The run shows what it does to the line and to who gives up.',
+    change: `Every person is told "${text}" and pays ${pct}% less at ${names}`,
+    note: 'One hard-coded suggestion for now. It is a fixed rule, not written by AI: a promotion that every person in the run is told about.',
+    offers: [
+      { id: 'promotion', text },
+      ...places.map(p => ({ id: `promotion_${p.id}`, text: `${pct}% off at ${p.name || p.id} today`, place: p.id, priceOff: PROMOTION_OFF }))
+    ]
+  };
+}
+
+// Which suggestion a case offers: the promotion where the case asks for it, one more server otherwise.
+export function suggestionFor(caseInfo, spec, metrics) {
+  return caseInfo?.suggestion === 'promotion' ? promotionSuggestion(spec) : hardCodedSuggestion(spec, metrics);
+}
+
+// The world with the suggestion applied. The input is not changed.
+export function applySuggestion(spec, s) {
+  const out = JSON.parse(JSON.stringify(spec));
+  if (s.id === 'promotion') {
+    out.offers = [...(out.offers || []).filter(o => !String(o.id).startsWith('promotion')), ...s.offers];
+    return out;
+  }
+  const node = (out.nodes || []).find(n => n.id === s.nodeId);
+  if (!node) throw new Error(`This world has no place "${s.nodeId}" to change.`);
+  node.servers = s.to;
+  return out;
+}
+
+// Headline numbers of two runs side by side: [{ label, key, before, after }].
+export function compareRows(before, after, s) {
+  const rows = ['abandoned', 'abandonRate', 'avgWait', 'served'].map(key => ({ label: keyLabel(key), key, before: before?.[key], after: after?.[key] }));
+  const at = (m, k) => (m?.nodes || []).find(n => n.id === s?.nodeId)?.[k];
+  if (s?.nodeId) {
+    rows.push({ label: `Average wait at ${s.nodeName}`, key: 'avgWait', before: at(before, 'avgWait'), after: at(after, 'avgWait') });
+    rows.push({ label: `Walked away at ${s.nodeName}`, key: 'abandoned', before: at(before, 'abandoned'), after: at(after, 'abandoned') });
+  }
+  if (s?.id === 'promotion') {
+    // A promotion touches every place, so each place gets its rows, and the money taken is shown beside the people.
+    const place = (m, id, k) => (m?.nodes || []).find(n => n.id === id)?.[k];
+    for (const n of after?.nodes || before?.nodes || []) {
+      rows.push({ label: `Served at ${n.name}`, key: 'served', before: place(before, n.id, 'served'), after: place(after, n.id, 'served') });
+      rows.push({ label: `Average wait at ${n.name}`, key: 'avgWait', before: place(before, n.id, 'avgWait'), after: place(after, n.id, 'avgWait') });
+    }
+    const told = (after?.offers || []).find(o => o.id === 'promotion')?.reached;
+    if (told != null) rows.push({ label: 'People told about the promotion', key: 'spawned', before: 0, after: told });
+  }
+  return rows;
+}
+
+// onRun(): start the suggestion run. onPick(runId): show that run.
+export function createFeedback({ onRun, onPick } = {}) {
   const $ = id => document.getElementById(id);
   const el = (tag, cls, text) => {
     const e = document.createElement(tag);
@@ -48,200 +132,95 @@ export function createFeedback() {
     return e;
   };
   const dialog = $('feedbackDialog');
-  let target = null, question = '', state = 'idle', result = null, controller = null, generation = 0;
+  // ctx: { suggestion, canRun, cannotRunWhy, runNote, compare: { options: [{ runId, label }], selected, rows, note } | null }
+  let ctx = null;
 
   const setExpanded = v => $('feedbackBtn').setAttribute('aria-expanded', String(v));
   $('feedbackBtn').addEventListener('click', open);
   $('feedbackOpen').addEventListener('click', open);
   $('feedbackClose').addEventListener('click', () => dialog.close());
-  $('feedbackRetry').addEventListener('click', () => request());
   dialog.addEventListener('close', () => setExpanded(false));
+  $('feedbackCompareSel').addEventListener('change', e => onPick?.(e.target.value));
+  $('feedbackRetry').hidden = true;
 
-  // A new run on screen: forget the old result and cancel any request in flight.
-  function reset(next, q = '') {
-    controller?.abort();
-    generation++;
-    target = next; question = q || ''; state = 'idle'; result = null;
-    $('feedbackBtn').disabled = !next;
-    $('feedbackPreview').hidden = true;
-    if (dialog.open) dialog.close();
+  // A new run on screen (or its comparison arrived): show what belongs to it.
+  function reset(next) {
+    ctx = next || null;
+    $('feedbackBtn').disabled = !ctx?.suggestion;
+    if (dialog.open && !ctx?.suggestion) dialog.close();
+    render();
   }
 
   function open() {
-    if (!target) return;
+    if (!ctx?.suggestion) return;
     dialog.showModal();
     setExpanded(true);
-    if (state === 'idle' || state === 'error') request();
-    else render();
-  }
-
-  async function request() {
-    controller?.abort();
-    controller = new AbortController();
-    const ctl = controller, { signal } = ctl;
-    const mine = ++generation;
-    const timer = setTimeout(() => ctl.abort(), 60000);
-    state = 'loading';
-    render();
-    try {
-      let advice = null;
-      if (target.runId) {
-        const res = await fetch(`/api/runs/${encodeURIComponent(target.runId)}/advice`, { signal, cache: 'no-cache' });
-        if (res.ok) advice = (await res.json()).advice;
-        else if (res.status !== 404) throw new Error(`Loading this run's advice failed (${res.status}).`);
-      }
-      if (advice) {
-        result = { kind: 'advice', advice };
-      } else {
-        const res = await fetch('/api/insights', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
-          body: JSON.stringify({ ...target, question })
-        });
-        const report = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(res.status === 404
-            ? 'This server has no suggestions endpoint. Serve the display with node bin/swarm.js serve (or npm run web for mock runs).'
-            : report.error || `The quick read failed (${res.status}).`);
-        }
-        result = { kind: 'insights', report };
-      }
-      if (mine !== generation) return;
-      state = 'ready';
-    } catch (err) {
-      if (mine !== generation) return;
-      state = 'error';
-      result = { error: err.name === 'AbortError' ? 'The request took longer than a minute. Try again.' : err.message };
-    } finally {
-      clearTimeout(timer);
-    }
     render();
   }
 
-  // ---------- rendering ----------
+  function picker(id) {
+    const sel = el('select');
+    if (id) sel.id = id;
+    sel.setAttribute('aria-label', 'Run to show');
+    fillPicker(sel);
+    sel.addEventListener('change', e => { if (dialog.open) dialog.close(); onPick?.(e.target.value); });
+    return sel;
+  }
+  function fillPicker(sel) {
+    sel.replaceChildren(...(ctx?.compare?.options || []).map(o => {
+      const opt = el('option', null, o.label);
+      opt.value = o.runId;
+      opt.selected = o.runId === ctx.compare.selected;
+      return opt;
+    }));
+  }
+
   function render() {
-    const body = $('feedbackBody');
-    $('feedbackRetry').hidden = state !== 'error';
-    body.setAttribute('aria-busy', String(state === 'loading'));
+    const cmp = ctx?.compare;
     const preview = $('feedbackPreview');
-    preview.hidden = state === 'idle';
-    if (state === 'loading') {
-      body.replaceChildren(el('p', 'fb-status', target.runId ? 'Looking for tested advice on this run…' : 'Reading the run’s recorded numbers…'));
-      $('feedbackStatus').textContent = 'Preparing suggestions…';
-      $('feedbackSummary').textContent = '';
-      return;
+    preview.hidden = !cmp;
+    if (cmp) {
+      $('feedbackStatus').textContent = ctx.suggestion.id === 'promotion' ? 'Promotion simulated' : 'Suggestion tested';
+      $('feedbackSummary').textContent = ctx.suggestion.label;
+      fillPicker($('feedbackCompareSel'));
     }
-    if (state === 'error') {
-      body.replaceChildren(el('p', 'fb-error', result.error));
-      $('feedbackStatus').textContent = 'Suggestions unavailable';
-      $('feedbackSummary').textContent = result.error;
-      return;
-    }
-    if (state !== 'ready') return;
-    if (result.kind === 'advice') renderAdvice(body, result.advice);
-    else renderInsights(body, result.report);
-  }
-
-  function renderAdvice(body, a) {
-    const start = (a.transcript || []).find(s => s.kind === 'start') || {};
-    const tests = (a.experiments || []).filter(e => !e.confirms).length;
-    $('feedbackStatus').textContent = 'Tested advice';
-    $('feedbackSummary').textContent = a.answer || '';
-    const out = [];
-    out.push(el('p', 'fb-source', `Tested advice from the advisor: ${tests} experiment${tests === 1 ? '' : 's'} on seeds ${(start.seeds || []).join(', ') || 'n/a'}, decisions by ${start.provider || 'n/a'}${start.model ? `, written by ${start.model}` : ''}.`));
-    if (start.question) out.push(el('p', 'fb-question', start.question));
-    out.push(el('p', 'fb-lead', a.answer || 'The advisor gave no answer.'));
-
-    const recs = a.recommendations || [];
-    out.push(el('h3', null, recs.length ? 'Recommended changes, measured on the same crowd' : 'No tested change is recommended'));
-    for (const r of recs) {
-      const card = el('article', 'fb-card');
-      card.append(el('h4', null, r.label));
-      if (r.why) card.append(el('p', null, r.why));
-      const effects = Object.entries(r.effect || {}).filter(([, m]) => m);
-      if (effects.length) {
-        const ul = el('ul', 'fb-effects');
-        for (const [k, m] of effects) ul.append(el('li', null, effectWords(k, m)));
-        card.append(ul);
+    if (!dialog.open || !ctx?.suggestion) return;
+    const s = ctx.suggestion, out = [];
+    out.push(el('p', 'fb-source', s.note || 'One hard-coded suggestion for now. It is a fixed rule, not written by AI: one more server at the run\'s worst bottleneck.'));
+    const card = el('article', 'fb-card');
+    card.append(el('h4', null, s.label), el('p', null, s.why), el('p', 'fb-kicker', 'What changes'), el('p', null, `${s.change}. Everything else stays the same: same world, same people, same seed.`));
+    if (!cmp) {
+      if (ctx.canRun) {
+        const row = el('p', 'fb-run');
+        const btn = el('button', 'btn primary', s.runLabel || 'Run this suggestion');
+        btn.type = 'button';
+        btn.addEventListener('click', () => { dialog.close(); onRun?.(); });
+        row.append(btn);
+        card.append(row);
+        if (ctx.runNote) card.append(el('p', 'fb-note', ctx.runNote));
+      } else {
+        card.append(el('p', 'fb-note', ctx.cannotRunWhy || 'This run cannot be re-run from here.'));
       }
-      const tags = el('p', 'fb-tags');
-      tags.append(
-        el('span', 'tag', `${r.confidence || 'unknown'} confidence`),
-        el('span', 'tag', r.holdsAcrossSeeds ? 'holds across seeds' : 'does not hold across seeds'),
-        el('span', 'tag', `tested with ${r.testedWith || 'n/a'}`)
-      );
-      if (r.confirmation) tags.append(el('span', 'tag', r.confirmation.agrees ? `confirmed with ${r.confirmation.testedWith}` : `${r.confirmation.testedWith} disagrees`));
-      card.append(tags);
-      if (r.costNote) card.append(el('p', 'fb-note', `Cost: ${r.costNote}`));
-      out.push(card);
     }
-    const cautions = a.cautions || [];
-    const notTested = cautions.filter(c => c.startsWith('Could not test: ')).map(c => c.slice('Could not test: '.length));
-    const plain = cautions.filter(c => !c.startsWith('Could not test: '));
-    out.push(list('Cautions', plain), list('What could not be tested', notTested), list('Next steps', a.nextSteps || []), list('Findings', a.findings || []));
-    const exps = a.experiments || [];
-    if (exps.length) {
-      const details = el('details', 'fb-more');
-      details.append(el('summary', null, `Every experiment (${exps.length})`));
-      for (const e of exps) {
-        const kpis = Object.entries(e.kpis || {}).filter(([, v]) => v && typeof v.change === 'number')
-          .map(([k, v]) => `${keyLabel(k)} ${v.change > 0 ? '+' : ''}${valueWords(k, v.change)}`).join(', ');
-        details.append(el('p', null, `${e.n}. ${e.label}: ${e.verdict || 'no verdict'}${kpis ? ` (${kpis})` : ''}`));
+    out.push(card);
+    if (cmp) {
+      out.push(el('h3', null, 'Compare the two runs'));
+      const pick = el('label', 'runpick fb-compare');
+      pick.append(el('span', null, 'Showing'), picker());
+      out.push(pick);
+      const table = el('table', 'fb-table');
+      const head = el('tr');
+      head.append(el('th', null, ''), el('th', null, 'Baseline'), el('th', null, s.withLabel || 'With the suggestion'));
+      table.append(head);
+      for (const r of cmp.rows || []) {
+        const tr = el('tr');
+        tr.append(el('th', null, r.label), el('td', null, valueWords(r.key, r.before)), el('td', null, valueWords(r.key, r.after)));
+        table.append(tr);
       }
-      out.push(details);
+      out.push(table);
+      out.push(el('p', 'fb-note', cmp.note || 'One seed each, so small differences may be noise. Pick a run above to watch it; the time on the slider is kept.'));
     }
-    body.replaceChildren(...out.filter(Boolean));
-  }
-
-  function renderInsights(body, report) {
-    const claude = report.source === 'claude';
-    $('feedbackStatus').textContent = 'Quick read';
-    $('feedbackSummary').textContent = report.summary || '';
-    const out = [];
-    out.push(el('p', 'fb-source', claude
-      ? `Quick read by Claude (${report.model}) from this run's recorded numbers. Its suggestions are untested.`
-      : 'Quick read from this run’s recorded numbers (no AI). Its suggestions are untested.'));
-    if (target.runId) {
-      const hint = el('p', 'fb-note');
-      hint.append('No tested advice for this run yet. For tested recommendations, run the advisor on its world, for example ');
-      hint.append(el('code', null, 'node bin/swarm.js advise data/worlds/floor1-lunch.json'));
-      hint.append(' (needs an Anthropic key), or /advise in Claude Code. Its advice shows here for the runs it creates.');
-      out.push(hint);
-    }
-    const q = report.evidence?.question || report.evidence?.title;
-    if (q) out.push(el('p', 'fb-question', q));
-    out.push(el('p', 'fb-lead', report.summary || ''));
-    const facts = new Map((report.evidence?.facts || []).map(f => [f.id, f]));
-    for (const f of report.findings || []) {
-      const card = el('article', 'fb-card');
-      card.append(el('h4', null, f.title), el('p', null, f.observation));
-      const refs = (f.evidenceIds || []).map(id => facts.get(id)).filter(Boolean);
-      if (refs.length) {
-        const ul = el('ul', 'fb-effects');
-        for (const r of refs) ul.append(el('li', null, `${r.label}: ${r.value} ${r.unit}${r.sampleSize ? ` (${r.sampleSize} people)` : ''}`));
-        card.append(ul);
-      }
-      card.append(el('p', 'fb-kicker', 'Experiment to try'), el('p', null, f.suggestion), el('p', 'fb-kicker', 'How to check it'), el('p', null, f.validation));
-      out.push(card);
-    }
-    out.push(list('What this run can tell you', report.limitations || []));
-    const all = report.evidence?.facts || [];
-    if (all.length) {
-      const details = el('details', 'fb-more');
-      details.append(el('summary', null, `All ${all.length} numbers used`));
-      for (const f of all) details.append(el('p', null, `${f.label}: ${f.value} ${f.unit}`));
-      out.push(details);
-    }
-    body.replaceChildren(...out.filter(Boolean));
-  }
-
-  function list(title, items) {
-    if (!items.length) return null;
-    const sec = el('section', 'fb-list');
-    sec.append(el('h3', null, title));
-    const ul = el('ul');
-    for (const t of items) ul.append(el('li', null, t));
-    sec.append(ul);
-    return sec;
+    $('feedbackBody').replaceChildren(...out);
   }
 
   return { reset, open };
