@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.24 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.25 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Direction (Nov 14, v0.24):** the product now targets **independent local businesses**, starting with counter-service food and drink. Owners can test a change on a simulated copy of their own customers before trying it on real ones. The use case is specified in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md). Everything below still describes the engine and the earlier building work, and [docs/PROTOTYPE.md](docs/PROTOTYPE.md) still governs the code.
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
@@ -417,6 +417,18 @@ Pitch lines:
 
 ## 14. Change log
 
+- **v0.25 · Nov 14, 2026.** Waiting options, and what Jev does with a person's own situation. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §16.
+  - **Finding:** the engine's own words decided most of Jev's answers about lines. It turned each group's patience number into a sentence ("more than they will put up with"), and Jev reads literally. Five fictional emergency-room patients in the identical situation (450 Jev calls) differed by 15 to 16 points in "keep waiting" with that sentence and by 30 to 37 points without it.
+  - **Change** `[built]`: an optional `waiting` object on visit worlds. `tellPatience: false` leaves the verdict out, so Jev judges from the person. `askAgainEvery: N` re-asks "keep waiting?" every N minutes and forces nobody out. Both default to the old behavior: worlds without the field hash, record and replay exactly as before (720 tests pass; a Jev run recorded earlier replays with 0 misses and identical files). Fit-outs pass the field through. Rules runs are unaffected.
+  - **Checked on full runs** `[confirmed]`: a fictional emergency department, 200 patients, seeds 7 to 9, with Jev. At the door of the busiest place, who the person is explained 5% of the variation in Jev's chance of joining the line with the sentence and 44% without it (about 90 decisions each way; no shuffle of who-is-who in 5,000 came close to the second figure).
+  - **Messages, measured by asking recorded decisions again with one sentence added** `[confirmed]`:
+    - A message that names a real alternative works on the people it is for: "the clinic next door can see you in about 20 minutes for about $150" moved minor patients choosing that clinic from 65% to 82%. A neutral message and an unrelated one moved nobody.
+    - On stay-or-leave questions, any added sentence raised staying by about 6 points, even one about restrooms. A message must be compared with a neutral message of the same length, never with no message.
+    - Reassuring wording moved people by under 8 points. Of seven predictions written before the runs, two or three held.
+  - **Not shown:** a message's effect on a whole simulated day. Over three seeds the clinic message shifted minor patients by about 10 points, the neutral message by 9, and two identical baseline runs differed by 10. That needs 10 to 20 seeds.
+  - **What this means for the independent-business product:** set `waiting.tellPatience: false` in shop worlds, so that "which customers would leave" comes from the customer and not from a patience number we typed. Test price, menu and sign wording against a neutral message. Report a message's effect from paired re-asks, and a whole-day effect only when it beats the gap between two baseline runs.
+  - `[open]` Simulated people are still unvalidated. `feeling` is still handed to Jev as a preset word. There is no "speak up" action, so a message like "tell the desk and you go first" can only be answered by staying or leaving.
+  - The emergency-department world and the test scripts are on the build machine under `data/er/` and are not in the repo.
 - **v0.24 · Nov 14, 2026.** New direction: independent local businesses. **Decision (team):** the product targets local, independent businesses that cannot afford consultants for financial or operational decisions. These owners often avoid changes (prices, menu, hours, staffing, layout) because one mistake can lose regulars.
   - **The edge:** a quick, cheap simulation of their own customers, checked against their own numbers, that says which customers would leave. Each answer ends with a small real-world trial.
   - **Starting point:** counter-service food and drink (cafés, bakeries, sandwich and bubble-tea shops).
