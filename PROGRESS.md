@@ -148,6 +148,8 @@ None of this is in the repo. Each teammate needs their own copy.
 | CoStar records for the building, the dossier, the neighborhood study, the simulation inputs | `data/costar/6FNMVoyPrL1/` | Generated from the kit on the build machine. Ask the teammate who ran the build for a copy. |
 | Real-building worlds (they contain the floor plan) | `data/worlds/` | Step 2 above |
 | Recorded runs | `runs/` | Created by `swarm run` |
+| CoStar kit (unzipped) | `costar-hackathon-kit/` | "Download the hackathon kit" in Discord. Gitignored. |
+| Independent-business lists and their changes | `data/costar/` | `scripts/costar/` (see its README) |
 
 ## Known limits
 
