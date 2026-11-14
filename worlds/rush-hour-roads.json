@@ -1,6 +1,7 @@
 {
   "title": "Morning rush across the Kessel River",
   "question": "Which road segment is the bottleneck, and do navigation apps help or make it worse?",
+  "context": "Weekday morning rush in a river city. Commuters drive from Maple Heights and Lakeshore across the Kessel River to Downtown and Tech Park, and there are only a few crossings.",
   "mode": "route",
   "duration": 180,
   "clockStart": 390,

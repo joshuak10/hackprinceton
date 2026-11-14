@@ -1,6 +1,8 @@
 {
   "title": "Friday night ER load in Larkfield",
   "question": "Which emergency department gets overwhelmed first, what do patients actually want, and how many leave without being seen?",
+  "context": "Friday night in Larkfield. People with injuries and sudden illnesses are deciding where to get care: a trauma center, a community ER, a children's hospital, or an urgent care or walk-in clinic.",
+  "leaveLabel": "Go home without being seen",
   "mode": "visit",
   "duration": 720,
   "clockStart": 1080,

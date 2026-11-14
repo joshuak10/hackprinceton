@@ -1,6 +1,8 @@
 {
   "title": "Saturday at Gravity Grove",
   "question": "Which attraction is the real bottleneck, and where should we add capacity or change prices?",
+  "context": "A hot, busy Saturday at Gravity Grove, a regional theme park. Guests are deciding which rides and food stands to line up for, and when to call it a day.",
+  "leaveLabel": "Leave the park and head home",
   "mode": "visit",
   "duration": 600,
   "clockStart": 600,

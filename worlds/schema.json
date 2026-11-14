@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://swarmscope.local/worlds/schema.json",
+  "title": "Swarmscope world",
+  "description": "One simulated place, its people and the question to answer. See worlds/SCHEMA.md for guidance. Fields listed as required are what a complete world should contain; the engine fills defaults for anything missing and reports each fix as a warning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "question", "context", "mode", "duration", "clockStart", "arrivals", "nodes", "archetypes", "minds"],
+  "properties": {
+    "title": { "type": "string", "maxLength": 80, "default": "Untitled world", "description": "Short name of the world." },
+    "question": { "type": "string", "maxLength": 400, "default": "Where are the bottlenecks?", "description": "The decision the run informs, phrased as a ranking question (which, where, which fix)." },
+    "context": { "type": "string", "maxLength": 300, "description": "One or two sentences every agent is told about the setting: day, time, place, what people are doing. Defaults to the title." },
+    "leaveLabel": { "type": "string", "maxLength": 60, "default": "Leave and go home", "description": "Visit mode: label of the leave option, e.g. 'Give up and eat somewhere else'." },
+    "mode": { "enum": ["visit", "route"], "default": "visit", "description": "visit: people choose among places that each have a line and servers. route: people travel from an origin to a destination through a network of capacity-limited links (roads, or corridors, doors, turnstiles and elevators in a building)." },
+    "duration": { "type": "integer", "minimum": 30, "maximum": 1440, "description": "Simulated minutes. Default 600 (visit) or 180 (route). Leave time after arrivals.end for people to finish." },
+    "clockStart": { "type": "integer", "minimum": 0, "maximum": 1439, "default": 480, "description": "Wall-clock time at minute 0, in minutes after midnight (690 = 11:30 am)." },
+    "travelSpeed": { "type": "number", "minimum": 0.2, "maximum": 60, "default": 4, "description": "Visit mode: map units per minute. The map is 100 x 100 units; walking time = distance / travelSpeed + 0.5 min." },
+    "arrivals": { "$ref": "#/$defs/arrivals" },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 60,
+      "description": "Visit: gate/entry/exit/service places. Route: origin/destination/intersection points.",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 150,
+      "description": "Route mode only (required there): links between nodes.",
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "archetypes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "description": "2-4 behavioral groups with shares of arrivals.",
+      "items": { "$ref": "#/$defs/archetype" }
+    },
+    "minds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 40,
+      "description": "The cast: write 10-20 concrete invented people with situations, constraints, loyalties, who they listen to, and app or no app. Every archetype needs at least one persona, or it gets no agents.",
+      "items": { "$ref": "#/$defs/persona" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,40}$",
+      "description": "Lowercase letters, digits and underscores, at most 40 characters. Other characters are replaced with underscores."
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "type": "string", "pattern": "^[a-z0-9_ -]+$" },
+      "description": "Lowercase tags."
+    },
+    "arrivals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "start", "end", "shape"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 10, "maximum": 5000, "default": 800, "description": "Number of agents over the whole run. Drives cost." },
+        "start": { "type": "number", "minimum": 0, "default": 0, "description": "Minutes after clockStart of the first arrival; at most duration - 1." },
+        "end": { "type": "number", "minimum": 1, "description": "Minutes after clockStart of the last arrival; between start + 1 and duration. Default 0.6 x duration." },
+        "shape": { "enum": ["uniform", "peak", "early", "late", "poisson"], "default": "peak", "description": "uniform: flat. peak: busiest halfway between start and end. early: front-loaded. late: back-loaded. poisson: constant-rate random gaps." }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "maxLength": 40, "description": "Shown to agents and in reports." },
+        "kind": { "enum": ["gate", "entry", "exit", "service", "origin", "destination", "intersection"], "description": "Visit mode: gate (entrance and exit), entry, exit, service (a place with a line; at least one required). Route mode: origin, destination, intersection (any junction, lobby, landing or turnstile line)." },
+        "x": { "type": "number", "minimum": 3, "maximum": 97, "default": 50, "description": "Map position, x to the right." },
+        "y": { "type": "number", "minimum": 3, "maximum": 97, "default": 50, "description": "Map position, y downward." },
+        "weight": { "type": "number", "minimum": 0.01, "default": 1, "description": "Visit gate/entry: relative share of arrivals entering here." },
+        "servers": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 10, "description": "Visit service: people served at the same time (desks, beds, cooks, seats)." },
+        "serviceTime": { "type": "number", "minimum": 0.2, "maximum": 720, "default": 5, "description": "Visit service: average minutes per person per server. Capacity per hour = servers / serviceTime x 60." },
+        "serviceDist": { "enum": ["uniform", "exp", "fixed"], "default": "uniform", "description": "Visit service: spread of service times. uniform 0.6-1.4 x serviceTime, exponential with mean serviceTime, or fixed." },
+        "appeal": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5, "description": "Visit service: popularity and reputation as a number, used by the rules policy. Keep it consistent with about." },
+        "price": { "type": "number", "minimum": 0, "default": 0, "description": "Visit service: dollars per person. Agents see 'free' or 'about $N'." },
+        "tags": { "$ref": "#/$defs/tags", "description": "Visit service: what the place offers. Matched against archetype needs (hard filter) and likes (soft preference)." },
+        "about": { "type": "string", "maxLength": 160, "description": "Visit service: the reputation agents read, in plain words (known for, rumors, quirks)." }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string", "description": "Node id where the link starts." },
+        "to": { "type": "string", "description": "Node id where the link ends. Avoid two edges with the same from and to; add an intermediate node instead." },
+        "name": { "type": "string", "maxLength": 40, "description": "Shown to agents (route labels) and in reports." },
+        "length": { "type": "number", "minimum": 0.2, "maximum": 180, "description": "Free-flow travel time in minutes. Default: half the map distance between the ends." },
+        "capacity": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 100, "description": "bpr: people or vehicles on the link at once before it slows (+15% at capacity, 3.4x at double). linear: throughput in people per minute." },
+        "twoWay": { "type": "boolean", "default": true, "description": "false for one-direction links (one-way streets, up-only elevators, entry turnstiles)." },
+        "costModel": { "enum": ["bpr", "linear"], "default": "bpr", "description": "bpr (roads, corridors, stairs): time = length x (1 + 0.15 x min(3, load/capacity)^4). linear (doors, turnstiles, escalators, elevators): time = length + load / capacity." }
+      }
+    },
+    "archetype": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "share"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "maxLength": 40, "description": "Group name, shown to agents." },
+        "description": { "type": "string", "maxLength": 200, "description": "One line about the group." },
+        "share": { "type": "number", "exclusiveMinimum": 0, "default": 1, "description": "Relative share of arrivals; normalized to sum to 1." },
+        "info": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5, "description": "Chance an agent has live information: a wait-time app (visit) or live traffic (route)." },
+        "rationality": { "type": "number", "minimum": 0.05, "maximum": 10, "description": "Rules-policy sharpness (rules provider, outage fallback, link-by-link moves). Default 2.5 (visit) or 0.8 (route). Jev decisions do not use it." },
+        "weights": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Visit: rules-policy utility weights.",
+          "properties": {
+            "appeal": { "type": "number", "minimum": 0, "maximum": 5, "default": 1 },
+            "wait": { "type": "number", "minimum": 0, "maximum": 5, "default": 1 },
+            "distance": { "type": "number", "minimum": 0, "maximum": 5, "default": 1 },
+            "price": { "type": "number", "minimum": 0, "maximum": 5, "default": 0.5 }
+          }
+        },
+        "visits": { "type": "integer", "minimum": 1, "maximum": 30, "default": 3, "description": "Visit: most places a person is served at before leaving (ER 1, food hall 2-3, theme park 4-8)." },
+        "patience": { "type": "number", "minimum": 1, "maximum": 1440, "default": 45, "description": "Visit: minutes of waiting in one line this group puts up with." },
+        "likes": { "$ref": "#/$defs/tags", "description": "Visit: soft preference for places with these tags." },
+        "needs": { "$ref": "#/$defs/tags", "description": "Visit: hard filter; only places with at least one of these tags are options. Empty means every place. Must match at least one service." },
+        "origins": { "type": "array", "items": { "type": "string" }, "description": "Route: origin node ids where this group's trips start. Default all origins." },
+        "destinations": { "type": "array", "items": { "type": "string" }, "description": "Route: destination node ids where this group's trips end. Default all destinations." }
+      }
+    },
+    "persona": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "archetype", "bio"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "maxLength": 40, "description": "Realistic invented full name; never a real person." },
+        "age": { "type": ["integer", "null"], "minimum": 0, "maximum": 110 },
+        "archetype": { "type": "string", "description": "Archetype id." },
+        "bio": { "type": "string", "maxLength": 240, "description": "Their situation right now: why they are here, what is at stake, deadlines." },
+        "personality": { "type": "string", "maxLength": 160, "description": "A few traits that change choices." },
+        "goal": { "type": "string", "maxLength": 160, "description": "What they want from this visit or trip." },
+        "social": { "type": "string", "maxLength": 160, "description": "Who they listen to: a spouse, a group chat, the radio, the app, the crowd, nobody." },
+        "informed": { "type": "boolean", "description": "Whether this person has the wait-time app or live traffic. Default: archetype info >= 0.5." },
+        "weight": { "type": "number", "minimum": 0.05, "maximum": 20, "default": 1, "description": "Relative frequency within the archetype." },
+        "entry": { "type": "string", "description": "Visit: gate or entry node id this persona usually comes in through." },
+        "origin": { "type": "string", "description": "Route: origin node id of this persona's trip." },
+        "destination": { "type": "string", "description": "Route: destination node id of this persona's trip." }
+      }
+    }
+  }
+}

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Swarmscope</title>
+<meta name="description" content="Replay crowd simulations where every agent decides through Jev.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <canvas id="logo" width="88" height="88" aria-hidden="true"></canvas>
+      <h1>Swarmscope</h1>
+    </div>
+    <div class="top-side">
+      <p class="tagline">Claude imagines the people. Jev makes each of them decide. Every decision is recorded, so any run replays here exactly.</p>
+      <div class="row">
+        <span class="pill" id="healthJev">checking keys…</span>
+        <span class="pill" id="healthClaude" hidden></span>
+        <button class="btn small" id="themeBtn" type="button">Theme: auto</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="command" aria-label="Run a world">
+    <div class="runbar">
+      <label class="field grow">
+        <span class="eyebrow">World</span>
+        <select id="worldSel"></select>
+      </label>
+      <div class="field">
+        <span class="eyebrow" id="provLbl">Decisions by</span>
+        <div class="seg" role="group" aria-labelledby="provLbl">
+          <button type="button" data-provider="jev" aria-pressed="false">Jev</button>
+          <button type="button" data-provider="rules" aria-pressed="false">Rules</button>
+        </div>
+      </div>
+      <label class="field seed">
+        <span class="eyebrow">Seed</span>
+        <input id="seedIn" type="number" min="0" step="1" value="7" inputmode="numeric">
+      </label>
+      <button class="btn primary build" id="runBtn" type="button">Run</button>
+    </div>
+    <div class="runbar">
+      <label class="field grow">
+        <span class="eyebrow">Recorded runs</span>
+        <select id="runSel"></select>
+      </label>
+      <button class="btn" id="editBtn" type="button">Edit a copy of this world</button>
+    </div>
+
+    <details id="pasteBox">
+      <summary>Paste or describe a world</summary>
+      <div class="paste">
+        <textarea id="pasteIn" class="spec-editor" spellcheck="false" aria-label="World JSON" placeholder='{ "title": "Lunch rush", "mode": "visit", "nodes": [ … ], "archetypes": [ … ], "minds": [ … ] }'></textarea>
+        <div class="row">
+          <button class="btn" id="validateBtn" type="button">Validate</button>
+          <button class="btn primary" id="useBtn" type="button" disabled>Use this world</button>
+          <span class="status" id="pasteStatus" role="status" aria-live="polite"></span>
+        </div>
+        <ul class="issues" id="issues"></ul>
+        <div class="compile">
+          <label for="describeIn" class="eyebrow">Or describe a place and a question, and Claude writes the world</label>
+          <div class="command-row">
+            <textarea id="describeIn" rows="2" placeholder="e.g. A campus dining hall at noon with 5 stations. Which one needs more staff?"></textarea>
+            <button class="btn" id="compileBtn" type="button">Compile</button>
+          </div>
+          <p class="muted small" id="compileNote"></p>
+        </div>
+      </div>
+    </details>
+
+    <div class="live" id="live" hidden>
+      <div class="progress" aria-hidden="true"><i id="liveBar"></i></div>
+      <p class="mono small" id="liveText"></p>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="lab">
+    <div class="card">
+      <div class="viewer-head">
+        <div class="titles">
+          <div class="row"><h2 id="runTitle">No run loaded</h2><span class="pill" id="modePill" hidden></span><span class="pill" id="provPill" hidden></span></div>
+          <p class="question" id="runQuestion"></p>
+        </div>
+        <div class="clock" id="clock">--:--</div>
+      </div>
+      <div class="mapbox" id="mapbox">
+        <canvas id="map" role="img" aria-label="Simulation map. Click an agent to inspect its decisions."></canvas>
+        <div class="map-empty" id="mapEmpty">
+          <p>No run loaded yet. Pick a world and press <b>Run</b>, or open a recorded run.</p>
+        </div>
+      </div>
+      <div class="scrub">
+        <button class="btn" id="playBtn" type="button" disabled>Play</button>
+        <input type="range" id="scrub" min="0" max="1" step="any" value="0" aria-label="Simulation time" disabled>
+        <div class="seg" role="group" aria-label="Playback speed">
+          <button type="button" data-speed="1" class="on" aria-pressed="true">1×</button>
+          <button type="button" data-speed="4" aria-pressed="false">4×</button>
+          <button type="button" data-speed="16" aria-pressed="false">16×</button>
+        </div>
+      </div>
+      <p class="nowline mono" id="nowLine"></p>
+      <div class="row between">
+        <div class="legend" id="legend"></div>
+        <span class="heatkey muted">calm <i></i> saturated</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tiles" id="tiles"></div>
+      <div class="stack">
+        <h3 id="rankTitle">Bottlenecks</h3>
+        <ol class="rank" id="rank"></ol>
+      </div>
+      <div class="stack">
+        <h3 id="chartTitle">Queue length over time</h3>
+        <div class="chartbox"><canvas id="chart" role="img" aria-label="Chart over time with a cursor at the current time"></canvas></div>
+        <div class="chart-legend" id="chartLegend"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="minds">
+    <div class="card" id="inspector" aria-live="polite">
+      <div><div class="eyebrow">Agent inspector</div><h2>One person, every decision</h2></div>
+      <div id="agentBody" class="empty"><p>Click a dot on the map to see who that person is, what they could see, the probabilities Jev gave each option, and what they actually did.</p></div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <div><div class="eyebrow">Who decided, and at what cost</div><h3>Run stats</h3></div>
+        <dl class="stats" id="stats"></dl>
+        <p class="warn" id="statsWarn" hidden></p>
+      </div>
+      <div class="card">
+        <div class="row between">
+          <div><div class="eyebrow">What people told each other</div><h2>Remarks</h2></div>
+          <span class="mono muted" id="remarkCount"></span>
+        </div>
+        <ol class="stream" id="remarks"></ol>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>
