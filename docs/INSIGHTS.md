@@ -1,6 +1,6 @@
 # Suggestions after a run
 
-> **Nov 14 (spec v0.26):** the display currently shows one hard-coded suggestion with a baseline-versus-suggestion dropdown, and does not call the advisor or the quick read described below. See docs/PROTOTYPE.md §9b. The rest of this page describes the server side, which is unchanged.
+> **Nov 14 (spec v0.27):** the display no longer has a Suggestions button. Its verdict panel tests one fixed change (+1 staff at the worst line) with the rule model on 3 seeds and shows whether it helped. It does not call the advisor or the quick read described below. See docs/PROTOTYPE.md §9b. The rest of this page describes the server side, which is unchanged, and how the display used it before v0.26.
 
 The display's **Suggestions** button (top bar) explains what to change for the run on screen. Nothing is requested until someone clicks it. It then shows, in order of preference:
 
@@ -11,4 +11,4 @@ Which run is analyzed: runs recorded by the engine are named by their run id; th
 
 `POST /api/insights` takes `{ "runId": "<completed run>" }` or `{ "caseId": "building" | "parking" }`, plus an optional `question` (up to 2,000 characters). The server reads its own recordings; clients cannot pass paths or numbers. Unfinished runs are refused. Identical requests share one result, at most two analyses run at once, and recent results are cached; a run's quick read is saved as `runs/<id>/insights.json` with a hash of its inputs. Both `node bin/swarm.js serve` and the mock-only `npm run web` server answer it.
 
-Tests: `test/insights.test.js` (quick read), `test/advisor.test.js` and `test/server-advice.test.js` (advisor), `test/scope-feedback.test.js` (which run is analyzed, how measured effects read).
+Tests: `test/insights.test.js` (quick read), `test/advisor.test.js` and `test/server-advice.test.js` (advisor), `test/scope-verdict.test.js` and `test/server-run-link.test.js` (the display's verdict and the run link, v0.27).

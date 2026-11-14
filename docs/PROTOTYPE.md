@@ -311,7 +311,7 @@ For an inline provider (`external: false`), `runSwarm` just steps to the end wit
 - visit: `abandonRate`, `avgWait`, `served`, `abandoned`, `spawned`, top-3 bottlenecks by score.
 - route: `avgTrip`, `avgDelay`, `arrived`, top-3 edges by delay minutes.
 
-**Recorder:** `createRecorder({ root = 'runs', spec, seed, providerName, label })` creates `runs/<runId>/` with `runId = <slug(title)>-<provider>-s<seed>-<YYYYMMDD-HHMMSS>`.
+**Recorder:** `createRecorder({ root = 'runs', spec, seed, providerName, label, link })` (`link` is written to `meta.json` as given, `null` when absent; §9b) creates `runs/<runId>/` with `runId = <slug(title)>-<provider>-s<seed>-<YYYYMMDD-HHMMSS>`.
 - `rec.decision(req, decision, applied)` appends one JSON line to `decisions.jsonl`: `{ id, t, clock, agentId, personaId, kind, why, placeId, options, asks, observation, auto, decision, applied }`. The `decision` field omits nothing except `answers` when `provider === 'rules'`.
 - `rec.finish({ sim, metrics, providerStats, status: 'done' | 'error', error })` writes:
   - `meta.json`: `{ runId, createdAt, status, error, title, question, mode, duration, clockStart, seed, specHash, provider, model, decisions, agents, providerStats, simOpts }`
@@ -384,8 +384,9 @@ swarm sanity [--model jev-latest]                    # live Jev checks (validati
 GET  /api/worlds                      → [{ file, title, mode, question, agents: arrivals.total, cast: minds.length }]
 GET  /api/worlds/:file                → raw world JSON
 POST /api/validate     { spec }       → validateWorld result
-POST /api/runs         { world?: file, spec?: object, seed?, provider: 'rules'|'jev', model?, maxRequests?, batchWindow? }
+POST /api/runs         { world?: file, spec?: object, seed?, provider: 'rules'|'jev', model?, maxRequests?, batchWindow?, link? }
                                       → { runId }   (starts in background; one jev run at a time → 409 if busy)
+                                      `link` (optional, §9b) marks the run as one side of a test; a bad link → 400
 GET  /api/runs                        → listRuns
 GET  /api/runs/:id/status             → { state: 'running'|'done'|'error', t, duration, decisions, providerStats, error }
 GET  /api/runs/:id/meta|spec|metrics|frames|agents|remarks
@@ -417,20 +418,42 @@ Reject path traversal in `:file` and `:id` (only `[A-Za-z0-9._-]`). JSON bodies 
 
 ## 9b. Scope display (`web/scope/`)
 
-A display built for the two CoStar simulations (building congestion and the retail parking lot). It sits next to the generic viewer and reads the same run files, plus the additions below.
+The owner's view: try one change on simulated customers and see whether it helped. It sits next to the generic viewer and reads the same run files, plus the additions below. It shows one place, the building. The parking-lot mock still exists (`mockgen/`), but the display does not offer it (v0.27).
+
+**What opens.** No case picker. The page opens the latest Jev run if one exists, otherwise the latest rule-model run, paused at the start (`chooseRun` in `web/scope/lib/verdict.js`). A run that carries a tested change never opens first; its baseline does. Without the engine server, the page shows the building sample data and says a change cannot be tested on it. URL parameters: `run=<run id>`, `t`, `floor`, `theme=dark`, `autoplay=1`, and `test=new` (ignore earlier tests, so the "before a test" state shows again).
 
 **RunBundle.** The display loads `{ meta, spec, geometry, frames, metrics, agents, remarks, decisions }`. Mock runs (`web/scope/mock/*.json`, `web/scope/data/*.json`) are written in this shape by `scripts/mock_runs.js`. For a recorded run, `geometry` comes from `spec.geometry` and `decisions` from the endpoint below.
 
 **Engine runs** (`web/scope/lib/engine.js`). The engine keeps walls, doors and scale in `frames.walls`, `frames.doors` and `spec.geo`, and drops unknown spec fields, so the display builds the geometry from those: one floor, walls as drawn, doors as openings (exterior or interior), the view fitted to the walls and places, and a floor fill flooded from the service points with exterior doors closed (no fill if the walls leak). Gates become entries. Objects (`spec.objects`, §13f) are drawn as hatched shapes with a thin outline, not as thick walls: their edges are matched in `frames.walls` at the frames' 0.01 precision and the shapes are rasterized into the floor's `obstacles` grid. The cast's `bio`, `goal` and `social` are read as `about`, `wants` and `listens_to`. A run with no decision records (the inline rules provider) gets its walk-aways from agent traces ("Saw N people in line at X … and walked away", "Gave up on X after M min in line").
 
-**Suggestions (v0.26).** One hard-coded suggestion for now, a rule and not AI (`web/scope/lib/feedback.js`):
-- `hardCodedSuggestion(spec, metrics)` picks the service node with the highest `metrics.nodes[].score` and proposes `servers + 1` there.
-- "Run this suggestion" posts the patched spec (`applySuggestion`) to `POST /api/runs` with the baseline's seed. The provider is `rules`, or `jev` when the baseline was a Jev run and Jev is live. It needs the engine server and a recorded run; mock cases show the suggestion but cannot run it.
-- The new run is remembered as a suggestion run in the browser (`localStorage` key `scope-suggestions`: run id to `{ base, suggestion }`). It is labelled "Suggestion:" in the Run picker.
-- While the baseline or its suggestion run is on screen, a "Showing" dropdown in the side panel switches between the two and keeps the slider time. The dialog shows `compareRows`: walked away, walk-away rate, average wait and served for both runs, plus wait and walk-aways at the changed place.
-- The display does not call `GET /api/runs/:id/advice` or `POST /api/insights` for now; both endpoints remain.
+**The verdict (v0.27).** The top of the side panel answers "did the change help?". Pure functions are in `web/scope/lib/verdict.js`; `verdict-panel.js` draws them. There is no dialog.
+- **The one change** is a fixed rule, not AI: `staffChange(spec, metrics)` picks the service node with the highest `metrics.nodes[].score` and proposes `servers + 1` there. The display calls this "+1 staff". The engine's field is still `servers`.
+- **Before a test:** `worstLineWords` names the worst line ("Lucky Noodle Bar loses the most people: 56 walked away over lunch.") and the reason (staff at the counter, minutes per order, longest line). One button: "Test +1 staff here". The counter is ringed on the map.
+- **The test:** the display posts 6 runs to `POST /api/runs`, one after another: the baseline world and the changed world (`applyChange`), each on 3 seeds (the seed of the run on screen, +1 and +2), always with `provider: 'rules'`. A progress line and a Cancel button show while it runs.
+- **After:** `testResult` takes the 6 runs' metrics. `verdictWords` gives the verdict in customers kept, which is fewer walk-aways at that counter, as a range across seeds ("+1 staff kept 20 to 22 more customers."), and says "Tested with the rule model". A table shows before, after and change for walk-aways, longest line and average wait at the counter and walk-aways on the whole floor (averages of the 3 runs; the change is taken from the rounded numbers shown). `whySentence` gives one sentence of cause from the two sides, and `busiestWindow` adds when the line is busiest.
+- **The toggle** "Baseline / +1 staff" switches the map between the two runs of one seed and keeps the slider time. If the run on screen is a Jev run, it stays on screen until a side is picked, and a note says so.
+- **Run link.** Each test run carries `link` in its `meta.json`, set through `POST /api/runs`:
+  ```js
+  { test: '<id shared by the 6 runs>', role: 'baseline' | 'change',
+    base: '<run id of the baseline with the same seed>' | null,        // only on the change
+    change: { kind: 'staff', nodeId, nodeName, from, to } }
+  ```
+  The server checks it: `test` is 1 to 64 letters, digits, dashes or underscores; `nodeId` is a service node of the posted world; `from` and `to` are different whole numbers; the world's `servers` at that node equals `from` for a baseline and `to` for a change; `base` names an existing run. It reads `nodeName` from the world. A bad link is refused with 400 and no run starts. `findTest(metas, { runId, specHash })` finds the newest test with 3 finished pairs that belongs to the run on screen: the run is one of its runs, or the test's baselines have the same `specHash`. So every browser shows "Baseline" and "+1 staff at <counter>". Nothing about tests is kept in `localStorage`.
+- The display does not call `GET /api/runs/:id/advice` or `POST /api/insights`; both endpoints remain.
 
-**Serving.** `node bin/swarm.js serve` serves the display at `/scope/`. When it answers `/api/health`, the building case lists the server's recorded building runs (visit mode with walls), newest first, preferring a Jev run, with a picker to switch. The confirm card can replay the selected run, run it again with rules, or run it with Jev when the server has a key (`POST /api/runs` with the run's spec and seed). The parking case stays on mock data until the engine has a lot world.
+**Layout and wording (v0.27).**
+- **Top bar:** brand, prompt box, theme toggle. The prompt does not change the simulation yet. Its card says so, shows the typed question above the map, and offers a new run of the same world (rule model, or Jev when the server has a key).
+- **Map strip:** a name people would say for the place (`placeName`: the part of the world's title after the colon, without brackets; not the listing name), the question, the run's side of a test and who decided ("Baseline · Rule model", "Jev"), and Run details.
+- **Side panel, top to bottom:** verdict, four live counters ("Visits served" counts counter visits, so it can be higher than the number of people), bottleneck ranking (top 3), incident feed. Ranking rows and feed rows are buttons. A ranking bar has two parts: minutes waited, and in red the people who walked away (30 minutes each); the longest bar is the current worst place. The feed merges repeats (`groupFeed` in `incidents.js`: "Walked away at Lucky Noodle Bar ×14"); a row opens its most recent incident.
+- **A selected person** opens in place of the ranking and feed, with "Back to bottlenecks". The verdict and counters stay.
+- **Map:** one "View" menu (color people by; show trouble, people, counter names). "Reset view" shows only after zooming or panning. Counter names are drawn above the people; doors and stairs are faint dots that show a name on hover; rooms have no labels. Coloring by frustration is disabled, with the reason, when the run has no frustration data.
+- **Keyboard:** every control is reachable with Tab. On the map, Enter picks the person nearest the middle, the arrow keys move to the nearest person in that direction, Enter opens them and Escape lets go.
+- **Timeline:** the incident histogram has clock ticks every 15, 30 or 60 minutes (`timeTicks`).
+- **Run details:** the drawer holds everything technical (run id, seed, Jev requests, cost), where the data came from, the legend, the keys, and the list of other recorded runs, which can be opened from there.
+- **Words:** "staff", "rule model", "Jev". No "server", "seed" or "Jev requests", and no shell commands, outside Run details.
+- **Color and type:** red means people lost and nothing else (walk-away glyphs, the lost part of a ranking bar). IBM Plex Sans on five sizes (12, 13, 15, 18, 22 px); Bricolage Grotesque only for the wordmark.
+
+**Serving.** `node bin/swarm.js serve` serves the display at `/scope/`. When it answers `/api/health`, the display lists the server's recorded building runs (visit mode with walls). An optional run file that is missing (a run's `incidents`) answers 404; the display drops the unread body so the network goes idle.
 
 **Geometry** (`spec.geometry`, written by the world builder or `scripts/extract_building.js`). Coordinates are map units: the longer side of the plan spans 0–100, so the distance words in §5 still apply. `metersPerUnit` gives real scale.
 ```js
@@ -459,7 +482,7 @@ A display built for the two CoStar simulations (building congestion and the reta
 
 **Keys.** The Matterport SDK key is the one key the browser sees. It is a public key locked to the registered domain by design, written to the gitignored `web/scope/data/config.json`. No other key reaches the browser.
 
-**Screens.** Laptop and projector (1280 px and up), dark theme by default. This overrides the 390 px target in §9 for this display only.
+**Screens.** A 13-inch laptop, Chrome full screen, about 1280×832 and up. Light theme by default; dark is a toggle. No mobile layout. This overrides the 390 px target in §9 for this display only.
 
 ## 10. Compile, schema, slash command, MCP
 
