@@ -52,6 +52,7 @@
         <span class="eyebrow">Recorded runs</span>
         <select id="runSel"></select>
       </label>
+      <button class="btn" id="refreshRuns" type="button">Refresh</button>
       <button class="btn" id="editBtn" type="button">Edit a copy of this world</button>
     </div>
 
@@ -77,8 +78,9 @@
     </details>
 
     <div class="live" id="live" hidden>
+      <div class="eyebrow">Live run</div>
       <div class="progress" aria-hidden="true"><i id="liveBar"></i></div>
-      <p class="mono small" id="liveText"></p>
+      <p class="mono small" id="liveText" role="status" aria-live="polite"></p>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
   </section>
@@ -108,9 +110,15 @@
         </div>
       </div>
       <p class="nowline mono" id="nowLine"></p>
+      <p class="muted small hint">Click a dot to inspect that person. Space plays or pauses.</p>
       <div class="row between">
         <div class="legend" id="legend"></div>
-        <span class="heatkey muted">calm <i></i> saturated</span>
+        <span class="heatkey muted"><span id="heatLo">calm</span><i></i><span id="heatHi">saturated</span></span>
+      </div>
+      <div class="maplegend" id="wallLegend" hidden>
+        <span id="lgWall"><i class="sw wall" aria-hidden="true"></i>wall</span>
+        <span id="lgDoor"><i class="sw door" aria-hidden="true"></i>doorway, shaded by people through it so far</span>
+        <span id="lgEntrance"><i class="sw door entrance" aria-hidden="true"></i>entrance</span>
       </div>
     </div>
 
@@ -119,6 +127,11 @@
       <div class="stack">
         <h3 id="rankTitle">Bottlenecks</h3>
         <ol class="rank" id="rank"></ol>
+      </div>
+      <div class="stack" id="doorBox" hidden>
+        <h3>Busiest doorways</h3>
+        <ol class="rank doors" id="doorRank"></ol>
+        <p class="muted small" id="doorNote"></p>
       </div>
       <div class="stack">
         <h3 id="chartTitle">Queue length over time</h3>

@@ -1,0 +1,1475 @@
+{
+  "data": {
+    "model": {
+      "id": "SampleOffice01",
+      "floors": [
+        {
+          "id": "f0g7km2x1q",
+          "sequence": 0,
+          "label": "Ground floor"
+        },
+        {
+          "id": "f1h8ln3y2r",
+          "sequence": 1,
+          "label": "Second floor"
+        }
+      ],
+      "rooms": [
+        {
+          "id": "r_corr",
+          "label": "Main corridor",
+          "classifications": [
+            {
+              "id": "cl_hall",
+              "label": "Hallway"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 40,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "c_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op01",
+                    "height": 2.1,
+                    "width": 0.9,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.576,
+                    "type": "doorway"
+                  },
+                  {
+                    "id": "op02",
+                    "height": 2.1,
+                    "width": 0.9,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.85,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vc01",
+                    "position": {
+                      "x": -10,
+                      "y": -1
+                    }
+                  },
+                  {
+                    "id": "vc02",
+                    "position": {
+                      "x": 10,
+                      "y": -1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "c_e",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc02",
+                    "position": {
+                      "x": 10,
+                      "y": -1
+                    }
+                  },
+                  {
+                    "id": "vc03",
+                    "position": {
+                      "x": 10,
+                      "y": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "a_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op04",
+                    "height": 2.1,
+                    "width": 0.9,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.5,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vc04",
+                    "position": {
+                      "x": -10,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vc05",
+                    "position": {
+                      "x": -5,
+                      "y": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "c_w",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [
+                  {
+                    "id": "op03",
+                    "height": 2.1,
+                    "width": 1.2,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.5,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vc01",
+                    "position": {
+                      "x": -10,
+                      "y": -1
+                    }
+                  },
+                  {
+                    "id": "vc04",
+                    "position": {
+                      "x": -10,
+                      "y": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "c_n_open",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc06",
+                    "position": {
+                      "x": 0,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vc03",
+                    "position": {
+                      "x": 10,
+                      "y": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "b_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op05",
+                    "height": 2.1,
+                    "width": 0.9,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.7,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vc06",
+                    "position": {
+                      "x": 0,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vc05",
+                    "position": {
+                      "x": -5,
+                      "y": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        },
+        {
+          "id": "r_offa",
+          "label": "",
+          "classifications": [
+            {
+              "id": "cl_office",
+              "label": "Office"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 25,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "ab",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc05",
+                    "position": {
+                      "x": -5,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vn02",
+                    "position": {
+                      "x": -5,
+                      "y": 6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "a_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op04",
+                    "height": 2.1,
+                    "width": 0.9,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.5,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vc04",
+                    "position": {
+                      "x": -10,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vc05",
+                    "position": {
+                      "x": -5,
+                      "y": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "a_w",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc04",
+                    "position": {
+                      "x": -10,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vn01",
+                    "position": {
+                      "x": -10,
+                      "y": 6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "a_n",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vn01",
+                    "position": {
+                      "x": -10,
+                      "y": 6
+                    }
+                  },
+                  {
+                    "id": "vn02",
+                    "position": {
+                      "x": -5,
+                      "y": 6
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        },
+        {
+          "id": "r_offb",
+          "label": "",
+          "classifications": [
+            {
+              "id": "cl_office",
+              "label": "Office"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 25,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "b_n",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [
+                  {
+                    "id": "op06",
+                    "height": 1.2,
+                    "width": 1.2,
+                    "lowerElevation": 0.9,
+                    "relativeCenter": 0.5,
+                    "type": "window"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vn03",
+                    "position": {
+                      "x": 0,
+                      "y": 6
+                    }
+                  },
+                  {
+                    "id": "vn02",
+                    "position": {
+                      "x": -5,
+                      "y": 6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "b_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op05",
+                    "height": 2.1,
+                    "width": 0.9,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.7,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vc06",
+                    "position": {
+                      "x": 0,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vc05",
+                    "position": {
+                      "x": -5,
+                      "y": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "ab",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc05",
+                    "position": {
+                      "x": -5,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vn02",
+                    "position": {
+                      "x": -5,
+                      "y": 6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "b_e",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc06",
+                    "position": {
+                      "x": 0,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vn03",
+                    "position": {
+                      "x": 0,
+                      "y": 6
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        },
+        {
+          "id": "r_ow",
+          "label": "",
+          "classifications": [
+            {
+              "id": "cl_other",
+              "label": "Other"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 25,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "ow_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op07",
+                    "height": 2.1,
+                    "width": 1,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.5,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vc06",
+                    "position": {
+                      "x": 0,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vc07",
+                    "position": {
+                      "x": 5,
+                      "y": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "open_split",
+                "type": "invisible",
+                "centerLineBias": 0.5,
+                "thickness": 0,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc07",
+                    "position": {
+                      "x": 5,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vn04",
+                    "position": {
+                      "x": 5,
+                      "y": 6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "ow_n",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vn04",
+                    "position": {
+                      "x": 5,
+                      "y": 6
+                    }
+                  },
+                  {
+                    "id": "vn03",
+                    "position": {
+                      "x": 0,
+                      "y": 6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "ow_w",
+                "type": "invisible",
+                "centerLineBias": 0.5,
+                "thickness": 0,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vn03",
+                    "position": {
+                      "x": 0,
+                      "y": 6
+                    }
+                  },
+                  {
+                    "id": "vc06",
+                    "position": {
+                      "x": 0,
+                      "y": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        },
+        {
+          "id": "r_oe",
+          "label": "",
+          "classifications": [
+            {
+              "id": "cl_other",
+              "label": "Other"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 25,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "oe_n",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vn04",
+                    "position": {
+                      "x": 5,
+                      "y": 6
+                    }
+                  },
+                  {
+                    "id": "vn05",
+                    "position": {
+                      "x": 10,
+                      "y": 6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "open_split",
+                "type": "invisible",
+                "centerLineBias": 0.5,
+                "thickness": 0,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc07",
+                    "position": {
+                      "x": 5,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vn04",
+                    "position": {
+                      "x": 5,
+                      "y": 6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "oe_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vc07",
+                    "position": {
+                      "x": 5,
+                      "y": 1
+                    }
+                  },
+                  {
+                    "id": "vc03",
+                    "position": {
+                      "x": 10,
+                      "y": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "oe_e",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vn05",
+                    "position": {
+                      "x": 10,
+                      "y": 6
+                    }
+                  },
+                  {
+                    "id": "vc03",
+                    "position": {
+                      "x": 10,
+                      "y": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        },
+        {
+          "id": "r_meet",
+          "label": "",
+          "classifications": [
+            {
+              "id": "cl_other",
+              "label": "Other"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 27.5,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "l_top",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs06",
+                    "position": {
+                      "x": -10,
+                      "y": -1.0004
+                    }
+                  },
+                  {
+                    "id": "vs05",
+                    "position": {
+                      "x": -1,
+                      "y": -1.0004
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "l_w",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs06",
+                    "position": {
+                      "x": -10,
+                      "y": -1.0004
+                    }
+                  },
+                  {
+                    "id": "vs01",
+                    "position": {
+                      "x": -10,
+                      "y": -6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "l_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs01",
+                    "position": {
+                      "x": -10,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs02",
+                    "position": {
+                      "x": -6,
+                      "y": -6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "l_e2",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs02",
+                    "position": {
+                      "x": -6,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs03",
+                    "position": {
+                      "x": -6,
+                      "y": -2.5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "l_s2",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs03",
+                    "position": {
+                      "x": -6,
+                      "y": -2.5
+                    }
+                  },
+                  {
+                    "id": "vs04",
+                    "position": {
+                      "x": -1,
+                      "y": -2.5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "l_e",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op08",
+                    "height": 2.1,
+                    "width": 0.9,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.5001333688983729,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vs04",
+                    "position": {
+                      "x": -1,
+                      "y": -2.5
+                    }
+                  },
+                  {
+                    "id": "vs05",
+                    "position": {
+                      "x": -1,
+                      "y": -1.0004
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        },
+        {
+          "id": "r_store",
+          "label": "Storage",
+          "classifications": [
+            {
+              "id": "cl_other",
+              "label": "Other"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 17.5,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "l_s2",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs03",
+                    "position": {
+                      "x": -6,
+                      "y": -2.5
+                    }
+                  },
+                  {
+                    "id": "vs04",
+                    "position": {
+                      "x": -1,
+                      "y": -2.5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "s_e",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs07",
+                    "position": {
+                      "x": -1,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs04",
+                    "position": {
+                      "x": -1,
+                      "y": -2.5
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "s_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs07",
+                    "position": {
+                      "x": -1,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs02",
+                    "position": {
+                      "x": -6,
+                      "y": -6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "l_e2",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs02",
+                    "position": {
+                      "x": -6,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs03",
+                    "position": {
+                      "x": -6,
+                      "y": -2.5
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        },
+        {
+          "id": "r_c",
+          "label": "",
+          "classifications": [
+            {
+              "id": "cl_office",
+              "label": "Office"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 24.75,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "c_n",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op09",
+                    "height": 2.1,
+                    "width": 0.9,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.5,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vs05",
+                    "position": {
+                      "x": -1,
+                      "y": -1.0004
+                    }
+                  },
+                  {
+                    "id": "vs09",
+                    "position": {
+                      "x": 4,
+                      "y": -1.0004
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "cd",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op10",
+                    "height": 2.1,
+                    "width": 1.5,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.3000240019201536,
+                    "type": "opening"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vs08",
+                    "position": {
+                      "x": 4,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs09",
+                    "position": {
+                      "x": 4,
+                      "y": -1.0004
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "c_s2",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs07",
+                    "position": {
+                      "x": -1,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs08",
+                    "position": {
+                      "x": 4,
+                      "y": -6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "c_w2",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs07",
+                    "position": {
+                      "x": -1,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs05",
+                    "position": {
+                      "x": -1,
+                      "y": -1.0004
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": [
+            {
+              "edges": [
+                {
+                  "id": "k1",
+                  "type": "wall",
+                  "centerLineBias": 0.5,
+                  "thickness": 0,
+                  "openings": [],
+                  "vertices": [
+                    {
+                      "id": "vk01",
+                      "position": {
+                        "x": 1.25,
+                        "y": -3.75
+                      }
+                    },
+                    {
+                      "id": "vk02",
+                      "position": {
+                        "x": 1.75,
+                        "y": -3.75
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "k3",
+                  "type": "wall",
+                  "centerLineBias": 0.5,
+                  "thickness": 0,
+                  "openings": [],
+                  "vertices": [
+                    {
+                      "id": "vk03",
+                      "position": {
+                        "x": 1.75,
+                        "y": -3.25
+                      }
+                    },
+                    {
+                      "id": "vk04",
+                      "position": {
+                        "x": 1.25,
+                        "y": -3.25
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "k2",
+                  "type": "wall",
+                  "centerLineBias": 0.5,
+                  "thickness": 0,
+                  "openings": [],
+                  "vertices": [
+                    {
+                      "id": "vk03",
+                      "position": {
+                        "x": 1.75,
+                        "y": -3.25
+                      }
+                    },
+                    {
+                      "id": "vk02",
+                      "position": {
+                        "x": 1.75,
+                        "y": -3.75
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "k4",
+                  "type": "wall",
+                  "centerLineBias": 0.5,
+                  "thickness": 0,
+                  "openings": [],
+                  "vertices": [
+                    {
+                      "id": "vk01",
+                      "position": {
+                        "x": 1.25,
+                        "y": -3.75
+                      }
+                    },
+                    {
+                      "id": "vk04",
+                      "position": {
+                        "x": 1.25,
+                        "y": -3.25
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "r_d",
+          "label": "",
+          "classifications": [
+            {
+              "id": "cl_other",
+              "label": "Other"
+            }
+          ],
+          "floor": {
+            "id": "f0g7km2x1q"
+          },
+          "dimensionEstimates": {
+            "area": 30,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "d_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs08",
+                    "position": {
+                      "x": 4,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs10",
+                    "position": {
+                      "x": 10,
+                      "y": -6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "d_n",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs11",
+                    "position": {
+                      "x": 10,
+                      "y": -1.0004
+                    }
+                  },
+                  {
+                    "id": "vs09",
+                    "position": {
+                      "x": 4,
+                      "y": -1.0004
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "cd",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.15,
+                "openings": [
+                  {
+                    "id": "op10",
+                    "height": 2.1,
+                    "width": 1.5,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.3000240019201536,
+                    "type": "opening"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vs08",
+                    "position": {
+                      "x": 4,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs09",
+                    "position": {
+                      "x": 4,
+                      "y": -1.0004
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "d_e",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vs10",
+                    "position": {
+                      "x": 10,
+                      "y": -6
+                    }
+                  },
+                  {
+                    "id": "vs11",
+                    "position": {
+                      "x": 10,
+                      "y": -1.0004
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        },
+        {
+          "id": "r_up",
+          "label": "",
+          "classifications": [
+            {
+              "id": "cl_office",
+              "label": "Office"
+            }
+          ],
+          "floor": {
+            "id": "f1h8ln3y2r"
+          },
+          "dimensionEstimates": {
+            "area": 64,
+            "units": "metric"
+          },
+          "boundary": {
+            "edges": [
+              {
+                "id": "u_w",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [
+                  {
+                    "id": "op11",
+                    "height": 2.1,
+                    "width": 1,
+                    "lowerElevation": 0,
+                    "relativeCenter": 0.5,
+                    "type": "doorway"
+                  }
+                ],
+                "vertices": [
+                  {
+                    "id": "vu01",
+                    "position": {
+                      "x": -4,
+                      "y": -4
+                    }
+                  },
+                  {
+                    "id": "vu04",
+                    "position": {
+                      "x": -4,
+                      "y": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "u_n",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vu04",
+                    "position": {
+                      "x": -4,
+                      "y": 4
+                    }
+                  },
+                  {
+                    "id": "vu03",
+                    "position": {
+                      "x": 4,
+                      "y": 4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "u_s",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vu01",
+                    "position": {
+                      "x": -4,
+                      "y": -4
+                    }
+                  },
+                  {
+                    "id": "vu02",
+                    "position": {
+                      "x": 4,
+                      "y": -4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "u_e",
+                "type": "wall",
+                "centerLineBias": 0.5,
+                "thickness": 0.25,
+                "openings": [],
+                "vertices": [
+                  {
+                    "id": "vu03",
+                    "position": {
+                      "x": 4,
+                      "y": 4
+                    }
+                  },
+                  {
+                    "id": "vu02",
+                    "position": {
+                      "x": 4,
+                      "y": -4
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "holes": []
+        }
+      ]
+    }
+  }
+}

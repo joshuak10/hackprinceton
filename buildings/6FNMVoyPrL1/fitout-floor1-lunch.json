@@ -1,0 +1,667 @@
+{
+  "model": "6FNMVoyPrL1",
+  "floor": 0,
+  "title": "Weekday lunch on the ground floor: food hall and market (proposed fit-out)",
+  "question": "Where does lunchtime foot traffic concentrate on the ground floor, which counters build the longest lines, and which change helps most?",
+  "context": "Weekday lunch on the ground floor of an office building. North unit: a food hall with four food counters, a coffee bar and tables. South unit: a market with a deli, bakery, pharmacy and parcel desk. The units connect only outside, along the storefront. Office workers come down two staircases.",
+  "leaveLabel": "Leave (go back upstairs or out to the street)",
+  "clockStart": 690,
+  "duration": 135,
+  "walkMetersPerMinute": 75,
+  "arrivals": {
+    "total": 312,
+    "start": 0,
+    "end": 105,
+    "shape": "peak"
+  },
+  "gates": [
+    {
+      "id": "north_front_a",
+      "name": "Food hall front door (north)",
+      "at": {
+        "x": 40.04,
+        "y": -0.64
+      },
+      "weight": 3
+    },
+    {
+      "id": "north_front_b",
+      "name": "Food hall front door (south)",
+      "at": {
+        "x": 40.04,
+        "y": -5.36
+      },
+      "weight": 3
+    },
+    {
+      "id": "south_front_a",
+      "name": "Market main entrance",
+      "at": {
+        "x": 40.04,
+        "y": -12.69
+      },
+      "weight": 4
+    },
+    {
+      "id": "south_front_b",
+      "name": "Market side entrance",
+      "at": {
+        "x": 40.04,
+        "y": -18.57
+      },
+      "weight": 2
+    },
+    {
+      "id": "south_back",
+      "name": "Market back door (west lot)",
+      "at": {
+        "x": -7.46,
+        "y": -12.04
+      },
+      "weight": 1
+    },
+    {
+      "id": "stairs_a",
+      "name": "Stairs A, to the offices upstairs",
+      "at": {
+        "x": 2.38,
+        "y": -20.57
+      },
+      "weight": 2
+    },
+    {
+      "id": "stairs_b",
+      "name": "Stairs B, to the offices upstairs",
+      "at": {
+        "x": -4.95,
+        "y": -1.24
+      },
+      "weight": 2
+    }
+  ],
+  "places": [
+    {
+      "id": "taqueria",
+      "name": "Taquería Sol",
+      "at": {
+        "x": 19.15,
+        "y": 1.37
+      },
+      "servers": 3,
+      "serviceTime": 3,
+      "appeal": 0.8,
+      "price": 11,
+      "tags": [
+        "food",
+        "hot"
+      ],
+      "about": "Tacos and burritos made to order. The most popular counter; the line moves slowly."
+    },
+    {
+      "id": "noodles",
+      "name": "Lucky Noodle Bar",
+      "at": {
+        "x": 24.17,
+        "y": 1.37
+      },
+      "servers": 2,
+      "serviceTime": 4,
+      "appeal": 0.75,
+      "price": 13,
+      "tags": [
+        "food",
+        "hot"
+      ],
+      "about": "Ramen and stir-fry. Great food, slow kitchen."
+    },
+    {
+      "id": "bowls",
+      "name": "Green Bowl",
+      "at": {
+        "x": 28.69,
+        "y": 1.37
+      },
+      "servers": 2,
+      "serviceTime": 2.5,
+      "appeal": 0.6,
+      "price": 12,
+      "tags": [
+        "food",
+        "healthy"
+      ],
+      "about": "Salads and grain bowls, assembled fast."
+    },
+    {
+      "id": "slice",
+      "name": "Corner Slice",
+      "at": {
+        "x": 33.71,
+        "y": 1.37
+      },
+      "servers": 1,
+      "serviceTime": 1.5,
+      "appeal": 0.55,
+      "price": 6,
+      "tags": [
+        "food",
+        "cheap",
+        "fast"
+      ],
+      "about": "Pizza by the slice. Cheap and quick, one register."
+    },
+    {
+      "id": "coffee",
+      "name": "Bridge Coffee",
+      "at": {
+        "x": 32.71,
+        "y": -6.77
+      },
+      "servers": 2,
+      "serviceTime": 2,
+      "appeal": 0.7,
+      "price": 5,
+      "tags": [
+        "coffee",
+        "drinks"
+      ],
+      "about": "Espresso bar by the door. Always a line at noon."
+    },
+    {
+      "id": "seating",
+      "name": "Food hall tables",
+      "at": {
+        "x": 25.68,
+        "y": -3.75
+      },
+      "servers": 70,
+      "serviceTime": 16,
+      "appeal": 0.15,
+      "price": 0,
+      "tags": [
+        "seating"
+      ],
+      "about": "Shared tables in the middle of the food hall. Sit here to eat once you have your food."
+    },
+    {
+      "id": "restroom_n",
+      "name": "Food hall restroom",
+      "at": {
+        "x": -5.05,
+        "y": 1.77
+      },
+      "servers": 2,
+      "serviceTime": 3,
+      "appeal": 0.1,
+      "price": 0,
+      "tags": [
+        "restroom"
+      ],
+      "about": "Small restroom at the far west end of the food hall."
+    },
+    {
+      "id": "checkout",
+      "name": "Fresh Market checkout",
+      "at": {
+        "x": 34.21,
+        "y": -15.05
+      },
+      "servers": 3,
+      "serviceTime": 2,
+      "appeal": 0.5,
+      "price": 14,
+      "tags": [
+        "market",
+        "groceries"
+      ],
+      "about": "Grab-and-go groceries with three registers near the main entrance."
+    },
+    {
+      "id": "deli",
+      "name": "Market deli counter",
+      "at": {
+        "x": 21.66,
+        "y": -10.78
+      },
+      "servers": 2,
+      "serviceTime": 3.5,
+      "appeal": 0.65,
+      "price": 10,
+      "tags": [
+        "market",
+        "food"
+      ],
+      "about": "Sandwiches sliced to order. Regulars swear by it; two staff at lunch."
+    },
+    {
+      "id": "bakery",
+      "name": "Oven & Crumb bakery",
+      "at": {
+        "x": 21.66,
+        "y": -21.83
+      },
+      "servers": 2,
+      "serviceTime": 2,
+      "appeal": 0.6,
+      "price": 6,
+      "tags": [
+        "market",
+        "food",
+        "coffee"
+      ],
+      "about": "Bread, pastries and drip coffee at the back of the market."
+    },
+    {
+      "id": "optical",
+      "name": "Broadway Optical counter",
+      "at": {
+        "x": 9.61,
+        "y": -20.83
+      },
+      "servers": 1,
+      "serviceTime": 5,
+      "appeal": 0.35,
+      "price": 20,
+      "tags": [
+        "market",
+        "service",
+        "optical"
+      ],
+      "about": "Glasses pickup, repairs and adjustments. One optician works the counter at lunch."
+    },
+    {
+      "id": "parcels",
+      "name": "Parcel pickup desk",
+      "at": {
+        "x": 5.59,
+        "y": -11.54
+      },
+      "servers": 1,
+      "serviceTime": 2,
+      "appeal": 0.3,
+      "price": 0,
+      "tags": [
+        "market",
+        "service"
+      ],
+      "about": "Package pickup and returns in the west half of the market."
+    },
+    {
+      "id": "restroom_s",
+      "name": "Market restroom",
+      "at": {
+        "x": -5.05,
+        "y": -20.27
+      },
+      "servers": 3,
+      "serviceTime": 3,
+      "appeal": 0.1,
+      "price": 0,
+      "tags": [
+        "restroom"
+      ],
+      "about": "Restrooms off the southwest corner of the market."
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "office_workers",
+      "name": "Office workers from upstairs",
+      "share": 0.09,
+      "description": "People who work in the offices on the floor above, down for a 30 to 45 minute lunch break.",
+      "info": 0.3,
+      "rationality": 2.5,
+      "weights": {
+        "appeal": 1,
+        "wait": 1.6,
+        "distance": 0.8,
+        "price": 0.6
+      },
+      "visits": 2,
+      "patience": 9,
+      "likes": [
+        "food",
+        "fast",
+        "coffee"
+      ],
+      "needs": [],
+      "entries": [
+        "stairs_a",
+        "stairs_b"
+      ],
+      "exits": [
+        "stairs_a",
+        "stairs_b"
+      ]
+    },
+    {
+      "id": "lunch_crowd",
+      "name": "Lunch crowd from the neighborhood",
+      "share": 0.45,
+      "description": "People from nearby offices, shops and job sites who come to the food hall for lunch.",
+      "info": 0.1,
+      "rationality": 2.2,
+      "weights": {
+        "appeal": 1.4,
+        "wait": 1,
+        "distance": 0.6,
+        "price": 0.8
+      },
+      "visits": 2,
+      "patience": 14,
+      "likes": [
+        "food",
+        "hot"
+      ],
+      "needs": [
+        "food",
+        "coffee",
+        "drinks",
+        "seating",
+        "restroom"
+      ],
+      "entries": [
+        "north_front_a",
+        "north_front_b"
+      ],
+      "exits": [
+        "north_front_a",
+        "north_front_b",
+        "south_front_a",
+        "south_front_b"
+      ]
+    },
+    {
+      "id": "market_shoppers",
+      "name": "Market shoppers",
+      "share": 0.38,
+      "description": "Neighbors running errands at the market: groceries, a prescription, a parcel.",
+      "info": 0,
+      "rationality": 2.5,
+      "weights": {
+        "appeal": 0.8,
+        "wait": 1.2,
+        "distance": 1,
+        "price": 1
+      },
+      "visits": 2,
+      "patience": 12,
+      "likes": [
+        "market",
+        "groceries",
+        "optical"
+      ],
+      "needs": [
+        "market",
+        "coffee",
+        "restroom"
+      ],
+      "entries": [
+        "south_front_a",
+        "south_front_b",
+        "south_back"
+      ],
+      "exits": [
+        "south_front_a",
+        "south_front_b",
+        "south_back"
+      ]
+    },
+    {
+      "id": "couriers",
+      "name": "Delivery couriers",
+      "share": 0.08,
+      "description": "Couriers picking up food orders and parcels. They are paid per delivery, so every minute in line costs them.",
+      "info": 0.8,
+      "rationality": 3,
+      "weights": {
+        "appeal": 0.6,
+        "wait": 2.2,
+        "distance": 1,
+        "price": 0
+      },
+      "visits": 1,
+      "patience": 6,
+      "likes": [
+        "food",
+        "service"
+      ],
+      "needs": [
+        "food",
+        "service"
+      ],
+      "entries": [
+        "north_front_a",
+        "south_back"
+      ],
+      "exits": [
+        "north_front_a",
+        "north_front_b",
+        "south_front_a",
+        "south_back"
+      ]
+    }
+  ],
+  "minds": [
+    {
+      "id": "dana",
+      "name": "Dana Whitfield",
+      "age": 34,
+      "archetype": "office_workers",
+      "bio": "Project manager upstairs with a 12:30 meeting she cannot miss.",
+      "personality": "impatient, checks her watch constantly",
+      "goal": "Something fast she can carry back to her desk",
+      "social": "her team chat posts which lines are short",
+      "informed": true,
+      "entry": "stairs_a"
+    },
+    {
+      "id": "marcus",
+      "name": "Marcus Oyelaran",
+      "age": 27,
+      "archetype": "office_workers",
+      "bio": "Junior developer who eats at Taquería Sol almost every day.",
+      "personality": "easygoing, loyal to his favorite spot even when the line is long",
+      "goal": "Tacos, then a table with his desk mates",
+      "social": "does whatever his desk mates do",
+      "informed": false,
+      "entry": "stairs_b"
+    },
+    {
+      "id": "priyanka",
+      "name": "Priyanka Rao",
+      "age": 41,
+      "archetype": "office_workers",
+      "bio": "Accountant watching both her budget and her diet.",
+      "personality": "careful, dislikes crowds and noise",
+      "goal": "A salad for under 13 dollars, eaten back at her desk",
+      "social": "ignores hype and recommendations",
+      "informed": false,
+      "entry": "stairs_a"
+    },
+    {
+      "id": "tom",
+      "name": "Tom Becker",
+      "age": 55,
+      "archetype": "office_workers",
+      "bio": "Office manager using his lunch break to pick up new glasses and a parcel in the market.",
+      "personality": "methodical, patient with errands, impatient with food lines",
+      "goal": "Optical counter and parcel desk first, then a coffee",
+      "social": "chats with the optician and the parcel clerk",
+      "informed": false,
+      "entry": "stairs_a"
+    },
+    {
+      "id": "lena",
+      "name": "Lena Fischer",
+      "age": 23,
+      "archetype": "office_workers",
+      "bio": "Intern in her second week who does not know the building yet.",
+      "personality": "indecisive, eager to fit in",
+      "goal": "Eat wherever her coworkers are eating",
+      "social": "follows coworker recommendations and the group chat",
+      "informed": false,
+      "entry": "stairs_b"
+    },
+    {
+      "id": "rosa",
+      "name": "Rosa Delgado",
+      "age": 38,
+      "archetype": "lunch_crowd",
+      "bio": "Nurse from a clinic two blocks away on a strict 30-minute break.",
+      "personality": "decisive, hungry, will not wait more than about ten minutes",
+      "goal": "A hot meal she can finish quickly",
+      "social": "trusts what other nurses at the clinic say about the lines",
+      "informed": false,
+      "entry": "north_front_a"
+    },
+    {
+      "id": "james",
+      "name": "James Okafor",
+      "age": 46,
+      "archetype": "lunch_crowd",
+      "bio": "Contractor from a job site down the street, ordering for himself and two crew members.",
+      "personality": "patient, loyal to the noodle bar, wants big portions",
+      "goal": "Three large hot lunches and a table for the crew",
+      "social": "his crew decides together",
+      "informed": false,
+      "entry": "north_front_b"
+    },
+    {
+      "id": "mei",
+      "name": "Mei Tanaka",
+      "age": 29,
+      "archetype": "lunch_crowd",
+      "bio": "Freelance designer who came to sit and work over a long lunch.",
+      "personality": "unhurried, picky about coffee, posts reviews online",
+      "goal": "A good coffee, a light lunch and a table for an hour",
+      "social": "checks reviews and posts her own",
+      "informed": true,
+      "entry": "north_front_a"
+    },
+    {
+      "id": "harold",
+      "name": "Harold Jensen",
+      "age": 71,
+      "archetype": "lunch_crowd",
+      "bio": "Retiree meeting an old friend for lunch.",
+      "personality": "in no hurry, dislikes noise and crowds",
+      "goal": "A quiet table; he will leave if there is nowhere to sit",
+      "social": "goes by what his friend suggests",
+      "informed": false,
+      "entry": "north_front_b"
+    },
+    {
+      "id": "aisha",
+      "name": "Aisha Rahman",
+      "age": 19,
+      "archetype": "lunch_crowd",
+      "bio": "College student on a tight budget between classes.",
+      "personality": "price-sensitive, quick, follows what is trending",
+      "goal": "The cheapest filling lunch she can find",
+      "social": "follows what friends post online",
+      "informed": true,
+      "entry": "north_front_a"
+    },
+    {
+      "id": "gloria",
+      "name": "Gloria Mendes",
+      "age": 63,
+      "archetype": "market_shoppers",
+      "bio": "Lives around the corner; getting her glasses adjusted, then buying bread.",
+      "personality": "patient with the optician, annoyed by long checkout lines",
+      "goal": "Optical counter first, then the bakery",
+      "social": "chats with neighbors and passes on what she hears",
+      "informed": false,
+      "entry": "south_front_a"
+    },
+    {
+      "id": "dev",
+      "name": "Dev Patel",
+      "age": 35,
+      "archetype": "market_shoppers",
+      "bio": "Parent pushing a toddler in a stroller, shopping before nap time.",
+      "personality": "stressed, will give up if the lines are long",
+      "goal": "Milk and a few groceries, in and out fast",
+      "social": "texts his partner about how it is going",
+      "informed": false,
+      "entry": "south_front_a"
+    },
+    {
+      "id": "nina",
+      "name": "Nina Kowalski",
+      "age": 31,
+      "archetype": "market_shoppers",
+      "bio": "Picking up one parcel and returning another on her lunch break; parked in the west lot.",
+      "personality": "in a hurry, efficient",
+      "goal": "Parcel desk and straight back out",
+      "social": "does not talk to anyone",
+      "informed": false,
+      "entry": "south_back"
+    },
+    {
+      "id": "andre",
+      "name": "Andre Lewis",
+      "age": 26,
+      "archetype": "couriers",
+      "bio": "Bike courier picking up a food order; paid per delivery.",
+      "personality": "hates waiting, blunt",
+      "goal": "Grab the order and go",
+      "social": "warns other couriers in a group chat about slow kitchens",
+      "informed": true,
+      "entry": "north_front_a"
+    }
+  ],
+  "assumptions": [
+    {
+      "key": "arrivals.total",
+      "value": 312,
+      "why": "Middle case from CoStar data: about 29 office workers from upstairs, plus 10% of the workers and 3% of the households that the CoStar kit records within 500 m, plus couriers. The kit only covers some buildings, so those pools are lower bounds; the capture shares are assumptions. Low case 153, busy-day case 503."
+    },
+    {
+      "key": "archetypes[].share",
+      "value": "0.09 / 0.45 / 0.38 / 0.08",
+      "why": "Office workers, lunch crowd, market shoppers, couriers: the middle-case counts divided by 312. The courier share is a guess."
+    },
+    {
+      "key": "office headcount upstairs",
+      "value": 51,
+      "why": "Upstairs floor area from Matterport divided by 240 SF per employee, the median across about 1,800 current Los Angeles office tenancies in the CoStar kit. Range 29 to 78. About 29 come down at lunch (80% present, 70% of those come down; both assumed)."
+    },
+    {
+      "key": "places",
+      "value": 13,
+      "why": "The building is an empty shell. Every counter, table area, desk and restroom is a proposed fit-out placed by Claude inside the real walls. The mix (small food counters, coffee, bakery, a small market, parcel pickup, an optical counter) follows what occupies storefront space nearby in the CoStar kit and this building's own past tenants."
+    },
+    {
+      "key": "servers and serviceTime",
+      "value": "per place",
+      "why": "Counter-service assumptions: 30 to 60 orders an hour per counter, with the noodle bar deliberately the slowest. Not measured."
+    },
+    {
+      "key": "how people arrive",
+      "value": "mostly on foot",
+      "why": "The building has very little parking for its size, so few arrive by car; the back door from the lot gets a low weight."
+    },
+    {
+      "key": "walkMetersPerMinute",
+      "value": 75,
+      "why": "A relaxed indoor walking pace, about 1.25 m per second."
+    },
+    {
+      "key": "order of visits",
+      "value": "not enforced",
+      "why": "Nothing yet makes people buy food before sitting at the tables. Known limit."
+    }
+  ],
+  "provenance": {
+    "walls": "data",
+    "doors": "data",
+    "geo.metersPerUnit": "data",
+    "gates (exterior door positions)": "data",
+    "gates (stairs positions)": "data",
+    "places": "assumed",
+    "arrivals": "assumed",
+    "archetypes": "assumed",
+    "minds": "assumed"
+  }
+}

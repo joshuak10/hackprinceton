@@ -280,6 +280,33 @@ function providerSection(stats, metrics) {
   return out;
 }
 
+export const BUILDING_LIMITS =
+  'Limits of v0.2 building runs: one floor only; doorways count traffic but do not slow it; ' +
+  "numbers not read from CoStar or Matterport are assumed and listed in the world's provenance.";
+
+// Busiest doorways and the wall check, for runs whose world has doors or walls.
+function doorSection(metrics) {
+  const doors = metrics.doors ?? [];
+  const walls = metrics.walls;
+  if (!doors.length && !walls) return [];
+  const out = [];
+  if (doors.length) {
+    const when = d => (d.peakClock == null || d.peakClock === '' ? '–' : String(d.peakClock));
+    out.push('## Busiest doorways', '', ...mdTable(
+      ['#', 'Doorway', 'Crossings', 'Peak per 5 min', 'When'],
+      doors.slice(0, 10).map((d, i) => [i + 1, d.name ?? d.id, fmtInt(d.crossings), fmtInt(d.peakPer5Min), when(d)])
+    ));
+  }
+  if (walls) {
+    const n = walls.count ?? 0;
+    const m = walls.checkedMoves ?? walls.movesChecked ?? 0;
+    const v = walls.violations ?? 0;
+    out.push('', `Walls: ${fmtInt(n)} walls, ${fmtInt(m)} moves checked, ${fmtInt(v)} violations.`);
+  }
+  out.push('', BUILDING_LIMITS);
+  return out;
+}
+
 export function reportMarkdown(runDir) {
   const { meta, spec, metrics, agents, remarks, decisions } = loadRun(runDir);
   const nameOf = nameLookup(spec);
@@ -299,6 +326,7 @@ export function reportMarkdown(runDir) {
   for (const section of [
     bottleneckSection(metrics),
     groupSection(metrics),
+    doorSection(metrics),
     remarkSection(remarks, nameOf),
     tornSection(decisions, spec, nameOf),
     frustrationSection(agents, spec, metrics),

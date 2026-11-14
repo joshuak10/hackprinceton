@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.15 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.19 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -26,6 +26,8 @@ Swarmscope answers questions like "which ER gets overwhelmed on a Friday night?"
 - **Tracks.** CoStar is the headline. LangChain Deep Agents and Amazon are stackable targets. **Peri is dropped at Saturday midday** unless a real business has already shared its numbers by then.
 - **CoStar engineers (Nov 13):** build the Jev simulation from CoStar data first, then generalize the central agent to a wider range of cases. Add visualization of the simulation over time (a time scrubber). The central agent can assign x% of the Jev agents to a specific role (specific roles are undecided).
 - **Emphasis (Nov 13):** the two simulations built from CoStar data are **building congestion** (movement inside a building, from Matterport geometry) and the **retail store parking lot** (Vexcel imagery plus CoStar data).
+
+- **Focus (Nov 14, v0.16):** simulate foot traffic through one real building first: Matterport model `6FNMVoyPrL1` ("Office/Retail - 45,726SF"), using its interior walls and doorways and the building's CoStar data. Everything else waits for this.
 
 ### Status of the prototype
 
@@ -85,7 +87,7 @@ This builds on the premise behind Physical Realities (MHacks 2026 Grand Prize): 
 2. **Sample, don't take the top answer.** Draw each action from Jev's probabilities, so similar people differ.
 3. **Ask small typed questions and combine them in code** (Choice, Score, Noul).
 4. **Agents see only what a real person would:** live waits only with an app, nearby lines otherwise, recent remarks from plausible sources, and place reputations Claude wrote.
-5. **Models choose among options the engine says are valid.** They never change the world directly.
+5. **Models choose among options the engine says are valid.** They never change the world directly. Walls are one of those hard rules: the engine moves every agent along wall-free paths, so no agent passes through a wall.
 6. **Seeded and reproducible.** Save the spec hash and seed with every run. Before/after tests reuse the same seed and arrivals.
 7. **Rankings, not forecasts.** Check every headline claim on 20 seeds and with inputs nudged ±25%. The optimizer reports gains on held-out seeds.
 8. **Record every decision** (state, probabilities, sampled action). The demo replays recorded runs and never depends on live latency.
@@ -210,6 +212,8 @@ geo           { metersPerUnit, source image } so walking times are real
 held[]        resources an agent holds from arrival to exit (parking spaces)
 provenance    per parameter: data | vision | assumed | owner-reported
 roles[]       { role, sharePercent, behavior } assigned by the central agent
+walls[]       { x1, y1, x2, y2 } wall segments in map units; doors and openings are gaps (v0.15)
+edges[].via   route mode: waypoints so an edge bends through a doorway (v0.15)
 ```
 
 The validator rejects bad specs with readable errors, so Claude can fix its own output. Claude decides what the agents are, and the user reviews the proposed agent list before anything runs.
@@ -311,6 +315,17 @@ Unconfirmed: which properties appear in more than one of the three sources, and 
 
 Matterport's Model API (GraphQL, `https://api.matterport.com/api/models/graph`, Basic auth with token ID and secret) returns room outlines, doorway openings and areas. Layout and distances come from measured geometry and are tagged `data`. A vision step covers what geometry does not give (counters, checkouts, seating), tagged `vision`. One building gets checked by a person before we trust the extraction.
 
+### Where interior walls come from (Nov 14)
+
+`[planned]` Matterport gives two sources, and the world builder uses both:
+
+- **Vector data** (Property Intelligence, preferred). Each room boundary edge is typed `wall` (physical) or `invisible` (an open-plan divider people can cross), and lists its openings (`doorway` or `opening`) with a width and a position along the edge. Wall edges become wall segments with gaps at the openings. Matterport's docs say this data needs an Enterprise-level subscription and is only filled in for models processed after November 2023.
+- **The mesh** (the model's OBJ 3D surface, fallback). Slicing it at about chest height gives wall lines. This is noisier: tall furniture can show up as a wall, so a person checks the result.
+
+`[open]` The first tests (below) saw opening types `window` and `divider`, which Matterport's docs don't list. The builder treats any opening type other than `doorway` and `opening` as solid and warns. Confirm on real models.
+
+`[open]` No Matterport keys are on the machine that built v0.2, so the importer is only tested against a hand-made fixture. Run it once against a real model.
+
 ### Findings from the first Matterport tests (Nov 13)
 
 Two models were queried: a 1BR apartment and a 15,000 SF retail space.
@@ -396,16 +411,38 @@ Pitch lines:
 
 ## 14. Change log
 
-- **v0.15 · Nov 14, 2026.** Planned the scope display for the two CoStar simulations (`web/scope/`, contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b), next to the generic viewer in `web/`. Decisions:
+- **v0.19 · Nov 14, 2026.** Merged the scope display (built on `main`, contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b) with the engine. The display sits next to the generic viewer in `web/`. Its decisions:
   - The two cases are separate worlds, each with its own map and run.
   - Incidents are decision outcomes (walked away, gave up, left without being served, drove off without parking), physical congestion (doorways, rooms, lot entrances) and complaints. The viewer derives them from run files and uses `incidents.json` instead when a run has one.
   - Building congestion uses Matterport model `6FNMVoyPrL1`. Real geometry stays local in gitignored `data/` folders; a synthetic plan is committed so a fresh clone works.
   - Mesh surfaces at walking height are walls that agents cannot walk through (section 10b).
   - A shared plain-JS `geometry/` module turns Matterport outlines, openings and the mesh into a walkable grid, for the mock now and the world builder later.
-  - Interior and lot worlds record frames at least every 5 s of simulated time, so replayed dots don't cut through walls.
+  - Interior and lot worlds record frames at least every 5 s of simulated time, so replayed dots don't cut through walls. The engine now does this by default for walled worlds (3 s, v0.18).
   - The parking-lot world is synthetic until a property is chosen and Vexcel access is set up.
   - The display targets laptops and a projector (1280 px and up), dark by default.
-  - People judge a line by the head count they can see, not by minutes worked out from the number of registers. A line visible from the entrance (the café) is judged as people walk in, so the losses show up at the door. Café patience is 0.6 × a group's usual patience. In the mock this caps café and checkout lines at about 15. For Jev: add `people_ahead` to each place in the observation, and allow the `line` moment when a person first sees the line, not only when they reach it.
+  - People judge a line by the head count they can see, not by minutes worked out from the number of registers. A line visible from the entrance (the café) is judged as people walk in, so the losses show up at the door. Café patience is 0.6 × a group's usual patience. In the mock this caps café and checkout lines at about 15. For Jev: the engine now lists `people_ahead` for each visible place (v0.18). `[open]` A `line` moment when a person first sees the line, not only when they reach it.
+
+- **v0.18 · Nov 14, 2026.** The engine meets the scope display's contract (docs/PROTOTYPE.md §7, §9):
+  - Worlds with walls record a frame every 3 s by default (`--frame-seconds` to change it). Frames between ticks place walkers along their wall-free path, so a dot drawn in a straight line between frames never crosses a wall. The simulation is unchanged: on the real building, the rules run gives identical results with 30 s or 3 s frames, and its 342 through-wall straight steps between frames drop to 0.
+  - People judge a line by the head count they can see: each visible place in an observation now says `people_ahead` ("12 people in line").
+  - The server returns `decisions` and an optional `incidents` file per run, and its pages allow the Matterport 3D tour (frame and SDK script from matterport.com).
+
+- **v0.17 · Nov 14, 2026.** First real data for model `6FNMVoyPrL1`, and the scenario for it.
+  - `[confirmed]` The Matterport keys work. The model has 2 floors, 23 rooms, 334 boundary edges (all typed `wall`), 23 openings (all typed `opening`, none `doorway`) and 86 scan points. Room labels are empty and classifications are only "Void" or "Other". The importer gives Floor 1: 134 wall segments, 10 doors (5 exterior); Floor 2: 80 wall segments, 7 doors (3 marked exterior).
+  - `[confirmed]` The scan photos show an **empty shell**: bare floors, columns, unfinished drywall, storefront glass, no tenants or fixtures. Floor 1 is two open halls of about 5,250 and 6,400 SF by Matterport's room estimates. The model's name says 45,726 SF; the room estimates add up to much less, and Floor 2's room outlines are incomplete. `[open]` Reconcile the floor area with CoStar.
+  - **Decision (user):** simulate a proposed fit-out, **office upstairs and retail below**, on a weekday morning and at lunch. Claude designs the fit-out (which places go where) inside the real walls; every placed item and every headcount is tagged `assumed`, and CoStar data supplies the building facts. Each floor is its own world for now, joined by the stairs as a gate.
+  - `[open]` The CoStar data comes as a downloadable kit (a zip), not an API. It has not been downloaded to the build machine yet.
+  - Real-building worlds contain the floor plan, so they are written under `data/` (gitignored) unless the team decides they can be committed.
+
+- **v0.16 · Nov 14, 2026.** Focus on one building: Matterport model `6FNMVoyPrL1` ("Office/Retail - 45,726SF"), simulating foot traffic through it with CoStar data. Decisions, detailed in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §14:
+  - Visit mode with walls. People enter through the real exterior doors, walk wall-free paths through the real doorways to tenant spaces, wait in lines, and leave.
+  - Traffic is measured at each doorway. Doors count crossings but don't yet slow people down.
+  - CoStar data is mapped to a neutral building profile (tenants, floor area, use, hours, parking, street traffic counts). The profile sets who comes, how many and when. Every number not read from CoStar or Matterport is tagged `assumed` and listed.
+  - One floor per world for now. Stairs and elevators stand for the other floors.
+  - The base v0.2 build finished: all five example worlds run with rules, and the server, viewer and MCP server work.
+  - The full test, validation and review pass is parked until this building runs. New modules still ship with their own tests.
+
+- **v0.15 · Nov 14, 2026.** Walls. Interior walls are now part of the world spec (`walls`, `edges[].via`), and the engine guarantees that no agent's movement crosses one: walking follows the shortest wall-free path, places with no path are never offered as options, and the simulation stops with an error rather than record a through-wall move. Walls come from Matterport vector data (edges typed `wall`, with doorway gaps) or, as a fallback, from slicing the model's mesh. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §13. Also: the tests, validation scripts and review phases dropped earlier in the day are added back after the base build.
 
 - **v0.14 · Nov 14, 2026.** Started the first Jev-per-agent prototype (v0.2) and wrote its build contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md). Decisions:
   - Every agent decision is one Jev request (`jev-latest`) that packs all its questions: the primary question plus speculative follow-ups (where else to go, frustration, whether to tell others, remark kind).
@@ -421,6 +458,7 @@ Pitch lines:
   - Recorded the first Jev measurements and resolved the questions-per-request assumption (section 9).
   - Corrected the prototype's description and resolved the doc-vs-prototype item.
   - Fixed the header so it links the original prototype separately from the spec's page copy.
+  - **Later the same day (user decision):** to finish faster, no new tests are written in the v0.2 build, and the work is split across more parallel builders, with the internal interfaces in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §12. The prototype is checked by running it once end to end, including one capped live Jev run and its replay. The validation plan (section 7) is unchanged and is still to be done.
 
 - **v0.13 · Nov 13, 2026.** Set the two headline simulations from CoStar data: building congestion (movement inside a building, from Matterport geometry) and the retail store parking lot (Vexcel imagery plus CoStar data). Added a building-congestion row to the candidate worlds, engine needs for doorway capacity and walkable-graph movement, and a risk that two worlds double the engine work.
 - **v0.12 · Nov 13, 2026.** After talking with the CoStar engineers: build the Jev simulation from CoStar data first, then generalize the central agent to other cases. Added a time scrubber to replay the simulation over time, and a roles feature where the central agent assigns a share of the Jev agents to a role (spec field, engine support and build-order steps added).

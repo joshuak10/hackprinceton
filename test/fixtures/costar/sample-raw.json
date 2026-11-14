@@ -1,0 +1,46 @@
+{
+  "_note": "Made-up test data shaped like a raw CoStar property record. Not a real building or real tenants.",
+  "PropertyID": "TEST-0001",
+  "Property Name": "Sample Plaza (made-up test data)",
+  "Property Address": "100 Sample Street",
+  "City": "Testville",
+  "State": "NJ",
+  "PropertyType": "Office/Retail",
+  "Secondary Type": "Office Building",
+  "Submarket Name": "Testville Downtown",
+  "Building": {
+    "RBA": "45,200 SF",
+    "Number Of Stories": "2",
+    "Year Built": "1988",
+    "Construction Status": "Existing",
+    "Building Class": "B"
+  },
+  "Leasing": {
+    "Percent Leased": "85%",
+    "Avg Asking Rent": "$27.50/SF/YR"
+  },
+  "Parking_Spaces": 150,
+  "parking ratio": "3.32/1,000 SF",
+  "Building Hours": "7:00 AM - 7:00 PM",
+  "True Owner": {
+    "Name": "Example Holdings LLC (fictional)",
+    "City": "Elsewhere"
+  },
+  "Last Sale Price": "$9,100,000",
+  "Location": { "Latitude": 40.0001, "Longitude": -74.0001, "County": "Sample County" },
+  "Traffic Counts": [
+    { "Collection Street": "Sample Street", "Cross Street": "Example Ave", "Traffic Volume": "18,400", "Count Year": 2024 }
+  ],
+  "Tenancy": {
+    "Tenants": [
+      { "Tenant Name": "Kessler & Moss Law (fictional)", "Industry Type": "Legal Services", "SF Occupied": "9,800", "Floor": "1st", "Suite": "110", "Number Of Employees": 38, "Move In Date": "2019-03" },
+      { "Tenant Name": "Brightline Software (fictional)", "Industry Type": "Software", "SF Occupied": "6,200", "Floor": "1st", "Suite": "120", "Move In Date": "2021-07" },
+      { "Tenant Name": "Bluebird Coffee (fictional)", "Industry Type": "Coffee Shop", "SF Occupied": "1,800", "Floor": "Ground", "Suite": "101", "Number Of Employees": 9, "Move In Date": "2016-11" },
+      { "Tenant Name": "Northgate Dental (fictional)", "Industry Type": "Dental Office", "SF Occupied": "2,600", "Floor": "1", "Suite": "105", "Number Of Employees": 12 },
+      { "Tenant Name": "Fernway Gifts (fictional)", "Industry Type": "Gift Boutique", "SF Occupied": "1,500", "Floor": "1", "Suite": "103" },
+      { "Tenant Name": "Halvorsen Insurance (fictional)", "Industry Type": "Insurance Agency", "SF Occupied": "8,400", "Floor": "2nd", "Suite": "210", "Number Of Employees": 30 },
+      { "Tenant Name": "Juniper Yoga (fictional)", "Industry Type": "Yoga Studio", "SF Occupied": "3,200", "Floor": "2nd", "Suite": "220" },
+      { "Tenant Name": "Ledgerline Accounting (fictional)", "Industry Type": "Accounting", "SF Occupied": "5,100", "Floor": "2", "Suite": "230", "Number Of Employees": 22 }
+    ]
+  }
+}

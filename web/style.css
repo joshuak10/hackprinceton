@@ -206,3 +206,40 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
   .scrub input[type="range"] { flex-basis: 100%; order: -1; }
   .tile b { font-size: 1.15rem; }
 }
+
+/* Viewer v0.2 additions */
+.progress { height: 6px; border-radius: 3px; }
+.live { padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.live .mono { overflow-wrap: anywhere; }
+.hint { margin-top: -6px; }
+.tile.now b { color: var(--accent); }
+.dec .situation { font-size: 0.86rem; color: var(--muted); }
+.dec-sum { font-weight: 500; }
+.q.unused { opacity: 0.6; }
+.q .small { font-size: 0.84rem; }
+.trace-box { min-width: 0; }
+.stream .linkish { font-size: 0.9rem; }
+.stream .tag { font-size: 0.62rem; }
+.seg button.on:disabled { background: var(--panel); color: var(--muted); }
+#agentBody { min-width: 0; }
+@media (max-width: 520px) {
+  .runbar .btn { flex: 1 1 auto; }
+  .tile { padding: 8px 10px; }
+  .decisions { max-height: none; }
+  .clock { font-size: 1.2rem; }
+}
+
+/* Walls and doorways (§13d, §14d) */
+.maplegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.78rem; color: var(--muted); }
+.maplegend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; flex: 0 0 auto; }
+.sw.wall { width: 18px; height: 2px; border-radius: 1px; background: var(--ink); }
+.sw.door { width: 14px; height: 5px; border-radius: 1px; background: linear-gradient(90deg, var(--heat0), var(--heat1), var(--heat2)); }
+.sw.door.entrance { box-shadow: 0 0 0 1.5px var(--ink); }
+.rank.doors { gap: 4px; }
+.rank.doors li { display: block; }
+.door-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; width: calc(100% + 16px); padding: 5px 8px; margin: 0 -8px;
+  border: 1px solid transparent; border-radius: 8px; background: none; color: var(--ink); font-size: 0.88rem; text-align: left; }
+.door-row:hover { border-color: var(--line); }
+.door-row.on { border-color: var(--accent); background: var(--accent-soft); }
+.sev.entrance { color: var(--muted); }

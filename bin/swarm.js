@@ -38,6 +38,7 @@ Usage: swarm <command> [options]
       --concurrency N               Parallel Jev requests (default 32)
       --max-requests N              Jev request budget for the whole command (default 20000)
       --batch-window M              Sim minutes decision requests are held before release
+      --frame-seconds S             Seconds between recorded frames (default 3 with walls, else ~duration/360)
       --patch FILE                  Apply a what-if patch (JSON array of {kind, id, field, value})
       --from RUN                    Replay a recorded run's decisions, no API calls (world optional)
       --out DIR                     Runs folder (default runs)
@@ -48,6 +49,22 @@ Usage: swarm <command> [options]
   report <run>                      Markdown digest of a recorded run
   agent <run> <agentId>             One agent's persona, decisions with probabilities, and trace
   runs                              List recorded runs
+  building --model <matterportId> | --plan-raw <file.json>
+           --profile <file.json> [--scenario weekday-lunch] [--floor N]
+           [--overrides file.json] [--out worlds/<slug>.json] [--save-raw data/<id>.json]
+                                    Compose a walled, doored building world from a Matterport floor
+                                    plan and a CoStar profile (§14e); prints rooms, tenants, doors,
+                                    warnings and every assumption used
+  fitout <fitout.json> [--plan-raw data/<id>.json | --model <id>] [--floor N] [--margin 8]
+         [--out data/worlds/<slug>.json]
+                                    Place a proposed fit-out (gates and places in meters) inside a
+                                    real Matterport floor plan; writes a walled, doored world (§14f)
+  import-matterport <modelId> [--floor N] [--mode route|visit] [--out worlds/<slug>.json] [--save-raw data/<id>.json]
+  import-matterport --from-raw <file.json> [...]
+                                    Starter world with walls from a Matterport model (no API call
+                                    with --from-raw)
+  import-mesh <file.obj> [--out FILE]
+                                    Starter world with walls sliced from a 3D mesh (check by eye)
   compile "<description>" [--out FILE] [--force]
                                     Write a world with Claude (needs ANTHROPIC_API_KEY)
   serve [--port 4173]               Start the local viewer
@@ -77,16 +94,26 @@ const COMMANDS = {
   estimate: { min: 1, max: 1, flags: ['seed', 'batch-window', 'json'], run: cmdEstimate },
   run: {
     min: 0, max: 1, run: cmdRun,
-    flags: ['provider', 'seed', 'seeds', ...JEV_FLAGS, 'batch-window', 'patch', 'from', 'out', 'no-record', 'json']
+    flags: ['provider', 'seed', 'seeds', ...JEV_FLAGS, 'batch-window', 'frame-seconds', 'patch', 'from', 'out', 'no-record', 'json']
   },
   compare: {
     min: 1, max: 1, run: cmdCompare,
-    flags: ['patch', 'provider', 'seed', 'seeds', ...JEV_FLAGS, 'batch-window', 'out', 'record', 'no-record', 'json']
+    flags: ['patch', 'provider', 'seed', 'seeds', ...JEV_FLAGS, 'batch-window', 'frame-seconds', 'out', 'record', 'no-record', 'json']
   },
   report: { min: 1, max: 1, flags: ['out', 'json'], run: cmdReport },
   agent: { min: 2, max: 2, flags: ['out', 'json'], run: cmdAgent },
   runs: { min: 0, max: 0, flags: ['out', 'json'], run: cmdRuns },
   compile: { min: 1, max: Infinity, flags: ['out', 'force', 'json'], run: cmdCompile },
+  building: {
+    min: 0, max: 0, run: cmdBuildingLazy,
+    flags: ['model', 'plan-raw', 'profile', 'scenario', 'floor', 'overrides', 'out', 'save-raw']
+  },
+  fitout: { min: 1, max: 1, flags: ['plan-raw', 'model', 'floor', 'margin', 'out'], run: cmdFitoutLazy },
+  'import-matterport': {
+    min: 0, max: 1, run: (a, f) => cmdImportLazy('cmdImportMatterport', a, f),
+    flags: ['floor', 'mode', 'out', 'save-raw', 'from-raw']
+  },
+  'import-mesh': { min: 1, max: 1, flags: ['out'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
   serve: { min: 0, max: 0, flags: ['port'], run: cmdServe },
   sanity: { min: 0, max: 0, flags: ['model'], run: cmdSanity }
 };
@@ -121,10 +148,18 @@ function intFlag(flags, name, fallback, min = 0) {
 }
 
 function simOptsFrom(flags) {
-  if (flags['batch-window'] === undefined) return {};
-  const m = Number(flags['batch-window']);
-  if (!Number.isFinite(m) || m < 0) throw new CliError('--batch-window must be a number of sim minutes, 0 or more');
-  return { batchWindow: m };
+  const out = {};
+  if (flags['batch-window'] !== undefined) {
+    const m = Number(flags['batch-window']);
+    if (!Number.isFinite(m) || m < 0) throw new CliError('--batch-window must be a number of sim minutes, 0 or more');
+    out.batchWindow = m;
+  }
+  if (flags['frame-seconds'] !== undefined) {
+    const s = Number(flags['frame-seconds']);
+    if (!Number.isFinite(s) || s < 1 || s > 600) throw new CliError('--frame-seconds must be a number of seconds from 1 to 600');
+    out.frameEvery = s / 60;
+  }
+  return out;
 }
 
 const seedRange = (seed, n) => Array.from({ length: n }, (_, i) => seed + i);
@@ -321,6 +356,10 @@ function printSingleRun(spec, providerName, seed, res, seconds, patchResult) {
   print();
   print(bottleneckTable(metrics));
   print();
+  if (metrics.doors?.length) {
+    print('Busiest doorways: ' + metrics.doors.slice(0, 3)
+      .map(d => `${d.name ?? d.id} ${fmtInt(d.crossings)} crossings (peak ${fmtInt(d.peakPer5Min)}/5 min)`).join(' · '));
+  }
   print(decisionsLine(metrics.decisions));
   print(`Provider: ${providerStatsLine(providerStats, metrics)}`);
   const warning = fallbackWarning(metrics);
@@ -339,7 +378,7 @@ function frequencyLine(summary) {
   return summary.bottleneckFrequency.filter(f => f.first).map(f => `${f.name} ${f.first}/${n}`).join(' · ') || '–';
 }
 
-function printSeedRuns(spec, providerName, res, seconds, patchResult) {
+function printSeedRuns(spec, providerName, res, seconds, patchResult, providerStats) {
   const { runs, summary } = res;
   const kpiNames = Object.keys(summary.kpis);
   print(`${spec.title} · ${providerName} · seeds ${summary.seeds[0]}..${summary.seeds.at(-1)} · spec ${specHash(spec)}`);
@@ -353,7 +392,7 @@ function printSeedRuns(spec, providerName, res, seconds, patchResult) {
   print(`Mean ± sd over ${runs.length} seeds: ${meanSdLine(summary)}`);
   print(`#1 bottleneck: ${frequencyLine(summary)}`);
   print(decisionsLine(summary.decisions));
-  print(`Provider (all seeds): ${providerStatsLine(runs.at(-1).providerStats, { decisions: summary.decisions })}`);
+  print(`Provider (all seeds): ${providerStatsLine(providerStats, { decisions: summary.decisions })}`);
   for (const r of runs) {
     const warning = fallbackWarning(r.metrics);
     if (warning) print(`seed ${r.seed}: ${warning}`);
@@ -415,11 +454,13 @@ async function cmdRun([ref], flags) {
     printJson({
       provider: providerName, specHash: specHash(spec),
       patch: patchResult && { applied: patchResult.applied, skipped: patchResult.skipped },
-      runs: res.runs.map(r => ({ seed: r.seed, runId: r.runId, runDir: r.runDir, kpis: r.kpis, fallbackRate: fallbackRate(r.metrics) })),
-      summary: res.summary, providerStats: res.runs.at(-1).providerStats
+      runs: res.runs.map(r => ({
+        seed: r.seed, runId: r.runId, runDir: r.runDir, kpis: r.kpis, providerStats: r.providerStats, fallbackRate: fallbackRate(r.metrics)
+      })),
+      summary: res.summary, providerStats: provider.stats()
     });
   } else {
-    printSeedRuns(spec, providerName, res, (Date.now() - started) / 1000, patchResult);
+    printSeedRuns(spec, providerName, res, (Date.now() - started) / 1000, patchResult, provider.stats());
   }
   return 0;
 }
@@ -538,6 +579,32 @@ async function cmdCompile(words, flags) {
   for (const w of warnings) print(`  - ${w}`);
   print(`Next: swarm validate ${shortPath(out)}  then  swarm estimate ${shortPath(out)}`);
   return 0;
+}
+
+async function cmdBuildingLazy(args, flags) {
+  let mod;
+  try { mod = await import('../builder/building-cli.js'); } catch (err) { throw missingModule('builder/building-cli.js', err); }
+  return mod.cmdBuilding(args, flags);
+}
+
+async function cmdFitoutLazy(args, flags) {
+  let mod;
+  try { mod = await import('../builder/fitout-cli.js'); } catch (err) { throw missingModule('builder/fitout-cli.js', err); }
+  return mod.cmdFitout(args, flags);
+}
+
+async function cmdImportLazy(fn, args, flags) {
+  let mod;
+  try { mod = await import('../builder/cli.js'); } catch (err) { throw missingModule('builder/cli.js', err); }
+  if (typeof mod[fn] !== 'function') throw new CliError(`builder/cli.js does not export ${fn} yet.`);
+  return mod[fn](args, flags);
+}
+
+function missingModule(file, err) {
+  if (err?.code === 'ERR_MODULE_NOT_FOUND' && String(err.message).includes(file)) {
+    return new CliError(`${file} is not available yet (still being written). Try again once the walls track has landed.`);
+  }
+  return err;
 }
 
 async function cmdServe(_args, flags) {

@@ -25,10 +25,22 @@ export function headlineKpis(metrics) {
 
 const idNumber = id => Number(String(id).slice(1));
 
+// Provider stats for one run when the provider instance is shared by several runs (runSeeds, compareRuns):
+// top-level counters (requests, tokens, cost, ...) count from `start`; latency and firstError stay cumulative.
+function statsSince(start, now) {
+  const out = { ...now };
+  for (const [k, v] of Object.entries(now)) {
+    if (Number.isFinite(v) && Number.isFinite(start[k])) out[k] = v - start[k];
+  }
+  return out;
+}
+
 export async function runSwarm({
   spec, seed = 7, provider, recorder = null, simOpts = {}, onProgress = null, signal = null, SimClass = null
 }) {
   const Sim = SimClass ?? (await import('../engine/sim.js')).Sim;
+  const startStats = provider.stats();
+  const runStats = () => statsSince(startStats, provider.stats());
   let sim = null;
   let decisions = 0;
   let lastProgress = -Infinity;
@@ -38,7 +50,7 @@ export async function runSwarm({
     const now = Date.now();
     if (now - lastProgress < PROGRESS_MS) return;
     lastProgress = now;
-    onProgress({ t: sim.t, duration: sim.spec.duration, decisions, providerStats: provider.stats() });
+    onProgress({ t: sim.t, duration: sim.spec.duration, decisions, providerStats: runStats() });
   };
 
   // Released requests are answered together and applied in request-id order,
@@ -71,17 +83,19 @@ export async function runSwarm({
       for (let reqs = sim.pending(); reqs.length; reqs = sim.pending()) await resolveAll(reqs);
     }
   } catch (err) {
-    recordFailure(recorder, sim, provider, err);
+    recordFailure(recorder, sim, runStats, err);
     throw err;
   }
 
   const metrics = sim.metrics();
-  const providerStats = provider.stats();
+  const providerStats = runStats();
   recorder?.finish({ sim, metrics, providerStats, status: 'done' });
   return { metrics, providerStats, runDir: recorder?.dir ?? null, runId: recorder?.runId ?? null, sim };
 }
 
-function recordFailure(recorder, sim, provider, err) {
+// Records a failed run as well as the partial state allows. The caller rethrows the original error,
+// so a second failure here is reported on stderr instead of replacing it.
+function recordFailure(recorder, sim, runStats, err) {
   if (!recorder) return;
   let metrics = null;
   try {
@@ -89,7 +103,11 @@ function recordFailure(recorder, sim, provider, err) {
   } catch {
     // Partial state the metrics code can't summarize: record the run without metrics.
   }
-  recorder.finish({ sim, metrics, providerStats: provider.stats(), status: 'error', error: err?.message ?? String(err) });
+  try {
+    recorder.finish({ sim, metrics, providerStats: runStats(), status: 'error', error: err?.message ?? String(err) });
+  } catch (recordErr) {
+    process.stderr.write(`Could not record the failed run in ${recorder.dir}: ${recordErr.message}\n`);
+  }
 }
 
 function meanSd(values) {

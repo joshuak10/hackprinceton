@@ -4,7 +4,7 @@ A **world** is one JSON file that describes a place, the people who come to it, 
 
 The engine is lenient: unknown or out-of-range values are clamped or replaced with defaults, and `swarm validate` lists every such fix as a warning. A few problems are fatal errors (section 9). Run `node bin/swarm.js validate worlds/<name>.json` after every edit.
 
-Contents: [1 Modes](#1-choose-a-mode) · [2 Top level](#2-top-level-fields) · [3 Arrivals](#3-arrivals) · [4 Nodes](#4-nodes) · [5 Edges](#5-edges-route-mode) · [6 Archetypes](#6-archetypes) · [7 The cast](#7-the-cast-minds) · [8 How fields drive decisions](#8-how-the-fields-drive-decisions) · [9 Validation](#9-validation-ids-and-references) · [10 What-if patches](#10-what-if-patches) · [11 Size and cost](#11-size-and-cost) · [12 Examples](#12-examples) · [13 Checklist](#13-checklist)
+Contents: [1 Modes](#1-choose-a-mode) · [2 Top level](#2-top-level-fields) · [3 Arrivals](#3-arrivals) · [4 Nodes](#4-nodes) · [5 Edges](#5-edges-route-mode) · [6 Archetypes](#6-archetypes) · [7 The cast](#7-the-cast-minds) · [8 How fields drive decisions](#8-how-the-fields-drive-decisions) · [9 Validation](#9-validation-ids-and-references) · [10 What-if patches](#10-what-if-patches) · [11 Size and cost](#11-size-and-cost) · [12 Examples](#12-examples) · [13 Checklist](#13-checklist) · [14 Buildings: walls and doors](#14-buildings-walls-doors-and-floor-plans)
 
 ---
 
@@ -34,12 +34,16 @@ Not modeled yet: resources held for a long time while doing other things (a park
 | `mode` | `"visit"` or `"route"` | `"visit"` | Any value other than `"route"` means visit. |
 | `duration` | integer minutes, 30–1440 | 600 visit, 180 route | Length of the simulated period. Leave time after `arrivals.end` for people to finish. |
 | `clockStart` | integer minutes after midnight, 0–1439 | 480 (8:00 am) | Wall-clock time at minute 0. 690 = 11:30 am, 1080 = 6:00 pm. |
-| `travelSpeed` | map units per minute, 0.2–60 | 4 | Visit mode only (alias `walkSpeed`). Walking time between points = distance ÷ `travelSpeed` + 0.5 min. The map is 100 × 100 units, so crossing it takes 100 ÷ `travelSpeed` minutes: 4 for a theme park (25 min), 25 for a food hall (4 min), 3 for driving across a city (33 min). |
+| `travelSpeed` | map units per minute, 0.2–600 | 4 | Visit mode only (alias `walkSpeed`). Walking time between points = distance ÷ `travelSpeed` + 0.5 min. The map is 100 × 100 units, so crossing it takes 100 ÷ `travelSpeed` minutes: 4 for a theme park (25 min), 25 for a food hall (4 min), 3 for driving across a city (33 min). A floor plan drawn at about 0.5 m per unit walks at about 135 (75 m per minute ÷ `geo.metersPerUnit`), which is why the maximum is 600. Values above 600 are clamped with a warning. |
 | `arrivals` | object | see section 3 | Who arrives when. |
 | `nodes` | array, ≤ 60 | required | Places (visit) or network points (route). Extra entries are dropped. |
 | `edges` | array, ≤ 150 | required in route mode | Links between nodes. Ignored in visit mode. |
 | `archetypes` | array, 1–6 | one group `"Everyone"` | Behavioral groups with shares. Extra entries are dropped. |
 | `minds` | array, ≤ 40 | one generic persona per archetype | **The cast**: concrete people (section 7). Write 10–20. |
+| `walls` | array, ≤ 4000 segments | none | Interior and exterior walls nobody can walk through (section 14). |
+| `geo` | object | none | Scale and path clearance for a floor plan (section 14). |
+| `doors` | array, ≤ 500 | none | Doorway segments where foot traffic is counted (section 14). |
+| `provenance` | object, ≤ 300 keys | none | Where each number came from: `data`, `vision`, `assumed` or `owner-reported` (section 14). |
 
 ## 3. Arrivals
 
@@ -63,7 +67,7 @@ Common fields:
 | `kind` | visit: `gate`, `entry`, `exit`, `service`; route: `origin`, `destination`, `intersection` | `service` (visit), `intersection` (route) | See below. |
 | `x`, `y` | number, 3–97 | 50 | Position on the 100 × 100 map (x right, y down). In visit mode positions set walking times, what agents can see, and what counts as nearby (section 8). In route mode they are only for drawing and for the default edge length. |
 
-**Visit mode kinds.** `gate` is an entrance and an exit. `entry` is entrance only, `exit` is exit only. `service` is a place with a line. At least one `service` is required. With no `gate` or `entry`, a default `"Entrance"` gate is added at (50, 95). People who leave walk to the nearest `gate` or `exit`; with none they disappear when done.
+**Visit mode kinds.** `gate` is an entrance and an exit. `entry` is entrance only, `exit` is exit only. `service` is a place with a line. At least one `service` is required. With no `gate` or `entry`, a default `"Entrance"` gate is added at (50, 95). People who leave walk to the nearest `gate` or `exit` by walking distance (around walls, section 14), or to the nearest of their group's own `exits` when the archetype lists some (section 6); with none they disappear when done.
 
 | Field (visit) | Applies to | Type and range | Default | Meaning |
 |---|---|---|---|---|
@@ -84,7 +88,8 @@ Common fields:
 |---|---|---|---|
 | `from`, `to` | node id (or exact name) | required | Ends of the link. An unknown reference is an error; a link from a node to itself is dropped. |
 | `name` | string, ≤ 40 | `"<from name> – <to name>"` | Shown to agents ("via I-9 → Liberty Bridge") and in reports. |
-| `length` | minutes, 0.2–180 | half the map distance between the ends | **Free-flow travel time** in minutes with nobody else on it. |
+| `length` | minutes, 0.2–180 | half the map distance between the ends (half the `via` polyline length when it has waypoints) | **Free-flow travel time** in minutes with nobody else on it. |
+| `via` | up to 12 `{ x, y }` points, 0–100 | none (a straight line) | Waypoints that shape the link: it runs from → via… → to. In a world with `walls`, no link may touch a wall, so route it through doorways with waypoints (section 14). |
 | `capacity` | integer, 1–10000 | 100 | How much load the link takes before it slows; meaning depends on `costModel`. |
 | `twoWay` | boolean | `true` | `false` for one-direction links (one-way streets, up-only morning elevators, entry turnstiles). |
 | `costModel` | `bpr` or `linear` | `bpr` | How travel time grows with load. |
@@ -127,6 +132,8 @@ These are rough planning numbers; mark them as assumptions in your findings.
 | `patience` | visit | minutes, 1–1440 | 45 | Minutes of waiting in one line this group puts up with (section 8). |
 | `likes` | visit | up to 12 tags | `[]` | Soft preference: places with these tags are more attractive. |
 | `needs` | visit | up to 12 tags | `[]` | Hard filter: only places with at least one of these tags are options. Empty means every place is an option. |
+| `entries` | visit | gate or entry node ids (or exact names) | every gate and entry, by `weight` | Where this group appears, e.g. office workers start at their own suite's gate while visitors come in from the street. A persona's own `entry` still wins about half the time. An unknown or wrong-kind reference is a warning and is ignored. |
+| `exits` | visit | gate or exit node ids (or exact names) | every gate and exit (`[]` means the same) | Where this group leaves: when a person is done, they walk to the nearest of these by walking distance. Use it so people leave the way they would really go, e.g. lunch customers out to the street, never up the office stairs, which would miscount door traffic. If walls leave none of the group's exits reachable from where the person stands, they take the nearest reachable gate or exit of any kind. An unknown or wrong-kind reference is a warning and is ignored. |
 | `origins` | route | origin node ids | all origins | Where this group's trips start. |
 | `destinations` | route | destination node ids | all destinations | Where this group's trips end (one is picked at random per agent). |
 
@@ -188,9 +195,10 @@ Agents decide through Jev at decision moments. The engine computes the facts and
 - not a JSON object;
 - visit mode without any `service` node;
 - route mode without edges, without an `origin`, or without a `destination`;
-- an edge `from`/`to`, archetype `origins`/`destinations`, or cast `entry`/`origin`/`destination` that names a node that does not exist.
+- an edge `from`/`to`, archetype `origins`/`destinations`, or cast `entry`/`origin`/`destination` that names a node that does not exist;
+- with `walls` (section 14): more than 4000 walls, a node closer than 0.05 to a wall, a route link that touches a wall, or a visit place that cannot be reached on foot from any gate or entry or cannot reach any gate or exit.
 
-**Warnings** (it runs, but something was changed or looks wrong): a value clamped to its range, an unknown field, a missing cast, a service node no archetype's `needs` can reach. Each message names the field path, e.g. `nodes[3].servers: 0 is below the minimum 1; using 1`. Fix warnings unless you meant them.
+**Warnings** (it runs, but something was changed or looks wrong): a value clamped to its range, an unknown field, a missing cast, a service node no archetype's `needs` can reach, a dropped or clamped wall, a dropped door, a door that touches a wall or is not in a gap between walls, and an archetype `entries` or `exits` reference that names nothing usable (an unknown node, or a node of the wrong kind). Each message names the field path, e.g. `nodes[3].servers: 0 is below the minimum 1; using 1`. Fix warnings unless you meant them.
 
 Reference nodes and archetypes by `id`. Give every node and archetype an explicit `id` so references never depend on slugging.
 
@@ -209,7 +217,7 @@ Reference nodes and archetypes by `id`. Give every node and archetype an explici
 
 | `kind` | `id` | Patchable `field`s |
 |---|---|---|
-| `node` | node id or name | `servers`, `serviceTime`, `appeal`, `price` |
+| `node` | node id or name | `servers`, `serviceTime`, `appeal`, `price`; `weight` on visit gates and entries (shifts how many people use each entrance) |
 | `edge` | `"from>to"` (either direction) or edge name | `capacity`, `length`, `closed` (value 1 removes the edge) |
 | `archetype` | archetype id or name | `info`, `patience`, `rationality`, `visits`, `share` |
 | `global` | none | `arrivals.total`, `arrivals.start`, `arrivals.end`, `travelSpeed` |
@@ -305,3 +313,91 @@ Full examples: [theme-park](theme-park.json) and [er-network](er-network.json) (
 - [ ] Every archetype has a persona, and every `needs` list matches at least one service.
 - [ ] 10–20 cast members with situations, constraints, loyalties, `social` and a mix of `informed`.
 - [ ] `swarm validate` shows no errors, and you understand every warning.
+- [ ] With `walls`: every place sits inside a room, every gate sits in or just outside an exterior doorway, and `swarm validate` reports no wall errors.
+
+## 14. Buildings: walls, doors and floor plans
+
+A world can carry the walls of a real floor plan, and then **nobody walks through a wall**. In visit mode people walk the shortest wall-free path, and its length sets walking time, the distance words agents read, and what counts as nearby. A place that no path reaches is never offered. In route mode each link follows its `via` polyline. The builders (`swarm import-matterport`, `swarm building`, `swarm fitout`) write these fields from Matterport and CoStar data; you can also draw them by hand.
+
+Everything is in map units on the same 100 × 100 map as the nodes. Walls, doors and waypoints may use the full 0–100 range; nodes stay within 3–97.
+
+**`walls`**: up to 4000 segments, each `{ "x1", "y1", "x2", "y2" }` or the short form `[x1, y1, x2, y2]`, with an optional `source` of `"matterport-vector"`, `"mesh-slice"` or `"drawn"`.
+- A doorway is a gap: give the wall as the pieces on either side of it.
+- Touching counts as crossing, so a path may not even graze a wall end.
+- Out-of-range coordinates are clamped and zero-length walls are dropped, each with a warning. More than 4000 walls is an error.
+
+**`geo`**: scale and clearance of the plan.
+
+| Field | Type and range | Default | Meaning |
+|---|---|---|---|
+| `metersPerUnit` | number, 0.001–10000 | `null` | Real size of one map unit. Informational: set `travelSpeed` to walking speed (about 75–80 m/min) ÷ `metersPerUnit`; the engine accepts up to 600. |
+| `clearance` | map units, 0.02–1 | 0.2 | How far walking paths stay from wall ends. Keep it at most a quarter of the narrowest door. |
+| `floor` | number, or a label ≤ 40 chars | `null` | Which floor the plan shows. |
+| `source` | string, ≤ 80 | `""` | Where the plan came from, e.g. `"matterport-vector"`. |
+
+**`doors`**: up to 500 doorway segments. Doors are not walls: people walk through them. In visit mode, each time a walking path crosses a door's gap, that door gets one crossing (a door end that stops just short of a wall, within 0.3 units or the clearance, counts as reaching it). The busiest doors are ranked in the report and the viewer.
+
+| Field | Type and range | Default | Meaning |
+|---|---|---|---|
+| `id` | string | slug of `name` | Unique; duplicates get a suffix. |
+| `name` | string, ≤ 40 | the id | Shown in "Busiest doorways", e.g. `"Lobby to Suite 110"`. |
+| `x1`, `y1`, `x2`, `y2` | numbers, 0–100 | required | The doorway's gap, from one jamb to the other. A door missing a coordinate, or of zero length, is dropped with a warning. |
+| `exterior` | boolean | `false` | `true` for a door to the outside. |
+
+A door should sit exactly in a gap between walls. A door that touches a wall away from its ends, or has no wall within 0.5 units of either end, gets a warning.
+
+**`provenance`**: an object (up to 300 keys) that maps a field path such as `"nodes[3].servers"`, `"walls"` or `"arrivals.total"` to where the value came from:
+- `"data"`: read from Matterport, CoStar or another record;
+- `"vision"`;
+- `"assumed"`;
+- `"owner-reported"`.
+
+The engine keeps it as-is. Any other value gets one warning. Reports use it to say which numbers are assumptions.
+
+Archetypes can also say where each group appears with `entries` and which doors it leaves by with `exits` (section 6), and route links take `via` waypoints (section 5). Leaving always takes the nearest allowed exit on foot, so door traffic counts the walk people really make.
+
+**Rules.** These are errors, and the world does not run:
+- Every node is at least 0.05 units from every wall. Put each place inside its room, and each gate in or just outside an exterior doorway.
+- Route mode: no link touches a wall. A link is checked as the polyline from → `via`… → to, and the message names the link and the wall.
+- Visit mode: every service can be reached on foot from at least one gate or entry, and can reach at least one gate or exit. A world with no gate or exit at all skips the exit check, because people simply vanish when done.
+
+Messages name walls by their position in your `walls` list. In a world with walls, cleaned and recorded specs keep node positions exact (no rounding to 0.1), so a place never shifts onto a wall.
+
+**Example: two rooms and a street door.** The rooms share a wall with a doorway in it, the street door is a gap in the bottom wall, and the gate stands just outside that door.
+
+```json
+{
+  "title": "Two-room street-front floor",
+  "question": "Which room backs up at lunch, and how busy is the inner doorway?",
+  "context": "Weekday lunch on the ground floor of a small office and retail building.",
+  "mode": "visit",
+  "duration": 120,
+  "clockStart": 690,
+  "travelSpeed": 53,
+  "arrivals": { "total": 200, "start": 0, "end": 75, "shape": "peak" },
+  "nodes": [
+    { "id": "street", "name": "Street door", "kind": "gate", "x": 25, "y": 88 },
+    { "id": "cafe", "name": "Corner Cafe", "kind": "service", "x": 30, "y": 50, "servers": 2, "serviceTime": 3, "appeal": 0.6, "price": 9, "tags": ["food", "public"], "about": "Sandwich counter in the front room; the line reaches the door at noon" },
+    { "id": "clinic", "name": "Walk-in Clinic", "kind": "service", "x": 70, "y": 50, "servers": 1, "serviceTime": 12, "appeal": 0.5, "price": 40, "tags": ["care", "public"], "about": "Small clinic in the back room, through the inner doorway" }
+  ],
+  "walls": [
+    [10, 20, 90, 20], [10, 20, 10, 80], [90, 20, 90, 80],
+    [10, 80, 20, 80], [30, 80, 90, 80],
+    [50, 20, 50, 45], [50, 55, 50, 80]
+  ],
+  "geo": { "metersPerUnit": 1.5, "clearance": 0.2, "floor": 1, "source": "drawn" },
+  "doors": [
+    { "id": "front", "name": "Street door", "x1": 20, "y1": 80, "x2": 30, "y2": 80, "exterior": true },
+    { "id": "inner", "name": "Cafe to clinic", "x1": 50, "y1": 45, "x2": 50, "y2": 55 }
+  ],
+  "provenance": { "walls": "data", "nodes[1].servers": "assumed", "nodes[2].servers": "assumed", "arrivals.total": "assumed" },
+  "archetypes": [
+    { "id": "lunch", "name": "Lunch crowd", "share": 0.8, "visits": 1, "patience": 12, "info": 0.3, "needs": ["food"], "entries": ["street"] },
+    { "id": "patients", "name": "Clinic patients", "share": 0.2, "visits": 1, "patience": 45, "info": 0.5, "needs": ["care"] }
+  ],
+  "minds": [
+    { "id": "dana", "name": "Dana Okafor", "age": 31, "archetype": "lunch", "bio": "Works upstairs and has 30 minutes for lunch.", "personality": "hurried", "goal": "Eat before a 1 pm call", "social": "her team chat", "informed": false },
+    { "id": "lee", "name": "Lee Haddad", "age": 67, "archetype": "patients", "bio": "Needs a prescription renewed before the weekend.", "personality": "patient, polite", "goal": "See someone today", "social": "his daughter", "informed": true }
+  ]
+}
+```
