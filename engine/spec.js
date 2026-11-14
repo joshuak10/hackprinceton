@@ -21,11 +21,14 @@ const SPEED = { def: 4, min: 0.2, max: 600 }; // travelSpeed, map units per minu
 const MIN_WALL_GAP = 0.05;   // every node keeps at least this distance from every wall (§13a)
 const DOOR_END_SLACK = 0.02; // a door may touch walls within this distance of its own ends (its jambs)
 const DOOR_NEAR_WALL = 0.5;  // a door with no wall this close to either end is not in a wall gap
+const WAITING_ASK_MIN = 5;   // waiting.askAgainEvery: shortest gap in minutes between "keep waiting?" questions
+const WAITING_ASK_MAX = 240; // ... and the longest
 
 const KNOWN = {
   top: ['$schema', 'title', 'question', 'context', 'leaveLabel', 'mode', 'duration', 'clockStart', 'travelSpeed', 'walkSpeed',
-    'arrivals', 'nodes', 'edges', 'archetypes', 'minds', 'walls', 'objects', 'geo', 'doors', 'provenance', 'offers'],
+    'arrivals', 'nodes', 'edges', 'archetypes', 'minds', 'walls', 'objects', 'geo', 'doors', 'provenance', 'offers', 'waiting'],
   arrivals: ['total', 'start', 'end', 'shape'],
+  waiting: ['tellPatience', 'askAgainEvery'],
   node: ['id', 'name', 'kind', 'x', 'y', 'servers', 'serviceTime', 'serviceDist', 'appeal', 'price', 'tags', 'about', 'weight'],
   edge: ['from', 'to', 'name', 'length', 'capacity', 'twoWay', 'costModel', 'via'],
   archetype: ['id', 'name', 'description', 'share', 'weights', 'visits', 'patience', 'info', 'rationality', 'likes', 'needs',
@@ -222,6 +225,28 @@ function build(raw, rep) {
     nodes: [], edges: [], archetypes: [], minds: [],
     walls: [], objects: [], geo: null, doors: [], provenance: null, offers: []
   };
+
+  // waiting (§16): how visit-mode people are asked about lines. The key is added only when a value differs from
+  // the defaults, so a world without it normalizes, records, cleans and hashes exactly as before.
+  if (!missing(raw.waiting)) {
+    const wt = raw.waiting;
+    if (!isObj(wt)) rep.warn('waiting', `${show(wt)} is not an object; ignored`);
+    else if (route) rep.warn('waiting', 'applies to visit mode only; ignored');
+    else {
+      unknownFields(rep, 'waiting', wt, KNOWN.waiting);
+      let tellPatience = true;
+      if (!missing(wt.tellPatience)) {
+        if (typeof wt.tellPatience === 'boolean') tellPatience = wt.tellPatience;
+        else rep.warn('waiting.tellPatience', `${show(wt.tellPatience)} is not true or false; using true`);
+      }
+      let askAgainEvery = number(rep, 'waiting.askAgainEvery', wt.askAgainEvery, 0, 0, WAITING_ASK_MAX);
+      if (askAgainEvery > 0 && askAgainEvery < WAITING_ASK_MIN) {
+        rep.warn('waiting.askAgainEvery', `${fmt(askAgainEvery)} is under ${WAITING_ASK_MIN} minutes; using ${WAITING_ASK_MIN}`);
+        askAgainEvery = WAITING_ASK_MIN;
+      }
+      if (!tellPatience || askAgainEvery > 0) spec.waiting = { tellPatience, askAgainEvery };
+    }
+  }
 
   // ----- nodes -----
   const ids = new Set(), ref = new Map(), names = new Map(), nodePath = new Map(), edgePaths = [];
@@ -960,7 +985,8 @@ export function cleanSpec(spec) {
         id: o.id, text: o.text, to: { groups: o.to.groups.slice(), cast: o.to.cast.slice() },
         place: o.place, priceOff: o.priceOff, from: o.from, until: o.until
       }))
-    } : {})
+    } : {}),
+    ...(spec.waiting ? { waiting: { tellPatience: spec.waiting.tellPatience, askAgainEvery: spec.waiting.askAgainEvery } } : {})
   };
 }
 

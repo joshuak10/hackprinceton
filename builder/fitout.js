@@ -32,10 +32,10 @@ const MAX_NODES = 60, MAX_DOORS = 500;
 const NAME_MAX = 40;
 
 const FITOUT_FIELDS = ['$schema', 'model', 'floor', 'title', 'question', 'context', 'leaveLabel', 'clockStart', 'duration',
-  'walkMetersPerMinute', 'arrivals', 'gates', 'places', 'archetypes', 'minds', 'provenance', 'assumptions'];
+  'walkMetersPerMinute', 'arrivals', 'waiting', 'gates', 'places', 'archetypes', 'minds', 'provenance', 'assumptions'];
 const GATE_FIELDS = ['id', 'name', 'at', 'weight', 'exit'];
 const PLACE_FIELDS = ['id', 'name', 'at', 'servers', 'serviceTime', 'serviceDist', 'appeal', 'price', 'tags', 'about'];
-const PASS_THROUGH = ['title', 'question', 'context', 'leaveLabel', 'clockStart', 'duration', 'arrivals'];
+const PASS_THROUGH = ['title', 'question', 'context', 'leaveLabel', 'clockStart', 'duration', 'arrivals', 'waiting'];
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const arr = v => (Array.isArray(v) ? v : []);
@@ -429,7 +429,7 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
   // Field order as in the world schema: text, mode and timing first.
   const ordered = {};
   for (const k of ['title', 'question', 'context', 'leaveLabel', 'mode', 'duration', 'clockStart', 'travelSpeed', 'arrivals',
-    'nodes', 'archetypes', 'minds', 'walls', 'objects', 'geo', 'doors', 'provenance']) if (world[k] !== undefined) ordered[k] = world[k];
+    'nodes', 'archetypes', 'minds', 'walls', 'objects', 'geo', 'doors', 'provenance', 'waiting']) if (world[k] !== undefined) ordered[k] = world[k];
 
   const check = validateWorld(ordered);
   if (!check.ok) throw fitoutError('the built world does not pass validateWorld', check.errors);

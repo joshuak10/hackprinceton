@@ -143,6 +143,9 @@ export class Sim {
     this.frameEvery = positive(opts.frameEvery, walled ? WALLED_FRAME_EVERY : Math.max(0.5, this.spec.duration / 360));
     this.maxTrace = Math.max(1, Math.round(positive(opts.maxTrace, 60)));
     this.opts = { seed, external: this.external, dt: this.dt, batchWindow: this.batchWindow, frameEvery: this.frameEvery };
+    // waiting.askAgainEvery (§16): minutes between "keep waiting?" questions for one person in one line.
+    // 0, the default, asks once and then makes the person leave one patience-length later.
+    this.askAgain = Number(this.spec.waiting?.askAgainEvery) > 0 ? Number(this.spec.waiting.askAgainEvery) : 0;
 
     this.t = 0; this.tick = 0;
     this.nodes = this.spec.nodes.map((n, i) => ({
@@ -631,7 +634,7 @@ export class Sim {
   }
 
   enqueue(a, n) {
-    a.state = 'queue'; a.enq = this.t; a.askedLong = false; a.longLimit = null;
+    a.state = 'queue'; a.enq = this.t; a.askedLong = false; a.longLimit = null; a.nextLong = null;
     n.queue.push(a);
     if (n.queue.length > n.maxQueue) n.maxQueue = n.queue.length;
   }
@@ -705,8 +708,12 @@ export class Sim {
           if (a.req) { keep.push(a); continue; }
           const waited = t - a.enq, tol = this.tolerance(a);
           if (this.external) {
-            if (!a.askedLong && waited > tol && waited > 10) {
-              a.askedLong = true;
+            // The first question comes once the wait passes the group's patience. With waiting.askAgainEvery
+            // (§16) a person who said yes is asked again after that many more minutes and is never made to
+            // leave; without it they are asked once and leave when the wait reaches longLimit.
+            const again = a.askedLong && a.nextLong != null && waited >= a.nextLong;
+            if ((!a.askedLong && waited > tol && waited > 10) || again) {
+              a.askedLong = true; a.nextLong = null;
               this.requestLong(a, n, waited);
               keep.push(a);
             } else if (a.longLimit != null && waited > a.longLimit) this.giveUp(a, n, waited);
@@ -1006,7 +1013,10 @@ export class Sim {
     st.total++;
     st.byProvider[provider] = (st.byProvider[provider] || 0) + 1;
     st.byKind[req.kind] = (st.byKind[req.kind] || 0) + 1;
-    this.log(a, `Decided (${provider}): ${summary}`);
+    // With waiting.askAgainEvery (§16) one long wait repeats the same line; keep it once so it cannot fill the trace.
+    const traceLine = `Decided (${provider}): ${summary}`;
+    const repeat = this.askAgain > 0 && req.kind === 'long' && a.trace.length > 0 && a.trace[a.trace.length - 1].m === traceLine;
+    if (!repeat) this.log(a, traceLine);
 
     return {
       id: req.id, agentId: a.id, kind: req.kind, yes: s.yes ?? null, action: s.action ?? null,
@@ -1047,7 +1057,11 @@ export class Sim {
     const i = n.queue.indexOf(a);
     if (i < 0) return yes ? `kept waiting at ${n.name}` : `wanted to leave ${n.name}'s line but was already through`;
     const waited = this.t - a.enq;
-    if (yes) { a.longLimit = waited + this.tolerance(a); return `kept waiting at ${n.name}`; }
+    if (yes) {
+      if (this.askAgain > 0) a.nextLong = waited + this.askAgain;
+      else a.longLimit = waited + this.tolerance(a);
+      return `kept waiting at ${n.name}`;
+    }
     n.queue.splice(i, 1); a.waitTotal += waited; this.walkAway(a, n);
     const m = this.placeFor(a, s.action);
     if (m) { this.goTo(a, m, true, t); return `gave up on ${n.name} after ${Math.round(waited)} min for ${m.name}`; }

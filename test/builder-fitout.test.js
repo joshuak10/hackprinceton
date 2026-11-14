@@ -164,6 +164,18 @@ describe('applyFitout', () => {
     assert.deepEqual(report.warnings, []);
   });
 
+  test('waiting (docs/PROTOTYPE.md §16) passes through; a fit-out without it builds a world without it', () => {
+    const waiting = { tellPatience: false, askAgainEvery: 20 };
+    const { world, report } = applyFitout(PLAN, makeFitout({ waiting }));
+    assert.deepEqual(world.waiting, waiting);
+    assert.deepEqual(validateWorld(world).spec.waiting, waiting);
+    assert.deepEqual(report.warnings, []);
+    const plain = applyFitout(PLAN, makeFitout()).world;
+    assert.equal(Object.hasOwn(plain, 'waiting'), false);
+    const { waiting: dropped, ...rest } = world;
+    assert.deepEqual(rest, plain);
+  });
+
   test('a gate with exit: false becomes an entry node; other gates stay gates', () => {
     const { world, report } = applyFitout(PLAN, makeFitout());
     assert.equal(node(world, 'staff').kind, 'entry');

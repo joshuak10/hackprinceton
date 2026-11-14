@@ -31,6 +31,7 @@ Not modeled yet: resources held for a long time while doing other things (a park
 | `question` | string, ≤ 400 | `"Where are the bottlenecks?"` | The decision the run informs. Make it a ranking question ("which…", "where…", "which fix…"). |
 | `context` | string, ≤ 300 | the title | One or two sentences **agents are told** about the setting: day, time, place, what people are doing. Every Jev decision sees it. Example: `"Friday night in Larkfield. People are deciding where to get emergency care."` |
 | `leaveLabel` | string, ≤ 60 | `"Leave and go home"` | Visit mode: label of the leave option, e.g. `"Give up and eat somewhere else"`. |
+| `waiting` | object | none | Visit mode, optional: how people are asked about lines. `tellPatience` (boolean, default `true`): `false` stops telling each person in words how a line compares with their group's patience ("more than they will put up with"), so the decision model judges that from the person. `askAgainEvery` (minutes, 5 to 240, default `0`): above 0, a person who keeps waiting is asked again that often and is never made to leave; `0` asks once. Rules runs are unaffected. See docs/PROTOTYPE.md §16. |
 | `mode` | `"visit"` or `"route"` | `"visit"` | Any value other than `"route"` means visit. |
 | `duration` | integer minutes, 30–1440 | 600 visit, 180 route | Length of the simulated period. Leave time after `arrivals.end` for people to finish. |
 | `clockStart` | integer minutes after midnight, 0–1439 | 480 (8:00 am) | Wall-clock time at minute 0. 690 = 11:30 am, 1080 = 6:00 pm. |
@@ -171,12 +172,12 @@ The cast is the heart of a world. Each agent is assigned one persona: first a gr
 
 ## 8. How the fields drive decisions
 
-Agents decide through Jev at decision moments. The engine computes the facts and turns them into words: waits, distances, prices and patience appear as phrases like "long, about 45 min" and "more than they will put up with". Jev sees the person (cast fields, group name, app or not), `context`, the time, their history so far, the valid options, up to 4 recent remarks they heard, and up to 3 offers they received (section 15). It never sees `appeal`, `weights` or `rationality`; those drive only the rules policy.
+Agents decide through Jev at decision moments. The engine computes the facts and turns them into words: waits, distances, prices and patience appear as phrases like "long, about 45 min" and "more than they will put up with" (the patience phrase is left out when the world sets `waiting.tellPatience: false`). Jev sees the person (cast fields, group name, app or not), `context`, the time, their history so far, the valid options, up to 4 recent remarks they heard, and up to 3 offers they received (section 15). It never sees `appeal`, `weights` or `rationality`; those drive only the rules policy.
 
 **Visit mode moments:**
 - **Choose** (arrive, finish somewhere, walk away from a line, give up): which place next, or leave. Options are places not yet visited whose `tags` match the archetype's `needs`, each with its `about`, `tags` ("offers"), price, distance and line (if visible).
 - **Line**: on reaching a place whose estimated wait is over 8 minutes and over half their tolerance, do they join? (Shorter waits are joined without asking.)
-- **Long wait**: after waiting longer than their tolerance and over 10 minutes, do they keep waiting? Once per line.
+- **Long wait**: after waiting longer than their tolerance and over 10 minutes, do they keep waiting? Once per line, or again every `waiting.askAgainEvery` minutes when the world sets it (then nobody is made to leave).
 - After an experience, Jev also rates frustration (calm to furious) and decides whether they warn or praise the place to others.
 
 **Patience.** Tolerance = archetype `patience` × a frustration factor (1 when calm, down to 0.6 when furious). The estimated wait is (people in line + 1) × `serviceTime` ÷ `servers` when every server is busy, and 0 otherwise. Choose patience as "the wait at which most of this group starts thinking about leaving": ER critical 300–600, moderate 120–180, minor 60–90; theme park families 30–45; lunch-break workers 10–15. The rules policy walks away at about 0.8–1.2 × tolerance and gives up in line at about 1.3 × tolerance.
