@@ -36,7 +36,7 @@ function applyTheme() {
   $('themeBtn').setAttribute('aria-label', st.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
   R.pal = readPalette();
   R.baseKey = '';
-  if (st.bundle) { T.setRun({ duration: st.run.duration, clockStart: st.bundle.meta.clockStart, bins: st.run.bins, moments: st.run.moments, pal: R.pal }); }
+  if (st.bundle) { T.setRun({ duration: st.run.duration, clockStart: st.bundle.meta.clockStart, bins: st.run.bins, pal: R.pal }); }
   drawThumbs();
   st.dirty = true;
 }
@@ -54,7 +54,6 @@ const T = createTimeline({
   onSeek: (t, opts = {}) => {
     seek(t);
     if (opts.user) pause();
-    if (opts.moment?.focus) focusIncident(opts.moment.focus, { fly: true });
   },
   onPlay: () => (st.playing ? pause() : play()),
   onSpeed: s => setSpeed(s)
@@ -125,7 +124,7 @@ function setBundle(bundle, caseInfo) {
   renderFloorTabs();
   renderFilters($('feedFilters'), st, toggleFilter);
   renderLegend();
-  T.setRun({ duration: st.run.duration, clockStart: bundle.meta.clockStart, bins: st.run.bins, moments: st.run.moments, pal: R.pal });
+  T.setRun({ duration: st.run.duration, clockStart: bundle.meta.clockStart, bins: st.run.bins, pal: R.pal });
   if (!$('drawer').hidden) renderDrawer($('drawerBody'), drawerState(), st.caseInfo);
   st.lastPanels = -1;
   st.dirty = true;
@@ -172,7 +171,7 @@ function renderRunPicker() {
     const when = r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
     o.value = r.meta.runId;
     const n = r.meta.decisions || 0;
-    o.textContent = `${providerWords(r.meta)}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}, ${n ? `${n.toLocaleString('en-US')} decisions` : 'no decision records'}`;
+    o.textContent = `${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}${n ? ` (${n.toLocaleString('en-US')} decisions)` : ''}`;
     o.selected = r.meta.runId === (selectedRun(c)?.meta.runId);
     return o;
   }));

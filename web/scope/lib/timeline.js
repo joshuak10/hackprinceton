@@ -1,4 +1,4 @@
-// Timeline: incident histogram behind a real range input, key-moment chips, play/pause and speed.
+// Timeline: incident histogram behind a real range input, play/pause and speed.
 import { clockText } from './frames.js';
 
 const CATS = ['decision', 'congestion', 'complaint'];
@@ -6,32 +6,21 @@ const CATS = ['decision', 'congestion', 'complaint'];
 export function createTimeline({ root, onSeek, onPlay, onSpeed }) {
   const hist = root.querySelector('#hist');
   const scrub = root.querySelector('#scrub');
-  const moments = root.querySelector('#moments');
   const playBtn = root.querySelector('#playBtn');
   const playIcon = root.querySelector('#playIcon');
   const clock = root.querySelector('#clock');
   const span = root.querySelector('#span');
-  const T = { duration: 1, clockStart: 0, bins: [], moments: [], pal: null };
+  const T = { duration: 1, clockStart: 0, bins: [], pal: null };
 
   scrub.addEventListener('input', () => onSeek(Number(scrub.value), { user: true }));
   playBtn.addEventListener('click', () => onPlay());
   root.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => onSpeed(Number(b.dataset.speed))));
 
-  T.setRun = ({ duration, clockStart, bins, moments: ms, pal }) => {
-    Object.assign(T, { duration, clockStart, bins, moments: ms, pal });
+  T.setRun = ({ duration, clockStart, bins, pal }) => {
+    Object.assign(T, { duration, clockStart, bins, pal });
     scrub.max = String(duration);
     scrub.step = String(1 / 60);
     span.textContent = `${clockText(clockStart, 0)} to ${clockText(clockStart, duration)}`;
-    moments.replaceChildren(...ms.map(m => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'moment';
-      b.textContent = `${m.label}, ${m.clock}`;
-      b.title = `${m.count} incidents around ${m.clock}. Jump there.`;
-      b.dataset.t = String(m.t);
-      b.addEventListener('click', () => onSeek(m.t, { moment: m }));
-      return b;
-    }));
     T.layout();
   };
 
@@ -41,23 +30,6 @@ export function createTimeline({ root, onSeek, onPlay, onSpeed }) {
     hist.width = Math.round(r.width * dpr);
     hist.height = Math.round(r.height * dpr);
     T.dpr = dpr; T.w = r.width; T.h = r.height;
-    // Chips sit over their minute; keep them inside the track.
-    const thumb = 9;
-    // Place chips over their minute; if one would overlap its left neighbour, lift it to a second row.
-    const ends = [-Infinity, -Infinity];
-    let twoRows = false;
-    moments.querySelectorAll('.moment').forEach(b => {
-      b.classList.remove('up');
-      const w = Math.min(340, b.scrollWidth + 22);
-      const x = thumb + (Number(b.dataset.t) / T.duration) * (r.width - 2 * thumb);
-      const cx = Math.max(w / 2, Math.min(r.width - w / 2, x));
-      let row = cx - w / 2 > ends[0] + 8 ? 0 : 1;
-      if (row === 1 && cx - w / 2 <= ends[1] + 8) row = 0;
-      ends[row] = cx + w / 2;
-      if (row) { b.classList.add('up'); twoRows = true; }
-      b.style.left = `${cx}px`;
-    });
-    moments.classList.toggle('two', twoRows);
     draw(T.lastT ?? 0);
   };
 
@@ -69,7 +41,6 @@ export function createTimeline({ root, onSeek, onPlay, onSpeed }) {
     scrub.setAttribute('aria-valuetext', c);
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     playIcon.setAttribute('d', playing ? 'M5 4h3.6v12H5zM11.4 4H15v12h-3.6z' : 'M6 4l10 6-10 6z');
-    moments.querySelectorAll('.moment').forEach(b => b.classList.toggle('past', Number(b.dataset.t) < t - 1));
     draw(t);
   };
 

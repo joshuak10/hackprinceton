@@ -302,6 +302,7 @@ export function createRenderer(canvas) {
     for (const [x, y, align] of spots) {
       const x0 = align === 'left' ? x - 3 : align === 'right' ? x - w + 3 : x - w / 2;
       const r = [x0, y - h / 2, x0 + w, y + h / 2];
+      if (r[0] < 4 || r[2] > R.cw - 4 || r[1] < 4 || r[3] > R.ch - 4) continue;   // keep labels inside the map
       if (placed.some(p => r[0] < p[2] && r[2] > p[0] && r[1] < p[3] && r[3] > p[1])) continue;
       placed.push(r);
       label(g, text, x, y, pal, size, align, muted);
