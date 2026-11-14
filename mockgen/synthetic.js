@@ -160,7 +160,7 @@ export function syntheticLot() {
         { id: 'entry_drive', name: 'Lot entrance', kind: 'entry', x: entryX, y: perimeterY + 5, provenance: 'assumed' },
         { id: 'exit_drive', name: 'Lot exit', kind: 'exit', x: exitX, y: perimeterY + 5, provenance: 'assumed' },
         { id: 'search', name: 'Front aisle', kind: 'service', x: 50, y: aisles[0].y, provenance: 'assumed' },
-        { id: 'checkout', name: 'Store checkout', kind: 'service', x: 50, y: 8, provenance: 'assumed' }
+        { id: 'checkout', name: 'Store checkout', kind: 'service', x: 50, y: 8, servers: 7, serviceTime: 2.4, provenance: 'assumed' }
       ]
     }],
     lot: {

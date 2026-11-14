@@ -96,7 +96,14 @@
       <p class="side-empty">Counters, bottlenecks and incidents appear here once a simulation runs.</p>
       <section class="counters" id="counters" aria-label="Right now"></section>
       <section class="block">
-        <div class="block-head stack"><h2>Bottlenecks so far</h2><p class="hint">Minutes waited, plus 30 for each person lost</p></div>
+        <div class="block-head">
+          <h2>Bottlenecks</h2>
+          <div class="seg small" id="rankMode" role="group" aria-label="Bottleneck measure">
+            <button type="button" data-mode="total" aria-pressed="true" class="on">So far</button>
+            <button type="button" data-mode="now" aria-pressed="false">Right now</button>
+          </div>
+        </div>
+        <p class="hint rank-hint" id="rankHint">Minutes waited so far, plus 30 for each person lost</p>
         <ol class="rank" id="rank"></ol>
       </section>
       <section class="block grow">

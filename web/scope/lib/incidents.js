@@ -244,6 +244,14 @@ export function keyMoments(incidents, bins, clockStart, max = 4) {
 
 function bottleneckSeries(bundle, F, incidents, nameOf) {
   const svc = bundle.frames.services || [];
+  // Servers and service time per place, for "the wait if you joined now" (same formula as the engine's estWait).
+  const info = new Map((bundle.spec?.nodes || []).map(n => [n.id, n]));
+  const estNow = (id, q) => {
+    const n = info.get(id);
+    if (!n || !(n.servers > 0) || !(n.serviceTime > 0)) return null;
+    return q > 0 ? ((q + 1) * n.serviceTime) / n.servers : 0;
+  };
+  let nowMax = null;
   const n = F.list.length;
   const wait = svc.map(() => new Float64Array(n));
   for (let i = 1; i < n; i++) {
@@ -263,6 +271,26 @@ function bottleneckSeries(bundle, F, incidents, nameOf) {
     },
     max() {
       return Math.max(1, ...svc.map((_, k) => (wait[k][n - 1] || 0) + 30 * lostTimes[k].length));
+    },
+    // Right now: people in each line at frame fi, and the wait for someone joining. Ranked by the wait,
+    // or by the line length where a place has no service time (cars circling, a driveway).
+    now(fi) {
+      const q = F.list[Math.max(0, fi)]?.q || [];
+      return svc.map((id, k) => {
+        const inLine = q[k] || 0, waitNow = estNow(id, inLine);
+        return { id, name: nameOf(id), inLine, waitNow, score: waitNow ?? inLine };
+      }).sort((a, b) => b.score - a.score || b.inLine - a.inLine);
+    },
+    // Largest "right now" score over the run, so bars keep one scale while they rise and fall.
+    nowMax() {
+      if (nowMax == null) {
+        nowMax = 1;
+        for (const f of F.list) svc.forEach((id, k) => {
+          const qq = f.q?.[k] || 0;
+          nowMax = Math.max(nowMax, estNow(id, qq) ?? qq);
+        });
+      }
+      return nowMax;
     }
   };
 }

@@ -465,6 +465,9 @@ button, input, select { font: inherit; color: inherit; }
 .seg { display: flex; padding: 3px; gap: 2px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
 .seg button { height: 32px; min-width: 44px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--muted); cursor: pointer; font-variant-numeric: tabular-nums; }
 .seg button.on { background: var(--panel-2); color: var(--text); }
+.seg.small { padding: 2px; }
+.seg.small button { height: 28px; min-width: 0; padding: 0 10px; font-size: 13.5px; }
+.rank-hint { margin: -4px 0 10px; }
 .clock { margin: 0; font: 600 24px/1 var(--font); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .span { margin: 0 0 0 auto; color: var(--faint); font-size: 14px; font-variant-numeric: tabular-nums; }
 

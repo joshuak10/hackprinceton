@@ -82,3 +82,27 @@ test('prompt matching sends questions to the right case and refuses unrelated on
   assert.equal(matchCase('Why do shoppers circle the parking lot on Saturday?').id, 'parking');
   assert.equal(matchCase('How many bananas fit in a minivan?'), null);
 });
+
+test('bottlenecks: "so far" only grows, "right now" rises and falls and uses the engine wait formula', () => {
+  const run = runBuilding(syntheticBuilding(), { seed: 7, ...short });
+  run.geometry = run.spec.geometry;
+  const F = prepareFrames(run.frames);
+  const R = deriveRun(run, F);
+  const cafe = 'cafe_counter';
+  const k = run.frames.services.indexOf(cafe);
+  const node = run.spec.nodes.find(n => n.id === cafe);
+  let prevTotal = -1, rose = false, fell = false, prevNow = null;
+  for (let fi = 0; fi < F.list.length; fi++) {
+    const total = R.bottlenecks.at(fi, F.list[fi].t).find(r => r.id === cafe).score;
+    assert.ok(total >= prevTotal - 1e-9, 'cumulative never drops');
+    prevTotal = total;
+    const now = R.bottlenecks.now(fi).find(r => r.id === cafe);
+    const q = F.list[fi].q[k];
+    assert.equal(now.inLine, q);
+    assert.ok(Math.abs(now.waitNow - (q > 0 ? ((q + 1) * node.serviceTime) / node.servers : 0)) < 1e-9);
+    if (prevNow != null) { if (now.waitNow > prevNow) rose = true; if (now.waitNow < prevNow) fell = true; }
+    prevNow = now.waitNow;
+  }
+  assert.ok(rose && fell, 'the current wait goes up and down');
+  assert.ok(R.bottlenecks.nowMax() >= prevNow);
+});

@@ -40,7 +40,11 @@ export function renderCounters(root, st) {
   }));
 }
 
+// Words for a line at places that aren't counters (parking lot).
+const LINE_WORDS = { entry_drive: 'cars waiting to turn in', search: 'cars circling', exit_drive: 'cars waiting to leave' };
+
 export function renderRank(root, st, onPick) {
+  if (st.rankMode === 'now') return renderRankNow(root, st, onPick);
   const rows = st.bottlenecks;
   const max = st.bottleneckMax;
   if (!rows.length || rows.every(r => r.score < 0.5)) {
@@ -58,6 +62,31 @@ export function renderRank(root, st, onPick) {
     bar.append(i);
     li.append(bar);
     li.title = `Score ${fmt(r.score)}: ${fmt(r.waitMin)} minutes waited + 30 × ${r.lost} people lost`;
+    li.addEventListener('click', () => onPick(r.id));
+    return li;
+  }));
+}
+
+function renderRankNow(root, st, onPick) {
+  const rows = st.bottlenecksNow.filter(r => r.inLine > 0);
+  if (!rows.length) {
+    root.replaceChildren(el('li', 'empty-row', 'No lines at this moment.'));
+    return;
+  }
+  root.replaceChildren(...rows.slice(0, 5).map(r => {
+    const li = el('li');
+    li.append(el('span', 'name', r.name));
+    const who = LINE_WORDS[r.id] || 'in line';
+    const wait = r.waitNow != null ? `, about ${Math.max(1, Math.round(r.waitNow))} min wait` : '';
+    li.append(el('span', 'val', `${r.inLine} ${who}${wait}`));
+    const bar = el('span', 'bar');
+    const i = el('i');
+    i.style.width = `${Math.max(2, (r.score / st.bottleneckNowMax) * 100)}%`;
+    bar.append(i);
+    li.append(bar);
+    li.title = r.waitNow != null
+      ? `${r.inLine} in line now. Someone joining now would wait about ${Math.round(r.waitNow)} minutes.`
+      : `${r.inLine} ${who} now.`;
     li.addEventListener('click', () => onPick(r.id));
     return li;
   }));

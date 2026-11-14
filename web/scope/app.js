@@ -25,7 +25,8 @@ const st = {
   filters: { decision: true, congestion: true, complaint: true },
   selectedAgent: null, selectedIncident: null,
   theme: params.get('theme') || store.get('scope-theme') || 'dark',
-  live: null, config: {}, question: '', fly: null, lastPanels: -1, dirty: true
+  live: null, config: {}, question: '', fly: null, lastPanels: -1, dirty: true,
+  rankMode: store.get('scope-rank') === 'now' ? 'now' : 'total'
 };
 
 // ---------- theme ----------
@@ -291,7 +292,8 @@ function renderPanels() {
   const ps = {
     geometry: st.bundle.geometry, frame: frameAt(st.F, st.t), visibleAgents: st.allAgents, t: st.t,
     incidents: st.run.incidents, filters: st.filters, selectedIncident: st.selectedIncident, floor: st.floor,
-    bottlenecks: st.run.bottlenecks.at(fi, st.t), bottleneckMax: st.run.bottlenecks.max()
+    bottlenecks: st.run.bottlenecks.at(fi, st.t), bottleneckMax: st.run.bottlenecks.max(),
+    bottlenecksNow: st.run.bottlenecks.now(fi), bottleneckNowMax: st.run.bottlenecks.nowMax(), rankMode: st.rankMode
   };
   renderCounters($('counters'), ps);
   renderRank($('rank'), ps, id => {
@@ -481,6 +483,25 @@ map.addEventListener('wheel', e => {
   positionCallout();
 }, { passive: false });
 map.addEventListener('dblclick', () => $('resetView').click());
+
+// ---------- bottleneck measure: so far (cumulative) or right now ----------
+const RANK_HINT = {
+  total: 'Minutes waited so far, plus 30 for each person lost',
+  now: 'People in line at this moment, and the wait for someone joining now'
+};
+function setRankMode(mode) {
+  st.rankMode = mode;
+  store.set('scope-rank', mode);
+  document.querySelectorAll('#rankMode button').forEach(b => {
+    const on = b.dataset.mode === mode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+  $('rankHint').textContent = RANK_HINT[mode];
+  if (st.bundle) renderPanels();
+}
+document.querySelectorAll('#rankMode button').forEach(b => b.addEventListener('click', () => setRankMode(b.dataset.mode)));
+setRankMode(st.rankMode);
 
 // ---------- tools ----------
 $('colorBy').addEventListener('change', e => { st.colorBy = e.target.value; renderLegend(); st.dirty = true; });
