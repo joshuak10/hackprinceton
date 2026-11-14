@@ -1,1 +1,128 @@
-# hackprinceton
+# Swarmscope
+
+**Claude imagines the people. Jev makes thousands of them decide.**
+
+Swarmscope is a crowd simulator for questions like "which ER gets overwhelmed on a Friday night?" or "where does the 8:30 arrival peak jam in this office tower?". You describe a place and a question. Claude writes the world: the places with their capacities and reputations, the groups of people, and a cast of concrete personalities. Then every one of thousands of agents makes its own decisions (where to go, whether to join a line, whether to give up, which route to take) through Jev, TypeSafe's structured-decision model (`jev-latest`). Agents see only what a real person would, and they hear each other's warnings and praise. Bottlenecks, herding, rumors and giving up emerge from those decisions. Every decision is recorded, so runs replay in a local viewer with a time scrubber.
+
+## Quickstart
+
+Requires Node 22 or newer.
+
+```sh
+npm install
+```
+
+Put your TypeSafe key in `.env.local` at the repo root (copy `.env.example`; `.env.local` is gitignored, never commit it):
+
+```sh
+TYPESAFE_API_KEY=...
+```
+
+Run the ER example with Jev, then watch it:
+
+```sh
+node bin/swarm.js run er-network --provider jev
+node bin/swarm.js serve        # then open http://127.0.0.1:4173
+```
+
+No key yet? `node bin/swarm.js run er-network` uses the free rules provider instead (same world, rule-based decisions).
+
+## Commands
+
+Run as `node bin/swarm.js <command>` (or `npm run swarm -- <command>`). `<world>` is a JSON path or an example name; `<run>` is a run folder, a run id, or `latest`. Add `--json` for machine-readable output, and `--help` for every flag.
+
+| Command | What it does |
+|---|---|
+| `validate <world>` | Check a world; list errors and warnings |
+| `estimate <world> [--seed 7]` | Count decision requests with a free rules dry run; estimate Jev requests, tokens and cost |
+| `run <world> --provider jev\|rules` | Simulate and record under `runs/` (`--seed N`, `--seeds N`, `--patch FILE`, `--max-requests N`, `--concurrency N`, `--no-record`) |
+| `run --from <run>` | Replay a recorded run's decisions with no API calls |
+| `compare <world> --patch FILE [--provider rules\|jev] [--seeds N]` | Before and after a what-if patch, on the same seeds |
+| `report <run>` | Markdown digest: KPIs, ranked bottlenecks, outcomes by group, remarks, torn decisions, provider stats |
+| `agent <run> <agentId>` | One agent's persona, decisions with probabilities, and trace |
+| `runs` | List recorded runs |
+| `compile "<description>"` | Write a world with Claude (needs `ANTHROPIC_API_KEY`) |
+| `building --model ID \| --plan-raw FILE --profile FILE` | Compose a walled building world from a Matterport floor plan and a CoStar profile |
+| `import-matterport`, `import-mesh` | Starter worlds with walls from a Matterport model or a 3D mesh |
+| `serve [--port 4173]` | Start the local viewer |
+| `sanity` | Live Jev checks (a few hundred API calls) |
+
+A Jev run prints its provider stats: requests, cache hits, fallback rate, tokens, estimated cost and latency. If over 20% of decisions fell back to rules, it warns that the run does not count as a Jev run.
+
+## Add any environment
+
+Anything that can be written as places with lines (`visit` mode) or a network of capacity-limited links (`route` mode) can be simulated: clinics, food halls, checkouts, security lanes, roads, building lobbies, elevators, stadium exits.
+
+1. **In Claude Code (no extra key):** open this repo and run `/swarm <the place and the question>`. Claude reads the schema, writes `worlds/<slug>.json`, validates it, estimates the cost (and asks before spending over $1), runs it with Jev, reports findings, and tests 1-3 fixes with `compare`. The command lives in [`.claude/commands/swarm.md`](.claude/commands/swarm.md).
+2. **From the CLI:** with `ANTHROPIC_API_KEY` in `.env.local`, `node bin/swarm.js compile "<description>"` writes and validates a world.
+3. **By hand:** write JSON per [`worlds/SCHEMA.md`](worlds/SCHEMA.md) (JSON Schema in [`worlds/schema.json`](worlds/schema.json)), then `node bin/swarm.js validate <file>`.
+
+An MCP server (`npm run mcp`, registered in `.mcp.json` as `swarmscope`) exposes the same steps as tools for other agents.
+
+## Simulate a real building
+
+Foot traffic through one real building (for example Matterport model `6FNMVoyPrL1`, "Office/Retail - 45,726SF"), using its walls, its doorways and its CoStar record. Simulated people never pass through a wall. Details are in `docs/PROTOTYPE.md` §13 and §14.
+
+1. **Get the floor plan.** Put `MATTERPORT_API_KEY` and `MATTERPORT_API_TOKEN` in `.env.local`, or save the model's raw JSON under `data/` (gitignored, never committed).
+2. **Get the CoStar profile.** Save the property record, or a hand-written building profile, as a JSON file (also under `data/`).
+3. **Compose and run.**
+
+```sh
+node bin/swarm.js building --model 6FNMVoyPrL1 --profile data/costar-6FNMVoyPrL1.json --scenario weekday-lunch --save-raw data/6FNMVoyPrL1.json
+# or, from a saved model dump with no API call:
+node bin/swarm.js building --plan-raw data/6FNMVoyPrL1.json --profile data/costar-6FNMVoyPrL1.json
+node bin/swarm.js estimate worlds/<the world it wrote>.json
+node bin/swarm.js run worlds/<the world it wrote>.json --provider jev
+node bin/swarm.js report latest        # includes the busiest doorways
+```
+
+`building` prints the rooms, which tenant went in which room and how, the doors, warnings, and every assumed number with its value. Scenarios: `weekday-morning`, `weekday-lunch`, `saturday-afternoon`. v0.2 limits: one floor; doors count traffic but do not slow it; numbers not read from CoStar or Matterport are marked `assumed`.
+
+**An empty building (a proposed fit-out).** `6FNMVoyPrL1` is an empty two-story shell, so its places are a design: a fit-out file under `buildings/<modelId>/` gives the gates and places in meters, in the model's own coordinates (§14f). `fitout` places them inside the real walls, checks that each one is at least 0.3 m from every wall and reachable on foot, names the doors by what they join, and writes the world under `data/worlds/` (it contains the floor plan, so it stays out of git):
+
+```sh
+node bin/swarm.js fitout buildings/6FNMVoyPrL1/fitout-floor1-lunch.json --plan-raw data/6FNMVoyPrL1.json --out data/worlds/floor1-lunch.json
+node bin/swarm.js run data/worlds/floor1-lunch.json --provider jev
+```
+
+With no `--plan-raw`, `fitout` reads `data/<model>.json`; `--model <id>` fetches the plan live instead (needs `MATTERPORT_API_KEY` and `MATTERPORT_API_TOKEN`). `--floor N` overrides the fit-out's floor and `--margin` (default 8) leaves room to walk outside between exterior doors.
+
+## Example worlds
+
+| Name | Mode | Question |
+|---|---|---|
+| `er-network` | visit | Which emergency department gets overwhelmed first on a Friday night, and how many leave without being seen? |
+| `theme-park` | visit | Which attraction is the real bottleneck, and where should capacity or prices change? |
+| `food-hall-lunch` | visit | Where are diners lost at noon (ramen counter, coffee kiosk or tables), and what is the cheapest fix? |
+| `rush-hour-roads` | route | Which road segment is the bottleneck, and do navigation apps help or make it worse? |
+| `office-lobby-morning` | route | Where does the 8:30 peak jam (doors, turnstiles or elevators), and which cheap change clears it? |
+
+`er-network` is the smallest (560 agents) and the cheapest to run with Jev.
+
+## Runs and replay
+
+Each run is recorded in `runs/<runId>/` (gitignored), with `runId = <title>-<provider>-s<seed>-<timestamp>`:
+
+- `meta.json`: seed, spec hash, provider, model, provider stats
+- `spec.json`, `metrics.json`, `frames.json` (agent positions over time), `agents.json`, `remarks.json`
+- `decisions.jsonl`: one line per decision, with what the agent saw, the probabilities Jev returned, and the sampled action
+
+Runs are seeded: the same seed gives the same people arriving at the same times under every provider and every patch, so before and after comparisons are fair. `node bin/swarm.js run --from <run>` replays the recorded decisions with no API calls and reproduces the run, and the viewer opens any recorded run, so a demo never depends on live latency.
+
+## Architecture
+
+- [`docs/PROTOTYPE.md`](docs/PROTOTYPE.md): the v0.2 build contract (module interfaces, decision protocol, observations, run files).
+- [`SWARMSCOPE_SPEC.md`](SWARMSCOPE_SPEC.md): what we are building and why, claims, guidelines, and the change log.
+- `engine/`: world spec and validation, observations in words, sampling, the seeded tick simulation.
+- `providers/`: who decides: Jev, rules, or replay of a recorded run.
+- `run/`: runner (single runs, seed sweeps, compares), recorder, reports.
+- `bin/swarm.js`: the CLI. `server/` and `web/`: the local viewer. `compile/`: the Claude world compiler. `mcp/`: the MCP server.
+- `worlds/`: example worlds, the schema, and its documentation.
+
+## Honest limits
+
+- Simulated agents are not validated against real people. Treat results as an exploration aid.
+- Results are rankings, not forecasts: which place or link is the worst bottleneck and which fix helps most, under the world's assumptions. Exact waits are not predictions, and one seed is weak evidence; use `--seeds` and `compare`.
+- World parameters written by Claude or by hand are assumptions unless they come from data.
+- TypeSafe's speed, price and calibration figures are unverified. Cost estimates use the published $0.042 per million input tokens and about 900 tokens per request.
+- v0.2 is a fast prototype with no automated tests for the engine, runner, server or viewer yet.

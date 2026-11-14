@@ -14,7 +14,7 @@
     "mode": { "enum": ["visit", "route"], "default": "visit", "description": "visit: people choose among places that each have a line and servers. route: people travel from an origin to a destination through a network of capacity-limited links (roads, or corridors, doors, turnstiles and elevators in a building)." },
     "duration": { "type": "integer", "minimum": 30, "maximum": 1440, "description": "Simulated minutes. Default 600 (visit) or 180 (route). Leave time after arrivals.end for people to finish." },
     "clockStart": { "type": "integer", "minimum": 0, "maximum": 1439, "default": 480, "description": "Wall-clock time at minute 0, in minutes after midnight (690 = 11:30 am)." },
-    "travelSpeed": { "type": "number", "minimum": 0.2, "maximum": 60, "default": 4, "description": "Visit mode: map units per minute. The map is 100 x 100 units; walking time = distance / travelSpeed + 0.5 min." },
+    "travelSpeed": { "type": "number", "minimum": 0.2, "maximum": 600, "default": 4, "description": "Visit mode: map units per minute (alias walkSpeed). The map is 100 x 100 units; walking time = distance / travelSpeed + 0.5 min. A floor plan at about 0.5 m per unit walks at about 135 (75 m/min / geo.metersPerUnit). Values above 600 are clamped with a warning." },
     "arrivals": { "$ref": "#/$defs/arrivals" },
     "nodes": {
       "type": "array",
@@ -42,6 +42,35 @@
       "maxItems": 40,
       "description": "The cast: write 10-20 concrete invented people with situations, constraints, loyalties, who they listen to, and app or no app. Every archetype needs at least one persona, or it gets no agents.",
       "items": { "$ref": "#/$defs/persona" }
+    },
+    "walls": {
+      "type": "array",
+      "maxItems": 4000,
+      "description": "Optional floor-plan walls nobody can walk through, in map units (0-100, the same space as nodes). A doorway is a gap: give the wall as the pieces on either side. Touching a wall counts as crossing it. More than 4000 is an error; with walls, every node must be at least 0.05 from every wall, route edges may not touch a wall, and every visit service must be reachable on foot from a gate or entry and reach a gate or exit.",
+      "items": { "$ref": "#/$defs/wall" }
+    },
+    "geo": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional scale and path clearance of a floor plan.",
+      "properties": {
+        "metersPerUnit": { "type": ["number", "null"], "minimum": 0.001, "maximum": 10000, "description": "Real size of one map unit. Informational: set travelSpeed to walking speed (about 75-80 m/min) / metersPerUnit; the engine accepts up to 600." },
+        "clearance": { "type": "number", "minimum": 0.02, "maximum": 1, "default": 0.2, "description": "Map units walking paths keep from wall ends. At most a quarter of the narrowest door." },
+        "floor": { "type": ["number", "string", "null"], "maxLength": 40, "description": "Which floor the plan shows: a number or a label." },
+        "source": { "type": "string", "maxLength": 80, "description": "Where the plan came from, e.g. matterport-vector." }
+      }
+    },
+    "doors": {
+      "type": "array",
+      "maxItems": 500,
+      "description": "Optional doorway gap segments. Doors are not walls; in visit mode every walking path that crosses one counts a crossing there. A door should sit exactly in a gap between walls.",
+      "items": { "$ref": "#/$defs/door" }
+    },
+    "provenance": {
+      "type": "object",
+      "maxProperties": 300,
+      "description": "Optional: where each value came from, keyed by field path (e.g. 'nodes[3].servers', 'walls', 'arrivals.total'). Kept as-is.",
+      "additionalProperties": { "enum": ["data", "vision", "assumed", "owner-reported"] }
     }
   },
   "$defs": {
@@ -98,7 +127,13 @@
         "length": { "type": "number", "minimum": 0.2, "maximum": 180, "description": "Free-flow travel time in minutes. Default: half the map distance between the ends." },
         "capacity": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 100, "description": "bpr: people or vehicles on the link at once before it slows (+15% at capacity, 3.4x at double). linear: throughput in people per minute." },
         "twoWay": { "type": "boolean", "default": true, "description": "false for one-direction links (one-way streets, up-only elevators, entry turnstiles)." },
-        "costModel": { "enum": ["bpr", "linear"], "default": "bpr", "description": "bpr (roads, corridors, stairs): time = length x (1 + 0.15 x min(3, load/capacity)^4). linear (doors, turnstiles, escalators, elevators): time = length + load / capacity." }
+        "costModel": { "enum": ["bpr", "linear"], "default": "bpr", "description": "bpr (roads, corridors, stairs): time = length x (1 + 0.15 x min(3, load/capacity)^4). linear (doors, turnstiles, escalators, elevators): time = length + load / capacity." },
+        "via": {
+          "type": "array",
+          "maxItems": 12,
+          "description": "Waypoints that shape the link: from -> via... -> to. With walls, no link may touch a wall, so route it through doorways. Without an explicit length, length is half the polyline length.",
+          "items": { "$ref": "#/$defs/point" }
+        }
       }
     },
     "archetype": {
@@ -128,7 +163,55 @@
         "likes": { "$ref": "#/$defs/tags", "description": "Visit: soft preference for places with these tags." },
         "needs": { "$ref": "#/$defs/tags", "description": "Visit: hard filter; only places with at least one of these tags are options. Empty means every place. Must match at least one service." },
         "origins": { "type": "array", "items": { "type": "string" }, "description": "Route: origin node ids where this group's trips start. Default all origins." },
-        "destinations": { "type": "array", "items": { "type": "string" }, "description": "Route: destination node ids where this group's trips end. Default all destinations." }
+        "destinations": { "type": "array", "items": { "type": "string" }, "description": "Route: destination node ids where this group's trips end. Default all destinations." },
+        "entries": { "type": "array", "items": { "type": "string" }, "description": "Visit: gate or entry node ids where this group appears. Default every gate and entry, by weight. A persona's own entry still wins about half the time." },
+        "exits": { "type": "array", "items": { "type": "string" }, "description": "Visit: gate or exit node ids (or exact names) this group leaves through; a person who is done walks to the nearest of these by walking distance. Default (or []) every gate and exit. If walls leave none of them reachable, the person takes the nearest reachable gate or exit of any kind. Unknown or wrong-kind references are warnings and are ignored." }
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 100 },
+        "y": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "wall": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x1", "y1", "x2", "y2"],
+          "properties": {
+            "x1": { "type": "number", "minimum": 0, "maximum": 100 },
+            "y1": { "type": "number", "minimum": 0, "maximum": 100 },
+            "x2": { "type": "number", "minimum": 0, "maximum": 100 },
+            "y2": { "type": "number", "minimum": 0, "maximum": 100 },
+            "source": { "enum": ["matterport-vector", "mesh-slice", "drawn"], "description": "Where this wall came from." }
+          }
+        },
+        {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number", "minimum": 0, "maximum": 100 },
+          "description": "Short form: [x1, y1, x2, y2]."
+        }
+      ]
+    },
+    "door": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "x1", "y1", "x2", "y2"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "maxLength": 40, "description": "Shown in the busiest-doorways ranking." },
+        "x1": { "type": "number", "minimum": 0, "maximum": 100, "description": "One jamb of the doorway gap." },
+        "y1": { "type": "number", "minimum": 0, "maximum": 100 },
+        "x2": { "type": "number", "minimum": 0, "maximum": 100, "description": "The other jamb." },
+        "y2": { "type": "number", "minimum": 0, "maximum": 100 },
+        "exterior": { "type": "boolean", "default": false, "description": "true for a door to the outside." }
       }
     },
     "persona": {

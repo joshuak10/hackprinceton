@@ -11,7 +11,7 @@
 *.zip
 keys/
 data/
-runs/
+/runs/
 *.csv
 
 # Node

@@ -107,6 +107,8 @@ Same as the prototype (spec section 6), with these additions. `normalizeSpec` st
 
 Frozen agents do nothing until resolved. A trip with an `arrive` request is already finished; resolving it only records feelings and remarks.
 
+When an after-experience `choose` has nothing left to choose (visits used up, the decision cap reached, or no candidates), the Sim still creates it with `asks.choice: null`, `options: []`, `frustration` and `tellOthers` true, and `auto: { action: 'leave' }`; it always resolves to leaving. This keeps frustration and remarks for single-visit worlds. For `line` and `long`, `asks.choice` is `'next_place'` (speculative), so `auto.action` is `'yes'` when the rule policy would stay, or the place key / `'leave'` it would pick instead.
+
 ### `DecisionRequest` (engine → provider), JSON-safe, no object references
 
 ```js
@@ -326,7 +328,9 @@ For an inline provider (`external: false`), `runSwarm` just steps to the end wit
 }
 ```
 - `x10`/`y10` = `Math.round(x * 10)` in map units 0–100. Route agents are interpolated along their current link.
-- State codes `s`: 0 walk, 1 queue, 2 serve, 3 think, 4 leave, 5 drive. Done agents are omitted.
+- State codes `s`: 0 walk, 1 queue, 2 serve, 3 think, 4 leave, 5 drive. Done agents are omitted. Queued and serving agents are recorded at their service node's position; the map lays out the queue itself.
+- Counters `c`: `arrived` is agents spawned (visit) or trips completed (route); `abandoned` is walk-aways (visit) or lost agents (route).
+- `sim.remarks` is in nondecreasing `t` order (a remark's `t` is its request's `t`); the viewer and `selectHeard` rely on this.
 
 `sim.metrics()` keeps the prototype's shape, and adds:
 - `remarks: { total, byKind }`
@@ -415,7 +419,7 @@ Reject path traversal in `:file` and `:id` (only `[A-Za-z0-9._-]`). JSON bodies 
 
 ---
 
-## 11. Validation and tests
+## 11. Validation and tests (added back after the base build; new modules ship with tests)
 
 - **Unit tests per module** run with `npm test` (no network): util, spec/validate, sample, sim determinism (same seed → identical metrics; external mode with `rules-external` gives the same people and arrival times as inline), providers with a mocked `fetch` (body shape, criteria = options, shuffle determinism, cache, retry on 429 then success, fallback after 5×500, 401 aborts, budget), recorder round trip, replay (identical metrics with zero fetch calls), CLI smoke (`validate`, `run --provider rules`, `report`), server smoke (random port: worlds, start rules run, poll to done, frames).
 - `validation/erlang.js`: M/M/1 (λ = 0.5/min, μ = 1/min → Wq = 1 min) and M/M/3 Erlang C, with Poisson arrivals, `serviceDist: 'exp'`, one visit, huge patience, small `dt`, averaged over seeds. Prints simulated vs formula, and passes within 15%. Also run as a test with fewer seeds and a 25% tolerance.
@@ -425,3 +429,273 @@ Reject path traversal in `:file` and `:id` (only `[A-Za-z0-9._-]`). JSON bodies 
   - Option-order consistency: the same choice with options reversed.
 
   Prints a table plus pass/fail.
+
+---
+
+## 12. Internal interfaces for the parallel build (Nov 14)
+
+**Decision (Nov 14):** no new tests in the v0.2 build. The existing provider tests stay. Section 11 is deferred. The engine and viewer are split across parallel builders, so these internal interfaces are binding.
+
+### 12a. `engine/observe.js` (pure functions; the Sim gathers the inputs)
+
+```js
+remarkText(remark, names)            // names = { place: Map id→name, edge: Map id→name }; text by kind per §5
+selectHeard(remarks, viewer, names)  // → string[] (≤ 4, newest first), per the §5 rules
+  // viewer = { mode, t, agentId, archetypeId, informed, x, y, placePos: Map nodeId→{x,y} }
+  // each string: "<personName> (<source>, <durationWords(minutes ago)> ago): <remarkText>"
+visitObservation(ctx)  // → the §5 visit object
+  // ctx = { spec, t,
+  //   person: { name, age, bio, personality, goal, social, groupName, informed },
+  //   frustration: number|null, timeHere: min, timeInLines: min, placesDone: string[],
+  //   moment: { kind: 'choose'|'line'|'long', why, placeName, est, tolerance, waited, remaining },
+  //   places: [{ id, name, about, tags: string[], price, dist, est, visible: boolean, walkedAway30: number }],
+  //   heard: string[] }
+routeObservation(ctx)   // ctx = { spec, t, person, trip: { fromName, toName }, routes: [{ key, label, ff, now|null }], heard }
+arriveObservation(ctx)  // ctx = { spec, t, person, trip: { fromName, toName }, took, tripMin, ffMin, worstEdgeName }
+```
+`places` is passed in node order. Observe turns every number into words (§5), and omits `line_vs_patience` and `recently` when they don't apply. `visible: false` gives `line: "unknown (can't see it from here)"`.
+
+### 12b. Viewer modules
+
+- `web/map.js`:
+  - `createMap(canvas, { onAgentClick })` → `{ setRun(run), render(t), resize(), destroy() }`
+    - `run = { spec, frames, archetypeOf: Map agentId→archetypeId, colors: Map archetypeId→cssColor }`.
+    - `render(t)` binary-searches `frames.list`, interpolates agent positions between the two frames around `t` (agents present in only one frame are drawn at that frame's position), then draws edges (route: color by load) or service nodes (visit: radius by servers, fill by queue heat, label), entries/exits as squares, then agents.
+    - Handles `devicePixelRatio`, and reads theme colors from CSS variables (`--heat0..2`, `--a1..a6`, `--ink`, `--muted`, `--line`, `--panel-2`) via `getComputedStyle(document.documentElement)` on each render.
+    - A click picks the nearest agent dot within 8 CSS px at the last rendered `t` and calls `onAgentClick(agentId)`.
+  - Also exports `archetypeColors(spec)` → `Map` (cycles `--a1..--a6`).
+- `web/chart.js`: `createChart(canvas)` → `{ setSeries({ t: number[], series: [{ name, color, values: number[] }], yLabel }), render(cursorT), resize() }`. Line chart with axes, the top 6 series by peak, and a vertical cursor at `cursorT`. Handles `devicePixelRatio` and theme variables.
+- `web/app.js`: everything else in §9. It imports both modules and owns `web/index.html` and `web/style.css`. It builds chart series from `frames.list[].q` (visit, per `frames.services`) or `frames.list[].load` (route, per `frames.edges`).
+
+---
+
+## 13. Walls (hard rule: nobody passes through a wall)
+
+**Decision (Nov 14):** interior walls are part of the world, and the engine guarantees that no agent's movement crosses one. Jev never gets the chance to break this: it only picks among options the engine offers, and the engine moves agents along wall-free paths.
+
+**Where walls come from.** The engine takes plain segments and doesn't care about the source. Two builders produce them from Matterport data:
+- **Vector data** (preferred): Matterport Property Intelligence room boundaries. Each boundary edge has `type: wall` (physical) or `invisible` (not a wall), two vertices, and `openings` (`doorway` or `opening`, with `width` and `relativeCenter` along the edge).
+- **Mesh slice** (fallback when a model has no vector data): the model's OBJ mesh cut by horizontal planes at about chest height.
+
+### 13a. Spec fields
+
+| Field | Meaning |
+|---|---|
+| `walls` | Optional array, ≤ 4000 segments. Each is `{ x1, y1, x2, y2 }` in map units (0–100, the same space as nodes); `[x1, y1, x2, y2]` is also accepted as input. A doorway or opening is a gap: the wall is given as the pieces on either side. Optional per-wall `source`: `"matterport-vector"`, `"mesh-slice"` or `"drawn"`. |
+| `geo` | Optional `{ metersPerUnit, clearance, floor, source }`. `clearance` (map units, 0.02–1, default 0.2) is how far paths stay from wall ends. Builders set it to at most a quarter of the narrowest door. The rest is informational in v0.2: `travelSpeed` stays in map units per minute, and builders derive it from `metersPerUnit`. |
+| `edges[].via` | Route mode, optional array of ≤ 12 `{ x, y }` waypoints. The edge's shape is the polyline from → via… → to. |
+| `provenance` | Optional object (≤ 300 keys) mapping a field path to `data`, `vision`, `assumed` or `owner-reported`. Kept as-is. |
+
+Rules checked by `validateWorld` (all are errors unless noted):
+- Every node is at least 0.05 units from every wall.
+- Route mode: no edge polyline touches a wall. The message names the edge and the wall index.
+- Visit mode: every service node is reachable on foot from at least one entry, and at least one exit is reachable from every service node.
+- More than 4000 walls is an error. Zero-length walls are dropped and out-of-range coordinates are clamped, each with a warning.
+
+### 13b. `engine/walls.js`
+
+A pure ES module with no Node imports, so the browser viewer loads the same file.
+
+```js
+normalizeWalls(raw)                    // → { walls: [{ x1, y1, x2, y2, source? }], warnings: string[] }
+crossesWall(walls, x1, y1, x2, y2)     // → index of the first wall the segment touches, or -1
+polylineCrossesWall(walls, points)     // → { wall, piece } | null
+polylineLength(points)                 // points = [{ x, y }, …]
+pointAlong(points, d)                  // → { x, y } at distance d along the polyline (d clamped to [0, length])
+createNav(walls, { clearance = 0.2 })  // → nav
+nav.blocked(x1, y1, x2, y2)            // → boolean: the straight segment touches a wall
+nav.path(x1, y1, x2, y2)               // → { length, points } | null when unreachable; points[0] is the start, the last is the end
+nav.distance(x1, y1, x2, y2)           // → walking distance, or Infinity
+```
+
+- **Touching counts as crossing.** A segment that shares any point with a wall is blocked (epsilon 1e-9), including wall endpoints and corners where two walls meet.
+- **Guarantee.** `nav.path` checks its own result with `polylineCrossesWall` before returning and throws if a piece touches a wall. A through-wall path is an engine bug and is never returned.
+- **Resolution independent.** It finds the way through any gap at least 2.5 × clearance wide. A visibility graph over points offset around wall ends does this; a fixed grid does not.
+- **Shortest.** A straight line when clear; otherwise within 2% of the shortest wall-free path.
+- **Deterministic**, with results cached by endpoints rounded to 1e-3.
+- **Performance budget** with 500 walls: `createNav` under 500 ms, and 1,000 uncached `path` calls under 2 s.
+
+### 13c. Engine behavior
+
+- **Visit mode.** Walking follows `nav.path`. Travel time is path length ÷ `travelSpeed` + 0.5, and the agent's position at any time is `pointAlong` its path. Walking distance replaces straight-line distance everywhere: rule utilities, the observation's `distance` words, the 30-unit line-visibility radius and the 30-unit overheard-remark radius. A place with no path from where the agent stands is not a candidate, so it is never offered to any provider.
+- **Route mode.** An edge's shape is its polyline. Its default `length` (when the world gives none) is polyline length ÷ 2. Agents on a link are positioned along the polyline.
+- **Fail loudly.** The Sim checks every movement piece it creates with `crossesWall` and throws `WallViolation` if one touches a wall. `metrics().walls = { count, checkedMoves, violations }`, and `violations` is always 0 in a completed run.
+- **Frames.** `frames.walls = [[x1, y1, x2, y2], …]` (2 decimals) and, in route mode, `frames.edges[].via`.
+- With no `walls`, behavior is unchanged from §3–§7.
+
+### 13d. Viewer and server
+
+- The server serves `engine/walls.js` at `/walls.js`.
+- The map draws walls as solid lines and route edges as their polylines.
+- Between two frames, an agent whose straight-line interpolation would touch a wall is moved along `nav.path` between the two positions instead. If there is no path, it holds the earlier position until the later frame.
+
+### 13e. Builders
+
+`builder/matterport.js`:
+```js
+VECTOR_QUERY                                   // GraphQL query for floors, rooms, boundary edges, openings, holes
+fetchModelGeometry({ modelId, tokenId, tokenSecret, endpoint, fetch })   // → raw GraphQL data
+extractFloorplan(raw, { floor })               // floor: id, sequence or label; default is the floor with the most rooms
+  // → { units: 'm', floor, rooms: [{ id, label, classification, polygon, centroid, area }],
+  //     walls: [{ x1, y1, x2, y2, edgeId, roomIds }],                  // model coordinates, openings cut out, shared edges deduped
+  //     doors: [{ x, y, width, type, edgeId, roomIds: [a, b | null] }], // passable openings; null means it leads outside
+  //     warnings: string[] }
+toMapUnits(plan, { margin = 3 })               // → the same shape in map units, plus { metersPerUnit, transform }
+floorplanToWorld(plan, { mode = 'route', title, question })   // → a starter world: nodes, edges (with via) or places, walls, geo, provenance
+```
+- A `wall` edge becomes wall segments with gaps cut at its `doorway` and `opening` openings. An `invisible` edge becomes no wall. Any other opening type stays solid, with a warning. Walls in `holes` (columns, sub-rooms) are kept.
+- Keys: `MATTERPORT_API_KEY` (token ID) and `MATTERPORT_API_TOKEN` (token secret), HTTP Basic auth, endpoint `https://api.matterport.com/api/models/graph`.
+- Raw model dumps are hackathon data: they go in `data/` (gitignored) and are never committed. The test fixture is hand-made.
+
+`builder/mesh.js`:
+```js
+parseObj(text)                                 // → { vertices, faces } (triangulated)
+meshToWalls(objText, { up, floorHeight, sliceHeights = [1.0, 1.5], minLength = 0.3, mergeTolerance = 0.05 })
+  // → { walls: [{ x1, y1, x2, y2 }], bounds, warnings }   // meters, model coordinates
+```
+- A segment is kept only if it appears at every slice height, which drops most furniture. Collinear pieces are merged and pieces shorter than `minLength` are dropped. Tall furniture can survive as a false wall, which blocks rather than leaks, so the result is labeled `mesh-slice` and should be checked by a person.
+
+CLI: `swarm import-matterport <modelId> [--floor N] [--mode route|visit] [--out worlds/<slug>.json] [--save-raw data/<id>.json]`, `swarm import-matterport --from-raw <file.json> …` (no API call) and `swarm import-mesh <file.obj> [--out …]`.
+
+---
+
+## 14. Building traffic for one real building (focus, Nov 14)
+
+**Target:** Matterport model `6FNMVoyPrL1`, "Office/Retail - 45,726SF". **Question:** where does foot traffic concentrate in this building, where do people end up waiting, and which change helps most?
+
+**Decision:** simulate it in visit mode with walls (§13). People enter through the real exterior doors, walk wall-free paths through the real doorways to tenant spaces, wait in lines where there are lines, and leave. Jev decides where each person goes next, whether they join a line, whether they keep waiting, and whether they tell others. Traffic through the building is measured at the doorways.
+
+```
+Matterport vector data ─ extractFloorplan ─ toMapUnits ─► plan (rooms, walls, doors)        builder/matterport.js
+CoStar property record ─ costarToProfile ───────────────► profile (tenants, SF, use, …)     builder/profile.js
+profile + scenario ───── profileToDemand ───────────────► who comes, how many, when         builder/demand.js
+plan + profile ───────── composeBuildingWorld ──────────► world (visit mode, walls, doors)   builder/compose.js
+Claude ───────────────── writes the cast for these tenants
+world ────────────────── swarm run --provider jev ──────► recorded run ─► viewer
+```
+
+Limits of v0.2, stated in every report: one floor per world; doors count traffic but don't yet slow it (no door capacity); tenant-to-room matching is by area unless overridden; every number not read from CoStar or Matterport is tagged `assumed`.
+
+### 14a. Building profile (`builder/profile.js`)
+
+A neutral shape, so the rest of the pipeline doesn't depend on CoStar's field names:
+
+```js
+{
+  source: 'costar' | 'manual', propertyId, name, address, city, state,
+  buildingType, rbaSF, floors, yearBuilt, percentLeased,
+  parking: { spaces, ratioPer1000SF } | null,
+  trafficCounts: [{ street, vehiclesPerDay }],
+  hours: { open: 'HH:MM', close: 'HH:MM' } | null,
+  tenants: [{ name, industry, use, sf, floor, suite, employees, hours }],   // use is one of USE_TYPES
+  provenance: { '<field path>': 'data' | 'assumed' | 'owner-reported' }
+}
+```
+
+```js
+USE_TYPES = ['office', 'retail', 'restaurant', 'medical', 'service', 'fitness', 'other', 'vacant']
+validateProfile(raw)     // → { ok, errors, warnings, profile } (normalized; unknown uses become 'other' with a warning)
+costarToProfile(raw)     // → { profile, mapped: string[], unmapped: string[], warnings }
+                         //   best-effort: matches common field names case-insensitively and reports what it could not map;
+                         //   to be finalized against a real CoStar response
+classifyUse(industryOrName)   // → a USE_TYPES value, by keyword
+```
+
+### 14b. Demand (`builder/demand.js`)
+
+```js
+SCENARIOS            // 'weekday-morning' (07:30, 150 min), 'weekday-lunch' (11:30, 120 min), 'saturday-afternoon' (12:00, 180 min)
+DEFAULT_ASSUMPTIONS  // every made-up number in one object, e.g. sfPerOfficeWorker, officeAttendance,
+                     //   visitsPer1000SFPerHour by use, share of workers who go out at lunch, dwell minutes by use, patience by group
+profileToDemand(profile, { scenario, assumptions })
+  // → { clockStart, duration, arrivals,
+  //     groups: [{ id, name, description, count, origin: 'outside' | 'tenant', tenantNames, use, visits, patience, info, weights, likes, needs }],
+  //     places: { [tenantName]: { servers, serviceTime, appeal, price, tags, about } },
+  //     provenance, assumptionsUsed: [{ key, value, why }] }
+```
+A number read from the profile is tagged `data`; a number from `DEFAULT_ASSUMPTIONS` is tagged `assumed` and listed in `assumptionsUsed`, so the robustness check can nudge it.
+
+### 14c. Composer (`builder/compose.js`)
+
+```js
+assignTenantsToRooms(plan, profile, { overrides })
+  // → { assignments: [{ roomId, tenantName | null, use, how: 'override' | 'area-match' | 'vertical' | 'common' }], warnings }
+composeBuildingWorld({ plan, profile, scenario = 'weekday-lunch', assumptions, overrides, title, question })
+  // → { world, report: { floor, rooms, tenants, assignments, doors, warnings, assumptionsUsed } }
+```
+- `plan` is the map-unit plan from `toMapUnits` (§13e). `overrides` is `{ rooms: { [roomId]: tenantName | 'common' | 'vertical' }, verticalRooms: [roomId] }`.
+- Exterior doors become `gate` nodes (people enter and leave there). A tenant space becomes a service place at a point inside its room. A tenant whose workers go out during the scenario also gets a `gate` node in its room, so workers start there. Stairs and elevators (`vertical` rooms) are `gate` nodes that stand for the other floors.
+- Tags tie people to places: each tenant place has a tag for that tenant plus its use; public-facing places also have `public`.
+- The world carries `walls`, `geo`, `doors` and `provenance`, and a placeholder cast that Claude replaces.
+- The result passes `validateWorld`, including the §13a wall rules.
+
+### 14d. Engine additions for buildings
+
+| Addition | Meaning |
+|---|---|
+| `archetypes[].entries` | Optional list of entry or gate node ids where this group appears. Default: all entries, by weight. A cast member's own `entry` still wins half the time, as before. |
+| `doors` (world field) | Optional array, ≤ 500: `{ id, name, x1, y1, x2, y2, exterior }`. Each is the gap segment of a doorway, in map units. Doors are not walls. |
+| Door traffic | In visit mode, every walking path is checked against each door's gap when it is created. Each crossing is counted at the time the agent reaches that door. A door's gap is its segment with each end that stops short of a wall (within 0.3 units, or the clearance if larger) carried on to that wall and 0.02 past it, so a path that rounds a jamb inside the builder's pull-in still counts (§14g). |
+| `metrics().doors` | `[{ id, name, exterior, crossings, peakPer5Min, peakClock }]`, busiest first. |
+| Frames | `frames.doors = [{ id, name, x1, y1, x2, y2, exterior }]`, and each frame gets `d: [cumulative crossings per door]`. |
+| Leaving | The exit an agent leaves through is the nearest by walking distance, not straight-line distance. |
+| Patchable `weight` | `PATCH_FIELDS.node` gains `weight`, so a what-if can shift how much each entrance is used. |
+| `archetypes[].exits` | Optional list of gate or exit node ids this group leaves through. When an agent leaves, it takes the nearest of these by walking distance. Default: every exit. Without it, a lunch customer could leave up the office stairs, which miscounts door traffic. If walls leave none of the group's exits reachable from where the agent stands, it takes the nearest reachable exit of any kind, and its trace says so. |
+| `travelSpeed` range | The maximum rises from 60 to 600 map units per minute. A building map is about 0.5 m per unit, so a normal walk of 75 m per minute is about 135 units per minute. |
+
+The viewer draws doors on the map, shaded by traffic up to the scrubber time, and adds a "Busiest doorways" ranking. `swarm report` lists the busiest doorways.
+
+### 14e. CLI
+
+```
+swarm building --model <matterportId> | --plan-raw <file.json>     # where the floor plan comes from
+               --profile <file.json>                               # a building profile (§14a) or a raw CoStar record
+               [--scenario weekday-lunch] [--floor N] [--overrides file.json] [--out worlds/<slug>.json]
+```
+It prints the composer's report: rooms, tenants matched, doors, warnings and every assumption used.
+
+### 14f. Fit-out files (for an empty building)
+
+Model `6FNMVoyPrL1` is an empty shell, so the places in it are a **proposed fit-out** that Claude designs inside the real walls. A fit-out file is our own design (no Matterport geometry in it), so it is committed under `buildings/<modelId>/`.
+
+```js
+{
+  model, floor,                       // Matterport model id; floor sequence (0 = Floor 1)
+  title, question, context, leaveLabel,
+  clockStart, duration, walkMetersPerMinute,      // walking speed in real units; the builder converts to travelSpeed
+  arrivals: { total, start, end, shape },
+  gates:  [{ id, name, at: { x, y }, weight, exit }],   // positions in METERS, in the model's own coordinates
+  places: [{ id, name, at: { x, y }, servers, serviceTime, appeal, price, tags, about }],
+  archetypes: [ … world-spec archetypes, with `entries` naming gate ids … ],
+  minds: [ … the cast … ],
+  provenance: { … }                   // every placed item and every count is 'assumed' unless read from data
+}
+```
+
+`builder/fitout.js`:
+```js
+applyFitout(plan, fitout, { margin = 8 })
+  // plan: the result of extractFloorplan (meters). Converts it with toMapUnits(plan, { margin }) and returns
+  // { world, report: { gates, places, walls, doors, metersPerUnit, warnings } }
+```
+- The wider margin leaves room to walk outside along the building between exterior doors.
+- Every gate and place is converted to map units and checked: at least 0.3 m from every wall, and reachable on foot from at least one gate. A failed check is an error that names the item.
+- The world gets `walls`, `geo`, `doors` (gap segments from the plan's doors, named by what they join) and `provenance`, and passes `validateWorld`.
+- Real-building worlds contain the floor plan, so the CLI writes them under `data/worlds/` by default.
+
+CLI: `swarm fitout <fitout.json> [--plan-raw data/<id>.json | --model <id>] [--out data/worlds/<slug>.json]`.
+
+### 14g. Decisions recorded after the building-track build (Nov 14)
+
+- The normalized spec always carries `walls: []`, `geo: null`, `doors: []`, `provenance: null`, `edges[].via: []`, `archetypes[].entries: []` and `archetypes[].exits: []` when the world gives none.
+- Every §13a error is also fatal in `normalizeSpec`, so the Sim refuses to start on an invalid walled world.
+- In worlds with walls, `cleanSpec` keeps exact node coordinates instead of rounding to 0.1.
+- A door may touch a wall within 0.02 units of the door's own ends (its jambs). A door with no wall within 0.5 units of either end gets a warning.
+- `metrics().walls` is always present (`{ count: 0, checkedMoves: 0, violations: 0 }` without walls). Each cached path or link polyline is checked once, when first used.
+- Doors count traffic only in visit mode.
+- `selectHeard`'s viewer may carry `distanceTo(placeId)`, giving walking distance, so the overheard-remark radius follows walls.
+- Viewer map API additions: `createMap` option `wallsModule`; `highlightDoor(id | null)`; exports `wallsLibLoaded`, `wallGeometry(walls, lib, { clearance })` and `interpolatePosition(geo, xa, ya, xb, yb, u, cache, key)`. A run with walls is drawn at a uniform scale fitted to its bounds, so the building is not stretched.
+- Composer details: a stairs or elevator room gets a service place ("to other floors") beside its gate; in the morning scenario an office place has as many servers as its headcount and a fixed service time equal to the window, so staff stay at their desks.
+- Known gap in `engine/walls.js`: a path can pass a wall end closer than `clearance`. It never touches the wall, so the hard rule holds; it only affects how tightly dots hug corners.
+- **Door gaps (integration, Nov 14).** Builders pull each door's ends in from the jambs (by up to a quarter of the clearance) so a door never touches a wall, and nav may round a jamb closer than that (the known gap above). On the real building, walks between the food hall and the market rounded the pier between the two front doors inside that pull-in, and the market main entrance counted 97 of about 430 crossings. The Sim now counts each door on its gap (§14d, "Door traffic"): the drawn segment, with each end that stops short of a wall (within max(0.3, clearance) units) carried on to that wall plus 0.02. Paths never touch walls, so the part along a jamb is never crossed. A door end already on a wall, or with no wall in reach, is used as drawn; `frames.doors` and the viewer still show the drawn segment. Worlds without walls or doors are unchanged.
+- **Real-building check (Nov 14).** `6FNMVoyPrL1` Floor 1 with `buildings/6FNMVoyPrL1/fitout-floor1-lunch.json`: the independent no-through-wall check (own segment intersection, frames every 0.01 min) found 0 crossings and nobody inside the sealed 32.6 m² void in the food hall. Door counts on the gaps match an independent count from those frames door for door.

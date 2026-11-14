@@ -1,0 +1,27 @@
+{
+  "source": "costar",
+  "propertyId": "TEST-0001",
+  "name": "Sample Plaza (made-up test data)",
+  "address": "100 Sample Street",
+  "city": "Testville",
+  "state": "NJ",
+  "buildingType": "Office/Retail",
+  "rbaSF": 45200,
+  "floors": 2,
+  "yearBuilt": 1988,
+  "percentLeased": 85,
+  "parking": { "spaces": 150, "ratioPer1000SF": 3.32 },
+  "trafficCounts": [{ "street": "Sample Street", "vehiclesPerDay": 18400 }],
+  "hours": { "open": "07:00", "close": "19:00" },
+  "tenants": [
+    { "name": "Kessler & Moss Law (fictional)", "industry": "Legal Services", "use": "office", "sf": 9800, "floor": 1, "suite": "110", "employees": 38, "hours": null },
+    { "name": "Brightline Software (fictional)", "industry": "Software", "use": "office", "sf": 6200, "floor": 1, "suite": "120", "employees": null, "hours": null },
+    { "name": "Bluebird Coffee (fictional)", "industry": "Coffee Shop", "use": "restaurant", "sf": 1800, "floor": 1, "suite": "101", "employees": 9, "hours": { "open": "06:30", "close": "16:00" } },
+    { "name": "Northgate Dental (fictional)", "industry": "Dental Office", "use": "medical", "sf": 2600, "floor": 1, "suite": "105", "employees": 12, "hours": null },
+    { "name": "Fernway Gifts (fictional)", "industry": "Gift Boutique", "use": "retail", "sf": 1500, "floor": 1, "suite": "103", "employees": null, "hours": null },
+    { "name": "Halvorsen Insurance (fictional)", "industry": "Insurance Agency", "use": "office", "sf": 8400, "floor": 2, "suite": "210", "employees": 30, "hours": null },
+    { "name": "Juniper Yoga (fictional)", "industry": "Yoga Studio", "use": "fitness", "sf": 3200, "floor": 2, "suite": "220", "employees": null, "hours": null },
+    { "name": "Ledgerline Accounting (fictional)", "industry": "Accounting", "use": "office", "sf": 5100, "floor": 2, "suite": "230", "employees": 22, "hours": null }
+  ],
+  "provenance": {}
+}

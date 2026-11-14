@@ -11,6 +11,8 @@ import { createInterface } from 'node:readline';
 import { hasKey } from '../engine/env.js';
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url));
+// The viewer loads the engine's wall geometry as /walls.js (§13d): the root's copy, else the server's own.
+const OWN_WALLS = fileURLToPath(new URL('../engine/walls.js', import.meta.url));
 const BODY_LIMIT = 2 * 1024 * 1024;
 // Names in :file and :id. Stricter than the contract's [A-Za-z0-9._-] only in refusing a leading dot.
 const NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}$/;
@@ -45,7 +47,7 @@ async function lib(path) {
 export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd() } = {}) {
   const base = resolve(root);
   const ctx = {
-    worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'),
+    worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
     loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null
   };
   const server = http.createServer((req, res) => {
@@ -87,6 +89,7 @@ const ROUTES = [
 
 async function handle(ctx, req, res) {
   const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/walls.js') return serveWalls(ctx, req, res);
   if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url.pathname);
   const parts = url.pathname.slice(5).split('/').map(decodeSegment);
   const allowed = [];
@@ -208,6 +211,16 @@ async function serveStatic(req, res, pathname) {
   const type = TYPES[extname(file)] || 'application/octet-stream';
   const headers = type.startsWith('text/html') ? { 'Content-Security-Policy': CSP, 'Referrer-Policy': 'no-referrer' } : {};
   if (!(await sendFile(req, res, file, type, headers))) throw new HttpError(404, `Not found: ${pathname}`);
+}
+
+async function serveWalls(ctx, req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    throw new HttpError(405, 'The viewer only answers GET.', { headers: { Allow: 'GET, HEAD' } });
+  }
+  for (const file of new Set([ctx.wallsFile, OWN_WALLS])) {
+    if (await sendFile(req, res, file, TYPES['.js'])) return;
+  }
+  throw new HttpError(404, 'Not found: /walls.js (engine/walls.js is missing)');
 }
 
 // ---------- worlds ----------
