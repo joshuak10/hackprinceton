@@ -25,7 +25,7 @@ The simulator works end to end with real Jev decisions, **including on the real 
 | CoStar kit | Fully read | Digests of every guide and schema, a profile of all eight datasets, a dossier on the building and a study of its surroundings (all local-only) |
 | Real building, rules run | Works | Built from the Matterport walls and the fit-out file with `swarm fitout`; validates with 0 errors and 0 warnings |
 | No walking through walls | Confirmed independently | A separate checker with its own geometry code replayed the run at fine time steps: 1,032,558 consecutive positions against the 134 real walls, 0 crossings, and nobody inside the sealed room |
-| Tests | 499 of 499 pass | `npm test`, 23 test files |
+| Tests | 514 of 514 pass | `npm test`, 23 test files |
 
 Also built: a world compiler for plain-English descriptions (`swarm compile`, needs an Anthropic key), a `/swarm` command for Claude Code, and an MCP server (`mcp/server.js`).
 
@@ -85,11 +85,13 @@ Cautions:
 
 The shares of nearby workers and residents who show up are still assumptions. The reasoning for each number is in the fit-out file's `assumptions` list.
 
-## Still running
+## Finished since the first push
 
-- **The `import-matterport` and `import-mesh` commands** and an example world with walls.
+- **Stress test of the pathfinding.** It ran 270 random floor plans against a separate reference method and found one real bug, where a path could slip through a hairline crack between two wall pieces. Gaps too narrow for a person are now sealed.
+- **Import commands.** `swarm import-matterport` (from the API or a saved file) and `swarm import-mesh` (walls from a 3D mesh file, as a fallback). The mesh importer also had a bug where people could walk inside a thick wall at a doorway; fixed.
+- **An example world with walls** that anyone can run without keys: `worlds/office-floor-walls.json`, built from a hand-made floor plan.
 
-Finished since the last update: the stress test of the pathfinding. It ran 270 random floor plans against a separate reference method and found one real bug, where a path could slip through a hairline crack between two wall pieces. Gaps too narrow for a person are now sealed.
+Nothing is running in the background right now.
 
 ## Next
 
@@ -120,7 +122,7 @@ npm test
 The real building (needs the Matterport keys in `.env.local`):
 
 ```sh
-# 1. Fetch the model's wall and door data into data/ (gitignored). This command is still being built:
+# 1. Fetch the model's wall and door data into data/ (gitignored):
 node bin/swarm.js import-matterport 6FNMVoyPrL1 --save-raw data/6FNMVoyPrL1.json
 # 2. Build the world from the fit-out and the real walls:
 node bin/swarm.js fitout buildings/6FNMVoyPrL1/fitout-floor1-lunch.json \

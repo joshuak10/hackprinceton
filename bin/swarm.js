@@ -62,7 +62,7 @@ Usage: swarm <command> [options]
   import-matterport --from-raw <file.json> [...]
                                     Starter world with walls from a Matterport model (no API call
                                     with --from-raw)
-  import-mesh <file.obj> [--out FILE]
+  import-mesh <file.obj> [--out FILE] [--up z|y]
                                     Starter world with walls sliced from a 3D mesh (check by eye)
   compile "<description>" [--out FILE] [--force]
                                     Write a world with Claude (needs ANTHROPIC_API_KEY)
@@ -112,7 +112,7 @@ const COMMANDS = {
     min: 0, max: 1, run: (a, f) => cmdImportLazy('cmdImportMatterport', a, f),
     flags: ['floor', 'mode', 'out', 'save-raw', 'from-raw']
   },
-  'import-mesh': { min: 1, max: 1, flags: ['out'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
+  'import-mesh': { min: 1, max: 1, flags: ['out', 'up'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
   serve: { min: 0, max: 0, flags: ['port'], run: cmdServe },
   sanity: { min: 0, max: 0, flags: ['model'], run: cmdSanity }
 };

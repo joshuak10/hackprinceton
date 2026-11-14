@@ -3,8 +3,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { deflateRawSync } from 'node:zlib';
-import { parseObj, meshToWalls, fetchMeshObj, MESH_QUERY, MATTERPORT_GRAPH_ENDPOINT } from '../builder/mesh.js';
-import { ORIGIN, roomObj, roomCounts, noisyRoomObj, gridObj, boxesObj } from './fixtures/mesh/room.js';
+import { parseObj, meshToWalls, meshToWorld, fetchMeshObj, MESH_QUERY, MATTERPORT_GRAPH_ENDPOINT } from '../builder/mesh.js';
+import { ORIGIN, BOXES, roomObj, roomCounts, noisyRoomObj, gridObj, boxesObj } from './fixtures/mesh/room.js';
+import { createNav } from '../engine/walls.js';
+import { validateWorld } from '../engine/spec.js';
 
 // ---------- helpers (room-local coordinates: south-west outer corner at 0, 0) ----------
 
@@ -223,28 +225,29 @@ describe('meshToWalls on the generated room', () => {
   });
 
   test('returns merged, labeled, rounded segments in model coordinates with bounds', () => {
-    assert.equal(result.walls.length, 16);   // 8 outer faces + 4 interior pieces + 4 cabinet sides
+    assert.equal(result.walls.length, 18);   // 8 outer faces + 4 interior pieces + 2 door jambs + 4 cabinet sides
     for (const w of result.walls) {
       assert.deepEqual(Object.keys(w), ['x1', 'y1', 'x2', 'y2', 'source']);
       assert.equal(w.source, 'mesh-slice');
-      assert.ok(length(w) >= 0.3);
       for (const v of [w.x1, w.y1, w.x2, w.y2]) assert.equal(v, Math.round(v * 1000) / 1000);
     }
+    // The only pieces under minLength are the two 0.12 m jambs across the interior wall at the door.
+    const short = walls.filter(w => length(w) < 0.3);
+    assert.equal(short.length, 2);
+    for (const w of short) assert.ok(Math.abs((w.x1 + w.x2) / 2 - 4) < 0.02 && [2.5, 3.4].some(y => Math.abs(w.y1 - y) < 0.02));
     // Ends that meet another wall's side are pushed 1 cm through it (robust to later rounding), so
     // the inner faces poke 1 cm past the outer corners.
     const want = { minX: 10, minY: 20, maxX: 18, maxY: 26 };
     for (const k of Object.keys(want)) assert.ok(Math.abs(result.bounds[k] - want[k]) <= 0.0101, `bounds.${k} ${result.bounds[k]}`);
   });
 
-  test('closes the corners: every wall end meets another wall except at the door jambs', () => {
+  test('closes the corners and the jambs: every wall end meets another wall', () => {
     // "Meets" = shares the end point, or crosses another wall within 2 cm of the end (an end that
     // met a wall's side was pushed 1 cm through it).
     for (const w of walls) {
       const L = length(w);
       for (const [x, y, ox, oy] of [[w.x1, w.y1, w.x2, w.y2], [w.x2, w.y2, w.x1, w.y1]]) {
-        const jamb = Math.abs(x - 4) < 0.1 && (Math.abs(y - 2.5) < 1e-6 || Math.abs(y - 3.4) < 1e-6);
-        if (jamb) continue;
-        const bx = x + (ox - x) * 0.02 / L, by = y + (oy - y) * 0.02 / L;
+        const bx = x + (ox - x) * Math.min(0.02, L / 3) / L, by = y + (oy - y) * Math.min(0.02, L / 3) / L;
         const meets = walls.some(o => o !== w && touches(x, y, bx, by, o.x1, o.y1, o.x2, o.y2));
         assert.ok(meets, `free wall end at (${x.toFixed(3)}, ${y.toFixed(3)})`);
       }
@@ -253,6 +256,26 @@ describe('meshToWalls on the generated room', () => {
 
   test('accepts parseObj output directly and gives the same walls', () => {
     assert.deepEqual(meshToWalls(parseObj(ROOM_Z)).walls, result.walls);
+  });
+
+  test('the inside of the thick interior wall is closed at the doorway, so no walk gets into it', () => {
+    // The wall is 0.12 m thick; its jambs are shorter than minLength but close its two faces.
+    const P = (x, y) => [x + ORIGIN.x, y + ORIGIN.y];
+    for (const clearance of [0.02, 0.03, 0.05]) {   // metres (the mesh coordinates are metres)
+      const nav = createNav(result.walls, { clearance });
+      for (const [fx, fy] of [[1, 4.5], [2, 3], [6, 4], [5, 1]]) {
+        for (const [cx, cy] of [[4, 1.2], [4, 2.3], [4, 3.6], [4, 5.2]]) {
+          assert.equal(nav.path(...P(fx, fy), ...P(cx, cy)), null, `c=${clearance}: (${fx}, ${fy}) reaches (${cx}, ${cy}) inside the wall`);
+        }
+      }
+      // West to east still works, through the door between the jambs.
+      const p = nav.path(...P(2, 4.5), ...P(6, 1.5));
+      assert.ok(p, `c=${clearance}: no walk west to east`);
+      const crossX = p.points.findIndex(q => q.x - ORIGIN.x > 4);
+      const a = p.points[crossX - 1], b = p.points[crossX];
+      const yAt4 = a.y + (b.y - a.y) * (4 + ORIGIN.x - a.x) / (b.x - a.x) - ORIGIN.y;
+      assert.ok(yAt4 > 2.5 && yAt4 < 3.4, `c=${clearance}: crosses the wall line at y = ${yAt4}`);
+    }
   });
 });
 
@@ -296,18 +319,25 @@ describe('meshToWalls up axis', () => {
 // ---------- options ----------
 
 describe('meshToWalls options', () => {
-  test('minLength drops short pieces after merging', () => {
-    const short = localWalls(meshToWalls(ROOM_Z, { minLength: 0.1 }));
-    // The 0.12 m door jamb faces survive only with the lower minLength.
-    assert.ok(covered(short, 3.94, 2.5, 4.06, 2.5) > 0.98, 'jamb face missing at minLength 0.1');
-    const normal = localWalls(meshToWalls(ROOM_Z));
-    assert.ok(covered(normal, 3.94, 2.5, 4.06, 2.5) < 0.01, 'jamb face kept at minLength 0.3');
+  test('minLength drops short free-standing pieces but never opens a closed outline', () => {
+    // A free-standing 0.25 m panel (1 cm thick, so its faces merge into one line with two free ends).
+    const panel = [2.0, 4.0, 0, 2.25, 4.01, 2.0];
+    const withPanel = boxesObj([...Object.values(BOXES), panel]);
+    const opts = { up: 'z', floorHeight: 0 };
+    assert.ok(covered(meshToWalls(withPanel, { ...opts, minLength: 0.2 }).walls, 2.0, 4.0, 2.25, 4.0) > 0.9, 'panel missing at minLength 0.2');
+    assert.ok(covered(meshToWalls(withPanel, opts).walls, 2.0, 4.0, 2.25, 4.0) < 0.01, 'panel kept at minLength 0.3');
 
-    const long = meshToWalls(ROOM_Z, { minLength: 0.7 });
-    const longWalls = localWalls(long);
-    for (const w of long.walls) assert.ok(length(w) >= 0.7);
-    assertFaces(longWalls, { ...OUTER_FACES, ...INTERIOR_FACES, 'cabinet front': CABINET_FACES['cabinet front'] });
-    assert.ok(covered(longWalls, 6.0, 5.1, 6.0, 5.7) < 0.01, 'the 0.6 m cabinet side should be dropped');
+    // The 0.12 m door jambs are kept at any minLength: each joins the two faces of the interior wall.
+    for (const minLength of [0.1, 0.3, 0.7]) {
+      const walls = localWalls(meshToWalls(ROOM_Z, { minLength }));
+      assert.ok(covered(walls, 3.94, 2.5, 4.06, 2.5) > 0.98, `jamb missing at minLength ${minLength}`);
+      assert.ok(covered(walls, 3.94, 3.4, 4.06, 3.4) > 0.98, `jamb missing at minLength ${minLength}`);
+      assertDoorOpen(walls);
+    }
+    // Likewise the 0.6 m cabinet sides at minLength 0.7: dropping them would leave a slot inside the cabinet.
+    const long = localWalls(meshToWalls(ROOM_Z, { minLength: 0.7 }));
+    assertFaces(long, { ...OUTER_FACES, ...INTERIOR_FACES, ...CABINET_FACES });
+    for (const w of long) assert.ok(length(w) >= 0.7 || length(w) < 0.65, 'only outline-closing pieces may be short');
   });
 
   test('a cut must appear at every slice height', () => {
@@ -413,6 +443,51 @@ describe('meshToWalls on a noisy, finely triangulated room', () => {
   });
 });
 
+// ---------- starter world ----------
+
+describe('meshToWorld', () => {
+  test('a closed room: entrance at the most open spot inside, a place in the other room, valid with walls', () => {
+    const world = meshToWorld(meshToWalls(ROOM_Z), { file: 'scans/room.obj' });
+    assert.equal(world.mode, 'visit');
+    assert.equal(world.title, 'Floor plan sliced from room.obj');
+    assert.equal(world.walls.length, 18);
+    assert.ok(world.walls.every(w => w.source === 'mesh-slice' && [w.x1, w.y1, w.x2, w.y2].every(v => v >= 0 && v <= 100)));
+    assert.equal(world.geo.source, 'mesh-slice');
+    assert.ok(world.geo.clearance >= 0.02 && world.geo.clearance <= 1);
+    assert.equal(world.provenance.walls, 'data');
+    assert.equal(world.provenance['nodes[*].x'], 'assumed');
+    const [gate, ...places] = world.nodes;
+    assert.equal(gate.kind, 'gate');
+    assert.ok(places.length >= 1 && places.every(n => n.kind === 'service'));
+    // The two halves of the room are on opposite sides of the interior wall (map x = 50 in this fit).
+    assert.ok(places.some(p => (p.x - 50) * (gate.x - 50) < 0), 'a place on the far side of the interior wall');
+    assert.ok(world.warnings.some(w => /no way in from outside/.test(w)));
+    assert.equal(Object.keys(world).includes('warnings'), false);
+    const v = validateWorld(world);
+    assert.equal(v.ok, true, v.errors.join('; '));
+    const nav = createNav(world.walls, { clearance: world.geo.clearance });
+    for (const p of places) assert.ok(nav.path(gate.x, gate.y, p.x, p.y), `${p.id} unreachable`);
+  });
+
+  test('an opening in an outside wall puts the entrance outside the building', () => {
+    const boxes = Object.entries(BOXES).filter(([k]) => !['southWall', 'counter', 'lintel'].includes(k) && !k.startsWith('table')).map(([, b]) => b);
+    const obj = boxesObj([[0, 0, 0, 3, 0.2, 2.7], [3.9, 0, 0, 8, 0.2, 2.7], ...boxes]);   // a 0.9 m street door at x 3..3.9
+    const world = meshToWorld(meshToWalls(obj, { up: 'z', floorHeight: 0 }));
+    const gate = world.nodes[0];
+    assert.equal(gate.id, 'outside');
+    const ys = world.walls.flatMap(w => [w.y1, w.y2]);
+    assert.ok(gate.y > Math.max(...ys) || gate.y < Math.min(...ys) || gate.x < Math.min(...world.walls.flatMap(w => [w.x1, w.x2])) || gate.x > Math.max(...world.walls.flatMap(w => [w.x1, w.x2])), 'the gate is outside the walls');
+    assert.ok(world.nodes.length >= 3, 'both rooms get a place');
+    assert.equal(validateWorld(world).ok, true);
+    assert.ok(!world.warnings.some(w => /no way in from outside/.test(w)));
+  });
+
+  test('refuses a result with no walls', () => {
+    assert.throws(() => meshToWorld(meshToWalls('# nothing\nv 0 0 0\n')), /no walls/);
+    assert.throws(() => meshToWorld(null), TypeError);
+  });
+});
+
 // ---------- Matterport Model API (mocked) ----------
 
 const TOKEN_ID = 'test-token-id';
@@ -503,7 +578,7 @@ describe('fetchMeshObj (mocked Matterport Model API)', () => {
     assert.equal(new TextDecoder().decode(out.obj), ROOM_Z);
     assert.deepEqual(out.asset, { id: 'b', format: 'obj', resolution: 'low', filename: 'model.obj', validUntil: '2026-11-14T12:00:00Z' });
     assert.deepEqual(out.warnings, []);
-    assert.equal(meshToWalls(out.obj).walls.length, 16);
+    assert.equal(meshToWalls(out.obj).walls.length, 18);
   });
 
   test('unzips an OBJ delivered inside a zip archive', async () => {
