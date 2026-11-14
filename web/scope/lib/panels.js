@@ -29,7 +29,8 @@ export function renderCounters(root, st) {
     items = [
       [fmt(f.c.active), st.caseId === 'sushi' ? 'In the restaurant now' : 'In the building now'],
       [fmt(inLine), 'In a line now'],
-      [fmt(f.c.served), st.caseId === 'sushi' ? 'Seated so far' : 'Served so far'],
+      // The engine counts a person as served when they finish. In the restaurant, someone eating has been seated.
+      [fmt(st.caseId === 'sushi' ? f.c.served + agents.filter(a => a.s === 2).length : f.c.served), st.caseId === 'sushi' ? 'Seated so far' : 'Served so far'],
       [fmt(f.c.abandoned), 'Walked away or gave up', f.c.abandoned > 0]
     ];
   }

@@ -164,6 +164,8 @@ const runLabel = r => {
   return `${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}`;
 };
 
+const hasPromotion = spec => (spec?.offers || []).some(o => String(o.id).startsWith('promotion'));
+
 // What the Suggestions button offers for the run on screen, and the comparison once its suggestion run exists.
 function refreshSuggestion(bundle, c) {
   const runId = bundle.meta?.runId;
@@ -171,21 +173,37 @@ function refreshSuggestion(bundle, c) {
   if (!onServer) {
     const s = suggestionFor(c, bundle.rawSpec || bundle.spec, bundle.metrics)
       || { label: 'Add one more server at the busiest counter', why: 'The busiest counter is where most people wait or walk away.', change: 'One more server at the busiest counter' };
-    feedback.reset({ suggestion: s, canRun: false, cannotRunWhy: 'This run is not on the engine, so it cannot be re-run from here. Start the engine (node bin/swarm.js serve) and open a recorded run to test the suggestion.' });
+    feedback.reset({
+      suggestion: s, canRun: false,
+      cannotRunWhy: st.live && c?.runTitle
+        ? 'The engine has no recorded run of this place yet, so there is no baseline to run again. Press Simulate, pick this place and run it once, then open Suggestions.'
+        : 'This run is not on the engine, so it cannot be re-run from here. Start the engine (node bin/swarm.js serve) and open a recorded run to test the suggestion.'
+    });
     return;
   }
-  const mine = suggestionRuns[runId];
+  // A promotion run is known by the offers in its world, so another browser, or a run started some other way,
+  // is still paired with its baseline: the same room, seed and decision-maker without the promotion.
+  const me = c.runs.find(r => r.meta.runId === runId);
+  const twin = (r, wantPromotion) => hasPromotion(r.spec) === wantPromotion && sameLayout(r.spec, me.spec) && r.meta.seed === me.meta.seed
+    && sameProvider(r.meta.provider) === sameProvider(me.meta.provider);
+  let mine = suggestionRuns[runId];
+  if (!mine && c.suggestion === 'promotion' && hasPromotion(me.spec)) {
+    const b = c.runs.find(r => twin(r, false) && String(r.meta.createdAt) < String(me.meta.createdAt)) || c.runs.find(r => twin(r, false));
+    mine = { base: b?.meta.runId, suggestion: suggestionFor(c, me.spec, bundle.metrics) };
+  }
   const has = id => c.runs.some(r => r.meta.runId === id);
   const baseId = mine && has(mine.base) ? mine.base : runId;
-  const sugId = mine ? runId : c.runs.map(r => r.meta.runId).find(id => suggestionRuns[id]?.base === runId);
+  const sugId = mine ? runId : c.runs.map(r => r.meta.runId).find(id => suggestionRuns[id]?.base === runId)
+    || (c.suggestion === 'promotion' ? c.runs.find(r => twin(r, true))?.meta.runId : undefined);
   const suggestion = (sugId && suggestionRuns[sugId]?.suggestion) || suggestionFor(c, bundle.rawSpec || bundle.spec, bundle.metrics);
   if (!suggestion) { feedback.reset(null); return; }
   const base = c.runs.find(r => r.meta.runId === baseId);
   const jev = ['jev', 'replay'].includes(base.meta.providerStats?.provider || base.meta.provider) && st.live?.jev;
   const ctx = {
-    suggestion, canRun: !!st.live && !mine,
-    cannotRunWhy: mine ? 'This is the suggestion run. Open the baseline to run the suggestion again.' : 'The engine is not reachable, so a new run cannot start.',
-    runNote: jev ? 'Starts a live Jev run: every decision is one Jev request to TypeSafe.' : 'Starts a rules run on the engine: no Jev requests, and it takes a few seconds.',
+    suggestion, canRun: !!st.live && has(baseId) && (!mine || baseId !== runId),
+    cannotRunWhy: !st.live ? 'The engine is not reachable, so a new run cannot start.' : 'The baseline of this run is no longer on the list, so the suggestion cannot be run again from here. Open a baseline run.',
+    runNote: jev ? 'Starts a live Jev run: every decision is one Jev request to TypeSafe.'
+      : `Starts a rules run on the engine: no Jev requests, and it takes a few seconds.${suggestion.id === 'promotion' ? ' The rules policy reacts to the lower price only; it cannot read the message.' : ''}`,
     compare: null
   };
   feedback.reset(ctx);
@@ -196,20 +214,33 @@ function refreshSuggestion(bundle, c) {
     const sug = c.runs.find(r => r.meta.runId === sugId);
     const cross = providerWords(base.meta) !== providerWords(sug.meta);
     feedback.reset({
-      ...ctx, canRun: false,
+      ...ctx,
       compare: {
         selected: runId, rows: compareRows(b.metrics, a.metrics, suggestion),
         options: [{ runId: baseId, label: `Baseline (${runLabel(base)})` }, { runId: sugId, label: `${suggestion.withLabel || 'With the suggestion'} (${runLabel(sug)})` }],
-        note: cross ? `The baseline's decisions came from ${providerWords(base.meta)} and the suggestion run's from ${providerWords(sug.meta)}, so part of the difference is the decision-maker, not the change.` : ''
+        note: cross ? `The baseline's decisions came from ${providerWords(base.meta)} and the suggestion run's from ${providerWords(sug.meta)}, so part of the difference is the decision-maker, not the change.`
+          : ['jev', 'replay'].includes(sug.meta.providerStats?.provider || sug.meta.provider)
+            ? 'One Jev run each. Jev does not answer the same question the same way twice, so two runs of the same world and seed already differ by a few people. A difference this size may be chance. Pick a run above to watch it; the time on the slider is kept.'
+            : ''
       }
     });
   }).catch(() => {});
 }
 
+// Every press is a new run of the baseline's world with the suggestion, on the baseline's seed. Pressed while a
+// suggestion run is on screen, it goes back to that run's baseline first, so the new run is paired with it.
 function runSuggestion() {
-  const c = st.caseInfo, base = c && selectedRun(c);
-  if (!base || st.loading) return;
-  const suggestion = suggestionFor(c, base.spec, st.bundle.metrics);
+  const c = st.caseInfo;
+  if (!c || st.loading) return;
+  const shown = selectedRun(c), known = shown && suggestionRuns[shown.meta.runId];
+  const baseline = known ? known.base
+    : shown && c.suggestion === 'promotion' && hasPromotion(shown.spec)
+      ? c.runs.find(r => !hasPromotion(r.spec) && sameLayout(r.spec, shown.spec) && r.meta.seed === shown.meta.seed && sameProvider(r.meta.provider) === sameProvider(shown.meta.provider))?.meta.runId
+      : null;
+  if (baseline && c.runs.some(r => r.meta.runId === baseline)) c.selected = baseline;
+  const base = selectedRun(c);
+  if (!base) return;
+  const suggestion = known?.suggestion || suggestionFor(c, base.spec, st.bundle.metrics);
   if (!suggestion) return;
   const jev = ['jev', 'replay'].includes(base.meta.providerStats?.provider || base.meta.provider) && st.live?.jev;
   openCase(c.id, { question: st.question, newRun: jev ? 'jev' : 'rules', suggestion, autoplay: false });
@@ -250,7 +281,7 @@ function renderRunPicker() {
     const n = r.meta.decisions || 0;
     const seats = r.spec.nodes.reduce((k, x) => k + (x.seats?.length || 0), 0);
     const room = c.sketch && !sameLayout(r.spec, c.sketch) ? `Changed room, ${seats} seats: ` : '';
-    const tested = suggestionRuns[r.meta.runId] ? `${suggestionRuns[r.meta.runId].suggestion?.short || 'Suggestion'}: ` : '';
+    const tested = suggestionRuns[r.meta.runId] ? `${suggestionRuns[r.meta.runId].suggestion?.short || 'Suggestion'}: ` : hasPromotion(r.spec) ? 'Promotion: ' : '';
     o.textContent = `${tested}${room}${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}${n ? ` (${n.toLocaleString('en-US')} decisions)` : ''}`;
     o.selected = r.meta.runId === (selectedRun(c)?.meta.runId);
     return o;
@@ -279,7 +310,7 @@ async function runOnServer(c, provider, suggestion = null) {
     suggestionRuns[runId] = { base: base.meta.runId, suggestion };
     store.set('scope-suggestions', JSON.stringify(suggestionRuns));
   }
-  c.runs = await apiBuildingRuns(c.runTitle ? { title: c.runTitle, max: 24 } : { notTitles: Object.values(st.cases).filter(x => x.runTitle).map(x => x.runTitle) });
+  c.runs = await apiBuildingRuns(c.runTitle ? { title: c.runTitle, max: 200 } : { notTitles: Object.values(st.cases).filter(x => x.runTitle).map(x => x.runTitle) });
   c.selected = runId;
   const bundle = await loadEngineRun(runId);
   p.done();
@@ -898,7 +929,7 @@ async function attachRuns(cases) {
   for (const c of titled) {
     // The room as sketched is the packed file's world: every changed room is compared with it.
     if (!c.sketch) c.sketch = await loadBundle(c.file).then(b => b.rawSpec || null).catch(() => null);
-    const runs = await apiBuildingRuns({ title: c.runTitle, max: 24 });
+    const runs = await apiBuildingRuns({ title: c.runTitle, max: 200 });
     // The page opens on the room as sketched, not on a changed room someone ran later.
     const sketched = c.sketch ? runs.filter(r => sameWorld(r.spec, c.sketch)) : [];
     if (runs.length) cases[c.id] = { ...c, runs, selected: cases[c.id].selected && runs.some(r => r.meta.runId === cases[c.id].selected) ? cases[c.id].selected : pick(sketched.length ? sketched : runs) };
@@ -925,7 +956,10 @@ async function enterEdit() {
   st.selectedIncident = null;
   $('callout').hidden = true;
   if (c && !c.sketch) c.sketch = c.file ? await loadBundle(c.file).then(b => b.rawSpec || null).catch(() => null) : null;
-  editor.open({ spec: st.bundle.rawSpec, sketch: c?.sketch || st.bundle.rawSpec, hasJev: Boolean(st.live?.jev) });
+  // An edit changes seats only. Opened from a promotion run, it starts from that room without the promotion.
+  const sketch = c?.sketch || st.bundle.rawSpec;
+  editor.open({ spec: { ...st.bundle.rawSpec, offers: sketch.offers || [] }, sketch, hasJev: Boolean(st.live?.jev) });
+  $('feedbackBtn').hidden = true;                // Suggestions would run the recorded room, not the one being drawn
   $('side').classList.add('editing');
   $('editBtn').classList.add('on');
   $('editBtn').setAttribute('aria-pressed', 'true');
@@ -937,6 +971,7 @@ async function enterEdit() {
 
 function leaveEdit() {
   editor.close();
+  $('feedbackBtn').hidden = false;
   $('side').classList.remove('editing');
   $('editBtn').classList.remove('on');
   $('editBtn').setAttribute('aria-pressed', 'false');
@@ -958,7 +993,7 @@ async function runEdited(provider, spec) {
   const seeds = have.length ? have : [7];
   const jobs = [];
   for (const seed of seeds) {
-    if (!have.includes(seed)) jobs.push({ spec: st.bundle.rawSpec && sameLayout(st.bundle.rawSpec, sketch) ? st.bundle.rawSpec : sketch, seed, what: 'the room as sketched' });
+    if (!have.includes(seed)) jobs.push({ spec: st.bundle.rawSpec && sameWorld(st.bundle.rawSpec, sketch) ? st.bundle.rawSpec : sketch, seed, what: 'the room as sketched' });
     jobs.push({ spec, seed, what: 'your room', mine: true });
   }
   const p = showProgress($('progress'), [...jobs.map((j, i) => ({ label: `Run ${i + 1} of ${jobs.length}: ${j.what}, seed ${j.seed}` })), { label: 'Opening the replay' }],
@@ -975,7 +1010,7 @@ async function runEdited(provider, spec) {
       if (j.mine && first == null) first = id;
     }
     p.set(jobs.length);
-    c.runs = await apiBuildingRuns({ title: c.runTitle, max: 24 });
+    c.runs = await apiBuildingRuns({ title: c.runTitle, max: 200 });
     c.selected = first;
   } finally {
     p.done();

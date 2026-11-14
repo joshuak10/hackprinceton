@@ -187,10 +187,13 @@ export function describeChanges(base, edited) {
 
 // ---------- before and after ----------
 
-// One run's outcome in the terms an owner uses. Every person eats at most once here, so the people seated are the
-// people served, and everyone else left without eating.
+// People who got a seat: at each place, everyone who came to it and neither walked away nor is still waiting.
+// The engine's `served` counts only those who had finished by the end, so it leaves out people still eating.
+export const everSeated = metrics => (metrics?.nodes || []).reduce((sum, n) => sum + (n.arrivals || 0) - (n.abandoned || 0) - (n.queueNow || 0), 0);
+
+// One run's outcome in the terms an owner uses: the people who got a seat, and everyone else, who left without eating.
 export function outcome(metrics) {
-  const people = Number(metrics?.spawned) || 0, seated = Math.min(people, Number(metrics?.served) || 0);
+  const people = Number(metrics?.spawned) || 0, seated = Math.min(people, everSeated(metrics) || Number(metrics?.served) || 0);
   return { people, seated, left: people - seated, wait: Number(metrics?.avgWait) || 0 };
 }
 
@@ -199,7 +202,8 @@ export function outcome(metrics) {
 export function pairRuns(baseSpec, editedSpec, runs) {
   const newest = new Map();
   for (const r of runs) {
-    const side = sameWorld(r.spec, editedSpec) ? 'after' : sameWorld(r.spec, baseSpec) ? 'before' : null;
+    // The "before" run has the base room under the same offers as the edited room, so only the seats differ.
+    const side = sameWorld(r.spec, editedSpec) ? 'after' : sameLayout(r.spec, baseSpec) && offerKey(r.spec) === offerKey(editedSpec) ? 'before' : null;
     if (!side || !r.metrics) continue;
     const provider = r.meta.provider === 'replay' ? 'jev' : r.meta.provider;
     const k = `${side}|${provider}|${r.meta.seed}`;

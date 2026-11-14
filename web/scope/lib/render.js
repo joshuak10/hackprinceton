@@ -238,6 +238,7 @@ export function createRenderer(canvas) {
       if ((n.floor || 0) !== st.floor || n.kind === 'area') continue;
       const [sx, sy] = R.toScreen(n.x, n.y);
       if (n.kind === 'service' && n.seats?.length) {
+        if (st.edit) continue;      // seats move while editing; the seat tags and the edit panel name the place
         // A place with seats is named at its seats, not at the spot where people wait for one.
         const [lx, ly] = seatLabelSpot(n);
         const [ax, ay] = R.toScreen(lx, ly);

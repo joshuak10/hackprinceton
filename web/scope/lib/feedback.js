@@ -71,7 +71,7 @@ export function promotionSuggestion(spec) {
   const text = `Promotion today: ${pct}% off everything for everyone who comes in.`;
   const names = places.map(p => p.name || p.id).join(' and ');
   return {
-    id: 'promotion', short: 'Promotion', withLabel: 'With the promotion', runLabel: 'Simulate the promotion',
+    id: 'promotion', short: 'Promotion', withLabel: 'With the promotion', runLabel: 'Simulate the promotion', againLabel: 'Simulate the promotion again',
     label: `Run a promotion: ${pct}% off today`,
     why: 'A promotion gives people one more reason to come in and to wait for a place. It does not add seats or bring more people to the door, so it may not serve more people. The run shows what it does to the line and to who gives up.',
     change: `Every person is told "${text}" and pays ${pct}% less at ${names}`,
@@ -116,6 +116,9 @@ export function compareRows(before, after, s) {
       rows.push({ label: `Served at ${n.name}`, key: 'served', before: place(before, n.id, 'served'), after: place(after, n.id, 'served') });
       rows.push({ label: `Average wait at ${n.name}`, key: 'avgWait', before: place(before, n.id, 'avgWait'), after: place(after, n.id, 'avgWait') });
     }
+    // "Served" counts finished meals. People still eating at the end got a seat too.
+    const sat = m => (m?.nodes || []).reduce((k, n) => k + (n.arrivals || 0) - (n.abandoned || 0) - (n.queueNow || 0), 0);
+    rows.push({ label: 'Got a seat (finished or still eating at the end)', key: 'served', before: sat(before), after: sat(after) });
     const told = (after?.offers || []).find(o => o.id === 'promotion')?.reached;
     if (told != null) rows.push({ label: 'People told about the promotion', key: 'spawned', before: 0, after: told });
   }
@@ -189,18 +192,17 @@ export function createFeedback({ onRun, onPick } = {}) {
     out.push(el('p', 'fb-source', s.note || 'One hard-coded suggestion for now. It is a fixed rule, not written by AI: one more server at the run\'s worst bottleneck.'));
     const card = el('article', 'fb-card');
     card.append(el('h4', null, s.label), el('p', null, s.why), el('p', 'fb-kicker', 'What changes'), el('p', null, `${s.change}. Everything else stays the same: same world, same people, same seed.`));
-    if (!cmp) {
-      if (ctx.canRun) {
-        const row = el('p', 'fb-run');
-        const btn = el('button', 'btn primary', s.runLabel || 'Run this suggestion');
-        btn.type = 'button';
-        btn.addEventListener('click', () => { dialog.close(); onRun?.(); });
-        row.append(btn);
-        card.append(row);
-        if (ctx.runNote) card.append(el('p', 'fb-note', ctx.runNote));
-      } else {
-        card.append(el('p', 'fb-note', ctx.cannotRunWhy || 'This run cannot be re-run from here.'));
-      }
+    // The button stays after the first run: every press starts a new run, and the table then shows the newest one.
+    if (ctx.canRun) {
+      const row = el('p', 'fb-run');
+      const btn = el('button', 'btn primary', cmp ? (s.againLabel || 'Run this suggestion again') : (s.runLabel || 'Run this suggestion'));
+      btn.type = 'button';
+      btn.addEventListener('click', () => { dialog.close(); onRun?.(); });
+      row.append(btn);
+      card.append(row);
+      if (ctx.runNote) card.append(el('p', 'fb-note', cmp ? `${ctx.runNote} It is a new run each time; nothing is reused from the last one.` : ctx.runNote));
+    } else if (!cmp) {
+      card.append(el('p', 'fb-note', ctx.cannotRunWhy || 'This run cannot be re-run from here.'));
     }
     out.push(card);
     if (cmp) {
