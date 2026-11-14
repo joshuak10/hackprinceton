@@ -243,6 +243,9 @@ button, input, select { font: inherit; color: inherit; }
 }
 .place h1 { margin: 0; font: 700 28px/1.1 var(--display); letter-spacing: -0.015em; }
 .place .sub { margin: 4px 0 0; color: var(--muted); font-size: 15px; max-width: 72ch; }
+.headtools { display: flex; align-items: center; gap: 12px; }
+.runpick { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+.runpick select { height: 36px; max-width: 280px; border-radius: var(--radius-s); border: 1px solid var(--line-2); background: var(--panel); color: var(--text); padding: 0 8px; }
 .floors { display: flex; gap: 4px; padding: 3px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
 .floors button {
   height: 36px;

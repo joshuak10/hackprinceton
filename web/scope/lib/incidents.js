@@ -1,6 +1,7 @@
 // Incidents, key moments and bottleneck series, derived from run files (docs/PROTOTYPE.md §9b).
 // Pure functions: given a RunBundle and prepared frames, return plain data.
 import { agentPos, clockText } from './frames.js';
+import { decisionsFromTraces } from './engine.js';
 
 export const CATEGORIES = [
   { id: 'decision', label: 'Gave up', long: 'People who walked away, gave up or drove off' },
@@ -22,7 +23,8 @@ export function deriveRun(bundle, F) {
     incidents = bundle.incidents.map((it, i) => ({ id: it.id || 'i' + i, floor: 0, severity: 1, ...it }));
   } else {
     incidents = [
-      ...decisionIncidents(bundle, F, nodes, agents, nameOf, isLot),
+      // Runs with no decision records (the engine's inline rules) still have walk-aways in agent traces.
+      ...decisionIncidents(bundle.decisions?.length ? bundle : { ...bundle, decisions: decisionsFromTraces(bundle.agents || [], [...nodes.values()]) }, F, nodes, agents, nameOf, isLot),
       ...complaintIncidents(bundle, F, nodes, nameOf, isLot),
       ...(isLot ? lotCongestion(bundle, F, nodes, geometry) : interiorCongestion(bundle, F, nodes, geometry, mpu))
     ];

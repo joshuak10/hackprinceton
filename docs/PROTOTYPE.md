@@ -414,6 +414,10 @@ A display built for the two CoStar simulations (building congestion and the reta
 
 **RunBundle.** The display loads `{ meta, spec, geometry, frames, metrics, agents, remarks, decisions }`. Mock runs (`web/scope/mock/*.json`, `web/scope/data/*.json`) are written in this shape by `scripts/mock_runs.js`. For a recorded run, `geometry` comes from `spec.geometry` and `decisions` from the endpoint below.
 
+**Engine runs** (`web/scope/lib/engine.js`). The engine keeps walls, doors and scale in `frames.walls`, `frames.doors` and `spec.geo`, and drops unknown spec fields, so the display builds the geometry from those: one floor, walls as drawn, doors as openings (exterior or interior), the view fitted to the walls and places, and a floor fill flooded from the service points with exterior doors closed (no fill if the walls leak). Gates become entries. The cast's `bio`, `goal` and `social` are read as `about`, `wants` and `listens_to`. A run with no decision records (the inline rules provider) gets its walk-aways from agent traces ("Saw N people in line at X … and walked away", "Gave up on X after M min in line").
+
+**Serving.** `node bin/swarm.js serve` serves the display at `/scope/`. When it answers `/api/health`, the building case lists the server's recorded building runs (visit mode with walls), newest first, preferring a Jev run, with a picker to switch. The confirm card can replay the selected run, run it again with rules, or run it with Jev when the server has a key (`POST /api/runs` with the run's spec and seed). The parking case stays on mock data until the engine has a lot world.
+
 **Geometry** (`spec.geometry`, written by the world builder or `scripts/extract_building.js`). Coordinates are map units: the longer side of the plan spans 0–100, so the distance words in §5 still apply. `metersPerUnit` gives real scale.
 ```js
 { kind: 'interior' | 'lot', source: { provider: 'matterport' | 'synthetic', modelId? }, metersPerUnit,

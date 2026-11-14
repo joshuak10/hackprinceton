@@ -1,5 +1,6 @@
-// Where runs come from. MockSource reads precomputed RunBundles (data/ first, then mock/).
-// ApiSource talks to the teammate's server (docs/PROTOTYPE.md §9 and §9b) once it serves these worlds.
+// Where runs come from: precomputed mock RunBundles (data/ first, then mock/), or runs recorded by the engine
+// and served by `node bin/swarm.js serve` (docs/PROTOTYPE.md §9, §9b).
+import { isEngineRun, adaptEngineRun } from './engine.js';
 
 async function getJson(url, { timeoutMs = 0 } = {}) {
   const ctrl = new AbortController();
@@ -44,7 +45,7 @@ export function loadBundle(file) {
   return bundles.get(file);
 }
 
-// ---------- live server (wired to the contract, untested until the server has these worlds) ----------
+// ---------- engine server (node bin/swarm.js serve) ----------
 
 export async function apiHealth() {
   try {
@@ -55,10 +56,34 @@ export async function apiHealth() {
   }
 }
 
-export async function apiRun({ world, provider = 'jev', seed = 7, onStatus, signal }) {
+// Recorded building runs (visit mode with walls), newest first, Jev runs before rules runs at the same time.
+export async function apiBuildingRuns({ max = 12 } = {}) {
+  const metas = await getJson('/api/runs').catch(() => []);
+  const candidates = metas.filter(m => m.status === 'done' && m.mode === 'visit')
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, max * 2);
+  const out = [];
+  for (const meta of candidates) {
+    const spec = await getJson(`/api/runs/${encodeURIComponent(meta.runId)}/spec`).catch(() => null);
+    if (spec && Array.isArray(spec.walls) && spec.walls.length) out.push({ meta, spec });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export async function apiLoadRun(runId, { modelId = null } = {}) {
+  const part = name => getJson(`/api/runs/${encodeURIComponent(runId)}/${name}`);
+  const [meta, spec, frames, metrics, agents, remarks] = await Promise.all(['meta', 'spec', 'frames', 'metrics', 'agents', 'remarks'].map(part));
+  const decisions = await part('decisions').catch(() => []);
+  const incidents = await part('incidents').catch(() => undefined);
+  const raw = { meta, spec, frames, metrics, agents, remarks, decisions, ...(incidents ? { incidents } : {}) };
+  return isEngineRun(raw) ? adaptEngineRun(raw, { modelId }) : normalizeBundle(raw);
+}
+
+// Start a run of a world spec on the server and wait for it. Returns the new run id.
+export async function apiStartRun({ spec, provider = 'rules', seed = 7, onStatus, signal }) {
   const res = await fetch('/api/runs', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ world, provider, seed }), signal
+    body: JSON.stringify({ spec, provider, seed }), signal
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `Starting the run failed (${res.status}).`);
@@ -67,13 +92,8 @@ export async function apiRun({ world, provider = 'jev', seed = 7, onStatus, sign
     if (signal?.aborted) throw new Error('Cancelled.');
     const st = await getJson(`/api/runs/${encodeURIComponent(id)}/status`);
     onStatus?.(st);
-    if (st.state === 'done') break;
+    if (st.state === 'done') return id;
     if (st.state === 'error') throw new Error(st.error || 'The run failed.');
-    await new Promise(r => setTimeout(r, 700));
+    await new Promise(r => setTimeout(r, 600));
   }
-  const part = name => getJson(`/api/runs/${encodeURIComponent(id)}/${name}`);
-  const [meta, spec, frames, metrics, agents, remarks] = await Promise.all(['meta', 'spec', 'frames', 'metrics', 'agents', 'remarks'].map(part));
-  const decisions = await part('decisions').catch(() => []);
-  const incidents = await part('incidents').catch(() => undefined);
-  return normalizeBundle({ meta, spec, frames, metrics, agents, remarks, decisions, incidents });
 }

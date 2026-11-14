@@ -137,11 +137,11 @@ export function renderInspector(root, st, id, onClose) {
 
   const list = el('div');
   list.append(el('h3', 'insp-sec', `Decisions (${decisions.length})`));
-  if (!decisions.length) list.append(el('p', 'hint', 'No decisions recorded for this person.'));
+  if (!decisions.length) list.append(el('p', 'hint', st.decisions.length ? 'No decisions recorded for this person.' : 'This run used the engine\'s built-in rules, which don\'t record decisions. Run it with Jev to see each choice and its probabilities.'));
   for (const d of decisions) {
     const box = el('div', 'dec-item' + (d.t > st.t ? ' future' : ''));
     const dh = el('div', 'dh');
-    dh.append(el('span', null, clockText(st.clockStart, d.t)), el('span', null, d.decision?.provider === 'mock' ? 'Mock decision' : `Jev ${d.decision?.model || ''}`.trim()));
+    dh.append(el('span', null, clockText(st.clockStart, d.t)), el('span', null, decidedBy(d.decision)));
     box.append(dh, el('p', 'qq', questionFor(d, nameOf)));
     if (d.observation?.now) box.append(el('p', 'ctx', d.observation.now));
     const dec = d.decision || {}, ap = d.applied || {};
@@ -174,6 +174,17 @@ export function renderInspector(root, st, id, onClose) {
   root.hidden = false;
 }
 
+function decidedBy(dec = {}) {
+  switch (dec.provider) {
+    case 'mock': return 'Mock decision';
+    case 'jev': return `Jev ${dec.model || ''}`.trim();
+    case 'jev-cache': return 'Jev, cached answer';
+    case 'replay': return 'Jev, replayed';
+    case 'rules-fallback': return 'Rules (Jev request failed)';
+    default: return 'Rules';
+  }
+}
+
 function prob(label, p, picked) {
   const d = el('div', 'prob' + (picked ? ' picked' : ''));
   d.append(el('span', 'lab', picked ? `${label} (chosen)` : label), el('span', 'pct', `${Math.round(p * 100)}%`));
@@ -194,7 +205,8 @@ export function renderDrawer(root, st, caseInfo) {
   const m = st.bundle.meta, ps = m.providerStats || {};
   const lat = st.decisions.map(d => d.decision?.latencyMs).filter(Number.isFinite).sort((a, b) => a - b);
   const pct = q => lat.length ? `${lat[Math.min(lat.length - 1, Math.floor(q * lat.length))]} ms` : 'n/a';
-  const mock = (ps.provider || m.provider) === 'mock';
+  const prov = ps.provider || m.provider;
+  const mock = prov === 'mock';
   const sec = (title, rows, note) => {
     const frag = document.createDocumentFragment();
     frag.append(el('h3', null, title));
@@ -205,7 +217,7 @@ export function renderDrawer(root, st, caseInfo) {
     return frag;
   };
   const geo = st.geometry;
-  const prov = geo.provenance || {};
+  const provenance = geo.provenance || {};
   const legend = el('div', 'legend');
   for (const [cls, text] of [['a-walk', 'Walking'], ['a-queue', 'In a line'], ['a-serve', 'Being served or staying put'], ['a-think', 'Deciding (waiting on Jev)'], ['a-leave', 'Leaving']]) {
     const d = el('div'); const i = el('i'); i.style.background = `var(--${cls})`; d.append(i, document.createTextNode(text)); legend.append(d);
@@ -214,7 +226,7 @@ export function renderDrawer(root, st, caseInfo) {
 
   root.replaceChildren(
     sec('Who decided', [
-      ['Decisions by', mock ? 'Mock (Jev not linked yet)' : `Jev, ${ps.model || m.model || ''}`],
+      ['Decisions by', mock ? 'Mock generator (not Jev)' : prov === 'jev' || prov === 'replay' ? `Jev, ${ps.model || m.model || ''}` : 'Engine rule policy (not Jev)'],
       ['Decisions', fmt(st.decisions.length)],
       ['Requests', fmt(ps.requests ?? st.decisions.length)],
       ['Cache hits', fmt(ps.cacheHits ?? 0)],
@@ -222,7 +234,7 @@ export function renderDrawer(root, st, caseInfo) {
       ['Latency p50 / p95', `${pct(0.5)} / ${pct(0.95)}`],
       ['Input tokens', ps.inputTokens ? fmt(ps.inputTokens) : 'n/a'],
       ['Estimated cost', ps.estCostUSD != null ? `$${ps.estCostUSD.toFixed(3)} (unverified)` : 'n/a']
-    ], mock ? 'These probabilities come from the mock generator, shaped like Jev answers. Link the Jev backend to replace them.' : ps.priceNote),
+    ], mock ? 'These probabilities come from the mock generator, shaped like Jev answers.' : prov === 'rules' ? 'A rules run: no Jev requests were made.' : ps.priceNote),
     sec('World', [
       ['Case', caseInfo?.label || m.title],
       ['Place', caseInfo?.place || geo.source?.name || ''],
@@ -231,7 +243,7 @@ export function renderDrawer(root, st, caseInfo) {
       ['Seed', String(m.seed ?? '')],
       ['Scale', `${(geo.metersPerUnit || 1).toFixed(2)} m per map unit`]
     ]),
-    sec('Where the data came from', Object.entries(prov).map(([k, v]) => [PROV_LABELS[k] || k.charAt(0).toUpperCase() + k.slice(1), String(v)])),
+    sec('Where the data came from', Object.entries(provenance).map(([k, v]) => [PROV_LABELS[k] || k.charAt(0).toUpperCase() + k.slice(1), typeof v === 'object' ? JSON.stringify(v) : String(v)])),
     (() => { const f = document.createDocumentFragment(); f.append(el('h3', null, 'Legend'), legend); return f; })()
   );
 }

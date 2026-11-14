@@ -49,11 +49,13 @@ export function createRenderer(canvas) {
 
   // Padding keeps the plan clear of the map tools (top) and the legend (bottom).
   R.pad = { top: 56, bottom: 58, side: 24 };
+  // bounds = [x0, y0, x1, y1] in map units; the view fits that box, wherever it starts.
   R.setBounds = (bounds) => {
-    const [, , W, H] = bounds;
-    R.W = W; R.H = H;
+    const [x0, y0, x1, y1] = bounds;
+    R.W = x1 - x0; R.H = y1 - y0;
+    R.home = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
     R.refit();
-    R.view = { x: W / 2, y: H / 2, z: 1 };
+    R.view = { ...R.home, z: 1 };
     R.baseKey = '';
   };
   R.refit = () => {
@@ -83,6 +85,19 @@ export function createRenderer(canvas) {
     const out = { canvas: c, o };
     R.obstacleCache.set(key, out);
     return out;
+  }
+
+  const fillCache = new WeakMap();
+  function fillMask(fill) {
+    if (fillCache.has(fill)) return fillCache.get(fill);
+    const c = document.createElement('canvas');
+    c.width = fill.w; c.height = fill.h;
+    const cx = c.getContext('2d');
+    const img = cx.createImageData(fill.w, fill.h);
+    for (let i = 0; i < fill.data.length; i++) if (fill.data[i]) img.data[i * 4 + 3] = 255;
+    cx.putImageData(img, 0, 0);
+    fillCache.set(fill, c);
+    return c;
   }
 
   function hatchPattern(target, color) {
@@ -123,6 +138,24 @@ export function createRenderer(canvas) {
         g.closePath();
       }
       g.fill('evenodd');
+    }
+    // Floor fill for runs without room outlines (engine runs): a raster flooded from the counters.
+    if (floor.fill) {
+      const fm = fillMask(floor.fill);
+      const tmp = document.createElement('canvas');
+      tmp.width = canvas.width; tmp.height = canvas.height;
+      const t = tmp.getContext('2d');
+      t.setTransform(R.dpr, 0, 0, R.dpr, 0, 0);
+      t.imageSmoothingEnabled = false;
+      const [fx, fy] = R.toScreen(floor.fill.origin[0], floor.fill.origin[1]);
+      t.drawImage(fm, fx, fy, floor.fill.w * floor.fill.cell * s, floor.fill.h * floor.fill.cell * s);
+      t.globalCompositeOperation = 'source-in';
+      t.fillStyle = pal.room;
+      t.fillRect(0, 0, R.cw, R.ch);
+      g.save();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.drawImage(tmp, 0, 0);
+      g.restore();
     }
     // Mesh obstacles: raster mask in the mesh colour, hatched.
     const om = obstacleMask(floor, st.floor);
@@ -168,6 +201,7 @@ export function createRenderer(canvas) {
       }
     }
     if (!st.layers.labels) return;
+    placed.length = 0;
     // Labels: areas faint and large, points small.
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -185,14 +219,15 @@ export function createRenderer(canvas) {
       if (n.kind === 'service') {
         g.fillStyle = pal.label;
         g.beginPath(); g.moveTo(sx, sy - 5); g.lineTo(sx + 5, sy); g.lineTo(sx, sy + 5); g.lineTo(sx - 5, sy); g.closePath(); g.fill();
-        label(g, n.name, sx, sy + 15, pal, 13);
+        // Below, above, right, left; skipped if all would overlap (the side panel names every place).
+        labelFree(g, n.name, [[sx, sy + 15, 'center'], [sx, sy - 15, 'center'], [sx + 9, sy, 'left'], [sx - 9, sy, 'right']], pal, 13);
       } else if (n.kind === 'entry') {
         // Entries sit just outside the building; put their labels further out so they don't hit inside labels.
         g.fillStyle = pal.muted;
         g.beginPath(); g.arc(sx, sy, 3, 0, Math.PI * 2); g.fill();
         const [cx] = R.toScreen((floor.bounds[0] + floor.bounds[2]) / 2, 0);
         const outRight = sx >= cx;
-        label(g, n.name, sx + (outRight ? 8 : -8), sy, pal, 12.5, outRight ? 'left' : 'right', true);
+        labelFree(g, n.name, [[sx + (outRight ? 8 : -8), sy, outRight ? 'left' : 'right'], [sx, sy - 13, 'center'], [sx, sy + 13, 'center']], pal, 12.5, true);
       }
     }
   }
@@ -257,6 +292,22 @@ export function createRenderer(canvas) {
     for (const ai of L.aisles) { const [sx, sy] = R.toScreen(left - 3.6, ai.y); label(g, ai.name, sx, sy, pal, 12.5, 'right', true); }
     const [ex, ey] = R.toScreen(entryX, streetY + 3.2); label(g, 'Entrance', ex, ey, pal, 13, 'center', true);
     const [xx, xy] = R.toScreen(exitX, streetY + 3.2); label(g, 'Exit', xx, xy, pal, 13, 'center', true);
+  }
+
+  // Labels placed in this base layer, as screen rectangles, so later labels can avoid them.
+  const placed = [];
+  function labelFree(g, text, spots, pal, size, muted = false) {
+    g.font = `500 ${size}px "IBM Plex Sans", sans-serif`;
+    const w = g.measureText(text).width + 6, h = size + 4;
+    for (const [x, y, align] of spots) {
+      const x0 = align === 'left' ? x - 3 : align === 'right' ? x - w + 3 : x - w / 2;
+      const r = [x0, y - h / 2, x0 + w, y + h / 2];
+      if (placed.some(p => r[0] < p[2] && r[2] > p[0] && r[1] < p[3] && r[3] > p[1])) continue;
+      placed.push(r);
+      label(g, text, x, y, pal, size, align, muted);
+      return true;
+    }
+    return false;
   }
 
   function label(g, text, x, y, pal, size = 13, align = 'center', muted = false) {

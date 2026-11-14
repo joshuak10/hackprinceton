@@ -102,20 +102,20 @@ npm install
 
 node bin/swarm.js run er-network --provider rules        # instant, no API
 node bin/swarm.js run er-network --provider jev          # about 1 minute, about 5 cents
-node bin/swarm.js serve                                  # viewer at http://127.0.0.1:4173
+node bin/swarm.js serve                                  # viewer at http://127.0.0.1:4173, scope display at /scope/
 npm test
 ```
 
 The real building (needs the Matterport keys in `.env.local`):
 
 ```sh
-# 1. Fetch the model's wall and door data into data/ (gitignored). This command is still being built:
-node bin/swarm.js import-matterport 6FNMVoyPrL1 --save-raw data/6FNMVoyPrL1.json
-# 2. Build the world from the fit-out and the real walls:
+# 1. Build the world from the fit-out and the real walls (fetches the Matterport data; output is gitignored):
 node bin/swarm.js fitout buildings/6FNMVoyPrL1/fitout-floor1-lunch.json \
-  --plan-raw data/6FNMVoyPrL1.json --out data/worlds/floor1-lunch.json
-# 3. Run it:
-node bin/swarm.js run data/worlds/floor1-lunch.json --provider rules
+  --model 6FNMVoyPrL1 --out data/worlds/floor1-lunch.json
+# 2. Run it. Frames are recorded every 3 s by default (--frame-seconds 2 to 5 to change it):
+node bin/swarm.js run data/worlds/floor1-lunch.json --provider jev      # or --provider rules
+# 3. Watch it: open http://127.0.0.1:4173/scope/ and pick "Building congestion"
+node bin/swarm.js serve
 ```
 
 ## Local-only data

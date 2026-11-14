@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.19 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.20 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -411,6 +411,7 @@ Pitch lines:
 
 ## 14. Change log
 
+- **v0.20 · Nov 14, 2026.** The scope display plays engine runs. Served by `node bin/swarm.js serve`, its building case loads the server's recorded building runs (Jev first, newest first), draws the engine's own Matterport walls and doors, and can start a new rules or Jev run from the same world and seed. Runs recorded with the inline rules provider get walk-aways from agent traces. The parking case stays on mock data. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b.
 - **v0.19 · Nov 14, 2026.** Merged the scope display (built on `main`, contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b) with the engine. The display sits next to the generic viewer in `web/`. Its decisions:
   - The two cases are separate worlds, each with its own map and run.
   - Incidents are decision outcomes (walked away, gave up, left without being served, drove off without parking), physical congestion (doorways, rooms, lot entrances) and complaints. The viewer derives them from run files and uses `incidents.json` instead when a run has one.

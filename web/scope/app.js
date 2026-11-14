@@ -8,7 +8,7 @@ import { createTimeline } from './lib/timeline.js';
 import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer } from './lib/panels.js';
 import { matchCase, showConfirm, showChoices, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
-import { loadCases, loadConfig, loadBundle, apiHealth, apiRun } from './lib/source.js';
+import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun } from './lib/source.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -106,10 +106,13 @@ function setBundle(bundle, caseInfo) {
   $('timeline').hidden = false;
   $('inspector').hidden = true;
   $('callout').hidden = true;
-  const mock = (bundle.meta.providerStats?.provider || bundle.meta.provider) === 'mock';
-  $('sourceBadge').textContent = mock ? 'Mock data' : `Jev ${bundle.meta.model || ''}`.trim();
-  $('sourceBadge').classList.toggle('live', !mock);
-  $('sourceBadge').title = mock ? 'Decisions come from the mock generator until the Jev backend is linked.' : 'Decisions came from Jev.';
+  const prov = bundle.meta.providerStats?.provider || bundle.meta.provider;
+  $('sourceBadge').textContent = providerWords(bundle.meta);
+  $('sourceBadge').classList.toggle('live', prov === 'jev' || prov === 'replay');
+  $('sourceBadge').title = prov === 'mock' ? 'Decisions come from the mock generator, not Jev.'
+    : prov === 'jev' || prov === 'replay' ? 'Every decision in this run came from Jev (replays make no new requests).'
+      : 'Decisions came from the engine\'s rule policy, not Jev.';
+  renderRunPicker();
 
   tour.hide();
   tour.configure({ modelId: geo.source?.provider === 'matterport' ? geo.source.modelId : null, key: st.config.matterportSdkKey });
@@ -132,7 +135,69 @@ function rebuildHeat() {
   advance(st.heat, st.heatIncidents, st.t);
 }
 
-async function openCase(id, { question = '', progress = false, autoplay = true } = {}) {
+// "Jev jev-1.14.0", "Rules, not Jev", "Mock data": who made a run's decisions.
+function providerWords(meta) {
+  const p = meta?.providerStats?.provider || meta?.provider;
+  if (p === 'jev') return `Jev ${meta.model || meta.providerStats?.model || ''}`.trim();
+  if (p === 'replay') return 'Jev, replayed';
+  if (p === 'mock') return 'Mock data';
+  return 'Rules, not Jev';
+}
+
+const selectedRun = c => c.runs?.find(r => r.meta.runId === c.selected) || c.runs?.[0] || null;
+
+// Engine runs are loaded once and reused (thumbnails, reopening).
+const runCache = new Map();
+function loadEngineRun(runId) {
+  if (!runCache.has(runId)) runCache.set(runId, apiLoadRun(runId, { modelId: st.config.modelId }).catch(err => { runCache.delete(runId); throw err; }));
+  return runCache.get(runId);
+}
+function bundleFor(c) {
+  const r = selectedRun(c);
+  return r ? loadEngineRun(r.meta.runId) : loadBundle(c.file);
+}
+
+function renderRunPicker() {
+  const c = st.caseInfo;
+  const box = $('runPick'), sel = $('runSel');
+  box.hidden = !c?.runs?.length;
+  if (box.hidden) return;
+  sel.replaceChildren(...c.runs.map(r => {
+    const o = document.createElement('option');
+    const when = r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+    o.value = r.meta.runId;
+    const n = r.meta.decisions || 0;
+    o.textContent = `${providerWords(r.meta)}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}, ${n ? `${n.toLocaleString('en-US')} decisions` : 'no decision records'}`;
+    o.selected = r.meta.runId === (selectedRun(c)?.meta.runId);
+    return o;
+  }));
+}
+$('runSel').addEventListener('change', e => {
+  const c = st.caseInfo;
+  if (!c) return;
+  c.selected = e.target.value;
+  openCase(c.id, { question: st.question, autoplay: false });
+});
+
+// A new run on the engine server from the selected run's world (same spec and seed).
+async function runOnServer(c, provider) {
+  const base = selectedRun(c);
+  const p = showProgress($('progress'), [{ label: 'Starting the run on the engine' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }],
+    provider === 'jev' ? 'Live Jev run: every decision is one Jev request to TypeSafe.' : 'Rules run: the engine\'s rule policy decides; no Jev requests.');
+  p.set(0);
+  const runId = await apiStartRun({
+    spec: base.spec, provider, seed: base.meta.seed ?? 7,
+    onStatus: s => p.set(1, `Running the swarm: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated${s.decisions ? `, ${s.decisions} decisions` : ''}`)
+  });
+  p.set(2);
+  c.runs = await apiBuildingRuns();
+  c.selected = runId;
+  const bundle = await loadEngineRun(runId);
+  p.done();
+  return bundle;
+}
+
+async function openCase(id, { question = '', progress = false, autoplay = true, newRun = null } = {}) {
   const c = st.cases[id];
   if (!c) return;
   pause();
@@ -141,15 +206,15 @@ async function openCase(id, { question = '', progress = false, autoplay = true }
   hideCard($('askCard'));
   try {
     let bundle;
-    if (st.live && c.world) {
-      const p = showProgress($('progress'), [{ label: 'Starting the run' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }], 'Live run on the local server. Each decision is one Jev request.');
-      p.set(0);
-      bundle = await apiRun({
-        world: c.world, provider: 'jev',
-        onStatus: s => p.set(1, `Running the swarm: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated, ${s.decisions ?? 0} decisions`)
-      });
-      p.set(2);
-      p.done();
+    if (newRun) {
+      bundle = await runOnServer(c, newRun);
+    } else if (c.runs?.length) {
+      const r = selectedRun(c);
+      const p = progress ? showProgress($('progress'), [{ label: `Loading the recorded run (${providerWords(r.meta)})` }, { label: 'Opening the replay' }], 'Recorded by the engine. Replaying makes no Jev requests.') : null;
+      p?.set(0);
+      bundle = await bundleFor(c);
+      p?.set(1);
+      p?.done();
     } else {
       const load = loadBundle(c.file);
       if (progress) await mockProgress(id, load);
@@ -164,7 +229,7 @@ async function openCase(id, { question = '', progress = false, autoplay = true }
   } catch (err) {
     $('progress').hidden = true;
     showChoices($('askCard'), {
-      message: `That run couldn't be loaded: ${err.message}. Run "node scripts/mock_runs.js" to rebuild the mock runs, then try again.`,
+      message: c.runs?.length ? `That run couldn't be loaded or started: ${err.message}` : `That run couldn't be loaded: ${err.message}. Run "npm run mock" to rebuild the mock runs, then try again.`,
       cases: Object.values(st.cases), onPick: pid => confirmCase(pid, st.cases[pid].question), onCancel: () => hideCard($('askCard'))
     });
   }
@@ -304,7 +369,7 @@ function showCallout() {
     const b = document.createElement('button');
     b.className = 'btn primary small';
     b.type = 'button';
-    b.textContent = 'See this spot in 3D';
+    b.textContent = st.bundle.geometry.sweeps?.length ? 'See this spot in 3D' : 'Open the 3D tour';
     b.addEventListener('click', () => tour.open(st.bundle.geometry, { x: it.x, y: it.y, floor: it.floor || 0, label: it.group }));
     row.append(b);
   }
@@ -363,7 +428,7 @@ function flyTo(x, y, z) {
 }
 $('resetView').addEventListener('click', () => {
   const b = st.bundle.geometry.floors[st.floor].bounds;
-  flyTo(b[2] / 2, b[3] / 2, 1);
+  flyTo((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, 1);
   $('resetView').hidden = true;
 });
 
@@ -464,7 +529,20 @@ $('drawerClose').addEventListener('click', () => { $('drawer').hidden = true; $(
 // ---------- prompt ----------
 function factsFor(id) {
   const c = st.cases[id];
-  const mock = !st.live || !c.world;
+  const r = selectedRun(c);
+  if (r) {
+    const m = r.meta;
+    const jevRuns = c.runs.filter(x => x.meta.provider === 'jev');
+    return [
+      ['Scenario', r.spec.title],
+      ['People', `${m.agents} over ${Math.round(m.duration)} minutes`],
+      ['When', `${clockText(m.clockStart, 0)} to ${clockText(m.clockStart, m.duration)}`],
+      ['Map', `Matterport walls and doors (${r.spec.walls.length} walls, ${r.spec.doors?.length || 0} doors); counters from the proposed fit-out, assumed`],
+      ['Selected run', `${providerWords(m)}, seed ${m.seed}${m.provider === 'jev' ? `, ${m.decisions} decisions` : ''}`],
+      ...(st.live?.jev ? [['A new Jev run', jevRuns.length ? `about ${jevRuns[0].meta.providerStats?.requests ?? jevRuns[0].meta.decisions} requests, like the last one` : 'about 1,000 requests for this building (a few cents at TypeSafe\'s published price, unverified)']] : [])
+    ];
+  }
+  const mock = true;
   if (id === 'parking') {
     return [
       ['Drivers', '350 over two hours'], ['When', 'Saturday, 12:30 to 2:30 pm'],
@@ -481,9 +559,16 @@ function factsFor(id) {
 
 function confirmCase(id, question) {
   const c = st.cases[id];
+  const go = opts => () => { hideCard($('askCard')); openCase(id, { question, ...opts }); };
+  const actions = c.runs?.length
+    ? [
+        { label: 'Replay this run', primary: true, onClick: go({ progress: true }) },
+        { label: 'Run again with rules', onClick: go({ newRun: 'rules' }) },
+        ...(st.live?.jev ? [{ label: 'Run with Jev', onClick: go({ newRun: 'jev' }) }] : [])
+      ]
+    : [{ label: 'Run simulation', primary: true, onClick: go({ progress: true }) }];
   showConfirm($('askCard'), {
-    caseInfo: { label: c.label, place: c.place }, question, facts: factsFor(id),
-    onRun: () => { hideCard($('askCard')); openCase(id, { question, progress: true }); },
+    caseInfo: { label: c.label, place: c.place }, question, facts: factsFor(id), actions,
     onCancel: () => hideCard($('askCard'))
   });
 }
@@ -581,7 +666,8 @@ function renderEmpty() {
     const h = document.createElement('h2'); h.textContent = c.label;
     const p = document.createElement('p'); p.textContent = c.question;
     const src = document.createElement('p'); src.className = 'src';
-    src.textContent = c.source === 'matterport' ? `${c.place}, from a Matterport scan` : c.source === 'synthetic' ? `${c.place} (drawn, no scan loaded)` : c.place;
+    src.textContent = c.runs?.length ? `${c.place}, recorded by the engine (${providerWords(selectedRun(c).meta)})`
+      : c.source === 'matterport' ? `${c.place}, from a Matterport scan (mock run)` : c.source === 'synthetic' ? `${c.place} (drawn, mock run)` : c.place;
     text.append(h, p, src);
     b.append(cv, text);
     b.addEventListener('click', () => { $('askIn').value = c.question; confirmCase(c.id, c.question); });
@@ -598,7 +684,7 @@ async function drawThumbs() {
     const c = st.cases[cv.dataset.case];
     if (!c) continue;
     let b;
-    try { b = await loadBundle(c.file); } catch { continue; }
+    try { b = await bundleFor(c); } catch { continue; }
     const F = prepareFrames(b.frames);
     const run = deriveRun(b, F);
     const peak = run.moments[0]?.t ?? run.duration / 2;
@@ -628,6 +714,14 @@ async function start() {
   st.cases = cases;
   st.config = config;
   st.live = live;
+  // Served by the engine (node bin/swarm.js serve): the building case plays recorded engine runs.
+  if (live && cases.building) {
+    const runs = await apiBuildingRuns();
+    if (runs.length) {
+      const jev = runs.find(r => r.meta.provider === 'jev' || r.meta.provider === 'replay');
+      cases.building = { ...cases.building, runs, selected: (jev || runs[0]).meta.runId, source: 'engine', question: runs[0].meta.question || cases.building.question };
+    }
+  }
   if (!Object.keys(cases).length) {
     $('emptyState').replaceChildren(Object.assign(document.createElement('p'), { className: 'lead', textContent: 'No runs found. Run "node scripts/mock_runs.js" from the repo root to build the mock runs, then reload.' }));
     return;

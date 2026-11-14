@@ -29,24 +29,28 @@ const el = (tag, cls, text) => {
   return e;
 };
 
-export function showConfirm(card, { caseInfo, question, facts, onRun, onCancel }) {
+// actions: [{ label, primary, onClick }]; the first primary action gets focus.
+export function showConfirm(card, { caseInfo, question, facts, actions = [], onCancel }) {
   const h = el('h3', null, caseInfo.label);
   const where = el('p', 'sub', caseInfo.place);
   where.style.color = 'var(--muted)';
   const q = el('p', 'q', question);
   const dl = el('dl');
   for (const [k, v] of facts) dl.append(el('dt', null, k), el('dd', null, v));
-  const run = el('button', 'btn primary', 'Run simulation');
-  run.type = 'button';
-  run.addEventListener('click', onRun);
+  const buttons = actions.map(a => {
+    const b = el('button', a.primary ? 'btn primary' : 'btn', a.label);
+    b.type = 'button';
+    b.addEventListener('click', a.onClick);
+    return b;
+  });
   const cancel = el('button', 'btn ghost', 'Cancel');
   cancel.type = 'button';
   cancel.addEventListener('click', onCancel);
   const row = el('div', 'row');
-  row.append(run, cancel);
+  row.append(...buttons, cancel);
   card.replaceChildren(h, where, q, dl, row);
   card.hidden = false;
-  run.focus();
+  (buttons.find((_, i) => actions[i].primary) || buttons[0] || cancel).focus();
 }
 
 export function showChoices(card, { message, cases, onPick, onCancel }) {
