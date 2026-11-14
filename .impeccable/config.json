@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "web/scope/index.html"
+        ],
+        "createdAt": "2026-11-14T08:09:51.119Z",
+        "reason": "Claude: the flagged element is .seg, a segmented-control track whose buttons carry their own padding (text about 7-9px from the track border); the tool offers no per-element value for this rule"
+      }
+    ]
+  }
+}
