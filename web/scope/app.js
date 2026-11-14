@@ -9,6 +9,7 @@ import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector,
 import { matchCase, showConfirm, showChoices, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
 import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun } from './lib/source.js';
+import { createFeedback, feedbackTarget } from './lib/feedback.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -59,6 +60,7 @@ const T = createTimeline({
   onSpeed: s => setSpeed(s)
 });
 const tour = createTour({ root: $('tour'), body: $('tourBody'), title: $('tourTitle'), closeBtn: $('tourClose'), onClose: () => { st.dirty = true; } });
+const feedback = createFeedback();
 
 new ResizeObserver(() => {
   R.resize();
@@ -114,6 +116,8 @@ function setBundle(bundle, caseInfo) {
     : prov === 'jev' || prov === 'replay' ? 'Every decision in this run came from Jev (replays make no new requests).'
       : 'Decisions came from the engine\'s rule policy, not Jev.';
   renderRunPicker();
+  // Suggestions belong to this run and are only requested when someone clicks Suggestions.
+  feedback.reset(feedbackTarget(bundle, caseInfo), st.question);
 
   tour.hide();
   tour.configure({ modelId: geo.source?.provider === 'matterport' ? geo.source.modelId : null, key: st.config.matterportSdkKey });
@@ -200,7 +204,11 @@ async function runOnServer(c, provider) {
 
 async function openCase(id, { question = '', progress = false, autoplay = true, newRun = null } = {}) {
   const c = st.cases[id];
-  if (!c) return;
+  if (!c || st.loading) return;
+  st.loading = true;
+  $('askBtn').disabled = true;
+  $('askBtn').textContent = 'Loading…';
+  $('mapbox').setAttribute('aria-busy', 'true');
   pause();
   st.caseId = id;
   st.question = question;
@@ -233,6 +241,11 @@ async function openCase(id, { question = '', progress = false, autoplay = true, 
       message: c.runs?.length ? `That run couldn't be loaded or started: ${err.message}` : `That run couldn't be loaded: ${err.message}. Run "npm run mock" to rebuild the mock runs, then try again.`,
       cases: Object.values(st.cases), onPick: pid => confirmCase(pid, st.cases[pid].question), onCancel: () => hideCard($('askCard'))
     });
+  } finally {
+    st.loading = false;
+    $('askBtn').disabled = false;
+    $('askBtn').textContent = 'Simulate';
+    $('mapbox').setAttribute('aria-busy', 'false');
   }
 }
 
@@ -323,8 +336,17 @@ function renderFloorTabs() {
     b.type = 'button';
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(fi === st.floor));
+    b.tabIndex = fi === st.floor ? 0 : -1;
     b.append(document.createTextNode(f.label), Object.assign(document.createElement('span'), { className: 'count' }));
     b.addEventListener('click', () => setFloor(fi));
+    b.addEventListener('keydown', e => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault();
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? floors.length - 1
+        : (fi + (e.key === 'ArrowRight' ? 1 : -1) + floors.length) % floors.length;
+      setFloor(next);
+      tabs.children[next].focus();
+    });
     return b;
   }));
 }
@@ -339,8 +361,12 @@ function updateFloorCounts() {
   });
 }
 function setFloor(fi) {
+  if (!st.bundle.geometry.floors[fi]) return;
   st.floor = fi;
-  [...$('floorTabs').children].forEach((b, k) => b.setAttribute('aria-selected', String(k === fi)));
+  [...$('floorTabs').children].forEach((b, k) => {
+    b.setAttribute('aria-selected', String(k === fi));
+    b.tabIndex = k === fi ? 0 : -1;
+  });
   st.dirty = true;
   renderPanels();
 }
@@ -544,8 +570,9 @@ $('detailsBtn').addEventListener('click', () => {
   $('detailsBtn').setAttribute('aria-expanded', String(open));
   if (open && st.bundle) renderDrawer($('drawerBody'), drawerState(), st.caseInfo);
   else if (open) $('drawerBody').replaceChildren(Object.assign(document.createElement('p'), { className: 'note', textContent: 'Run a simulation to see who made the decisions and where the data came from.' }));
+  if (open) $('drawerClose').focus();
 });
-$('drawerClose').addEventListener('click', () => { $('drawer').hidden = true; $('detailsBtn').setAttribute('aria-expanded', 'false'); });
+$('drawerClose').addEventListener('click', () => { $('drawer').hidden = true; $('detailsBtn').setAttribute('aria-expanded', 'false'); $('detailsBtn').focus(); });
 
 // ---------- prompt ----------
 function factsFor(id) {
@@ -616,7 +643,11 @@ $('askForm').addEventListener('submit', e => {
 
 // ---------- keyboard ----------
 document.addEventListener('keydown', e => {
-  const typing = e.target.closest('input, select, textarea');
+  if ($('feedbackDialog').open) return;
+  // Text fields and tabs keep their keys. On a focused button or link, Space activates that control,
+  // so it doesn't also toggle playback; the arrow keys still step the replay.
+  const typing = e.target.closest('input, select, textarea, [role="tab"], [contenteditable="true"]');
+  if (e.key === ' ' && e.target.closest('button, a, [role="button"]')) return;
   if (e.key === 'Escape') {
     if (!$('askCard').hidden) hideCard($('askCard'));
     else if (!$('tour').hidden) tour.hide();
@@ -681,6 +712,7 @@ function renderEmpty() {
     b.type = 'button';
     b.className = 'case';
     const cv = document.createElement('canvas');
+    cv.setAttribute('aria-hidden', 'true');
     cv.dataset.case = c.id;
     const text = document.createElement('div');
     text.className = 'text';

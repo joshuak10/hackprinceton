@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.21 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.22 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -411,6 +411,7 @@ Pitch lines:
 
 ## 14. Change log
 
+- **v0.22 · Nov 14, 2026.** One review engine. **Decision (team):** Ryan's advisor (v0.21) is the review engine; Justin's post-run analysis (`analysis/insights.js`) is the quick read shown when a run has no advice yet. In the scope display, Suggestions are requested only when someone clicks Suggestions (opening a run never calls Claude), target the run on screen (engine runs by run id, mock cases by case), and show the advisor's tested advice first, then the quick read, labeled untested. Justin's accessibility and robustness fixes are kept; the display keeps its visual style and its laptop-and-projector layout; the unwired notebook is left out. Details in [docs/INSIGHTS.md](docs/INSIGHTS.md).
 - **v0.21 · Nov 14, 2026.** The advisor, and the first Jev results on the real building (numbered v0.18 on the `engine` branch; renumbered on merge because `main` already had v0.18–v0.20).
   - **Decision (user):** telling someone where the bottleneck is isn't enough; the system has to help them fix it. Every run ends with an advisor: a general-purpose Claude agent that reads what the run produced, answers the question, proposes changes, tests each one in the simulator on the same crowd, and says what to try next. The user can reply and iterate. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §15.
   - Results are also reported by kind of person (group and cast member): wait, money spent, walk-aways, frustration. This is what lets a question like "which people overspend the most?" be answered. A segment is a kind of simulated person, never a real individual.
