@@ -1,0 +1,414 @@
+{
+  "title": "Saturday at Gravity Grove",
+  "question": "Which attraction is the real bottleneck, and where should we add capacity or change prices?",
+  "mode": "visit",
+  "duration": 600,
+  "clockStart": 600,
+  "travelSpeed": 4,
+  "arrivals": {
+    "total": 2600,
+    "start": 0,
+    "end": 330,
+    "shape": "early"
+  },
+  "nodes": [
+    {
+      "id": "gate",
+      "name": "Main Gate",
+      "kind": "gate",
+      "x": 50,
+      "y": 93
+    },
+    {
+      "id": "thunder",
+      "name": "Thunder Spine",
+      "kind": "service",
+      "x": 18,
+      "y": 18,
+      "servers": 12,
+      "serviceTime": 3,
+      "appeal": 0.97,
+      "price": 0,
+      "tags": [
+        "thrill"
+      ],
+      "about": "The famous launch coaster, viral on TikTok; notoriously long lines"
+    },
+    {
+      "id": "vortex",
+      "name": "Vortex Drop",
+      "kind": "service",
+      "x": 80,
+      "y": 16,
+      "servers": 20,
+      "serviceTime": 2.5,
+      "appeal": 0.86,
+      "price": 0,
+      "tags": [
+        "thrill"
+      ],
+      "about": "Terrifying-looking drop tower; the line moves fast"
+    },
+    {
+      "id": "galaxy",
+      "name": "Galaxy Simulator",
+      "kind": "service",
+      "x": 50,
+      "y": 10,
+      "servers": 36,
+      "serviceTime": 8,
+      "appeal": 0.7,
+      "price": 0,
+      "tags": [
+        "thrill",
+        "indoor"
+      ],
+      "about": "Indoor motion simulator; air-conditioned, a little dated"
+    },
+    {
+      "id": "manor",
+      "name": "Haunted Manor",
+      "kind": "service",
+      "x": 36,
+      "y": 36,
+      "servers": 32,
+      "serviceTime": 6,
+      "appeal": 0.72,
+      "price": 0,
+      "tags": [
+        "dark",
+        "family"
+      ],
+      "about": "Dark ride; little kids often come out crying"
+    },
+    {
+      "id": "rapids",
+      "name": "River Rapids",
+      "kind": "service",
+      "x": 12,
+      "y": 56,
+      "servers": 24,
+      "serviceTime": 5,
+      "appeal": 0.78,
+      "price": 0,
+      "tags": [
+        "water",
+        "family"
+      ],
+      "about": "You will get soaked; popular on hot afternoons"
+    },
+    {
+      "id": "wheel",
+      "name": "Sky Wheel",
+      "kind": "service",
+      "x": 64,
+      "y": 42,
+      "servers": 48,
+      "serviceTime": 12,
+      "appeal": 0.55,
+      "price": 0,
+      "tags": [
+        "family",
+        "calm"
+      ],
+      "about": "Slow giant wheel with the best view; couples love it"
+    },
+    {
+      "id": "bumper",
+      "name": "Bumper Arena",
+      "kind": "service",
+      "x": 86,
+      "y": 58,
+      "servers": 28,
+      "serviceTime": 4,
+      "appeal": 0.6,
+      "price": 0,
+      "tags": [
+        "family"
+      ],
+      "about": "Bumper cars; quick, loud, kids beg for it"
+    },
+    {
+      "id": "carousel",
+      "name": "Starlight Carousel",
+      "kind": "service",
+      "x": 30,
+      "y": 72,
+      "servers": 36,
+      "serviceTime": 4,
+      "appeal": 0.45,
+      "price": 0,
+      "tags": [
+        "kids",
+        "family",
+        "calm"
+      ],
+      "about": "Gentle carousel for little kids; almost never a line"
+    },
+    {
+      "id": "food",
+      "name": "Food Court",
+      "kind": "service",
+      "x": 52,
+      "y": 64,
+      "servers": 110,
+      "serviceTime": 22,
+      "appeal": 0.55,
+      "price": 18,
+      "tags": [
+        "food"
+      ],
+      "about": "Big indoor food hall with AC and seats; pricey"
+    },
+    {
+      "id": "snack",
+      "name": "Churro Cart",
+      "kind": "service",
+      "x": 72,
+      "y": 78,
+      "servers": 4,
+      "serviceTime": 1.5,
+      "appeal": 0.4,
+      "price": 6,
+      "tags": [
+        "food",
+        "kids"
+      ],
+      "about": "Famous churros from one tiny window"
+    },
+    {
+      "id": "merch",
+      "name": "Grove Emporium",
+      "kind": "service",
+      "x": 24,
+      "y": 88,
+      "servers": 40,
+      "serviceTime": 9,
+      "appeal": 0.3,
+      "price": 35,
+      "tags": [
+        "shop"
+      ],
+      "about": "Gift shop with expensive merch"
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "thrill",
+      "name": "Thrill seekers",
+      "share": 0.35,
+      "description": "Teens and young adults chasing the biggest rides.",
+      "weights": {
+        "appeal": 1.5,
+        "wait": 0.5,
+        "distance": 0.3,
+        "price": 0.2
+      },
+      "visits": 8,
+      "patience": 80,
+      "info": 0.75,
+      "rationality": 3,
+      "likes": [
+        "thrill"
+      ]
+    },
+    {
+      "id": "family",
+      "name": "Families",
+      "share": 0.45,
+      "description": "Parents with kids; short patience, hungry often.",
+      "weights": {
+        "appeal": 1,
+        "wait": 1.2,
+        "distance": 0.8,
+        "price": 0.6
+      },
+      "visits": 5,
+      "patience": 40,
+      "info": 0.4,
+      "rationality": 2.5,
+      "likes": [
+        "family",
+        "kids",
+        "food"
+      ]
+    },
+    {
+      "id": "casual",
+      "name": "Casual visitors",
+      "share": 0.2,
+      "description": "Pass holders and couples who wander and snack.",
+      "weights": {
+        "appeal": 0.9,
+        "wait": 1,
+        "distance": 0.6,
+        "price": 0.4
+      },
+      "visits": 4,
+      "patience": 30,
+      "info": 0.2,
+      "rationality": 2,
+      "likes": [
+        "calm",
+        "food",
+        "shop"
+      ]
+    }
+  ],
+  "minds": [
+    {
+      "id": "jaylen",
+      "name": "Jaylen Brooks",
+      "age": 17,
+      "archetype": "thrill",
+      "bio": "Here with three friends from school on a season pass; has ridden Thunder Spine 40 times.",
+      "personality": "competitive, impatient, lives for the group chat",
+      "goal": "Ride Thunder Spine and Vortex Drop as many times as possible",
+      "social": "goes wherever his three friends vote to go",
+      "informed": true
+    },
+    {
+      "id": "sofia",
+      "name": "Sofia Marín",
+      "age": 22,
+      "archetype": "thrill",
+      "bio": "College student on her first visit with her boyfriend; saw Thunder Spine on TikTok.",
+      "personality": "curious, FOMO-driven, films everything",
+      "goal": "Get the Thunder Spine video for her followers",
+      "social": "boyfriend hates long lines and complains",
+      "informed": true
+    },
+    {
+      "id": "dev",
+      "name": "Dev Patel",
+      "age": 31,
+      "archetype": "thrill",
+      "bio": "Software engineer who came alone to ride everything efficiently.",
+      "personality": "analytical, hates wasted time, optimizes everything",
+      "goal": "Maximum rides per hour",
+      "social": "alone; reads other guests' posts about lines",
+      "informed": true
+    },
+    {
+      "id": "marcus",
+      "name": "Marcus Reed",
+      "age": 26,
+      "archetype": "thrill",
+      "bio": "Coaster enthusiast who reviews rides on his blog.",
+      "personality": "stubborn, purist, scornful of kiddie rides",
+      "goal": "Ride Thunder Spine in the front row, whatever the wait",
+      "social": "alone; ignores what other people say",
+      "informed": false
+    },
+    {
+      "id": "linh",
+      "name": "Linh Nguyen",
+      "age": 38,
+      "archetype": "family",
+      "bio": "Mom with kids aged 6 and 9 plus a grandmother who needs to sit often.",
+      "personality": "organized, cautious, budget-aware",
+      "goal": "Keep everyone happy until the fireworks with no meltdowns",
+      "social": "grandmother gets tired; kids want whatever looks exciting",
+      "informed": true
+    },
+    {
+      "id": "tom",
+      "name": "Tom Fischer",
+      "age": 42,
+      "archetype": "family",
+      "bio": "Dad with a 4-year-old who is terrified of dark rides.",
+      "personality": "patient but wears down fast, listens to other parents",
+      "goal": "Carousel, something with water, and a nap-free afternoon",
+      "social": "takes advice from parents he overhears in line",
+      "informed": false
+    },
+    {
+      "id": "aisha",
+      "name": "Aisha Bello",
+      "age": 35,
+      "archetype": "family",
+      "bio": "Single mom with 7-year-old twins, tight budget, packed lunch in a cooler.",
+      "personality": "frugal, decisive, protective",
+      "goal": "A full day of free rides without buying food",
+      "social": "twins argue and she splits the difference",
+      "informed": false
+    },
+    {
+      "id": "helen",
+      "name": "Helen Kowalski",
+      "age": 67,
+      "archetype": "family",
+      "bio": "Grandmother taking her grandson to the park for his 10th birthday.",
+      "personality": "gentle, slow walker, cannot stand for long",
+      "goal": "Make the birthday special without standing in long lines",
+      "social": "grandson wants Thunder Spine but is barely tall enough",
+      "informed": false
+    },
+    {
+      "id": "carlos",
+      "name": "Carlos Ruiz",
+      "age": 40,
+      "archetype": "family",
+      "bio": "Father of three teenagers who split up and regroup at the Food Court.",
+      "personality": "easygoing, glued to the park app",
+      "goal": "Everyone back at the Food Court for lunch and dinner",
+      "social": "teens text him which lines are short",
+      "informed": true
+    },
+    {
+      "id": "rosa",
+      "name": "Rosa Delgado",
+      "age": 45,
+      "archetype": "family",
+      "bio": "Teacher chaperoning eight fifth-graders on a school trip.",
+      "personality": "stressed, rule-following, counts heads constantly",
+      "goal": "Keep all eight kids in sight and on schedule",
+      "social": "kids beg to go wherever the crowd is",
+      "informed": false
+    },
+    {
+      "id": "emma",
+      "name": "Emma Clarke",
+      "age": 29,
+      "archetype": "casual",
+      "bio": "Annual pass holder who comes for the atmosphere and the churros.",
+      "personality": "relaxed, line-averse, foodie",
+      "goal": "Churros, a calm ride, and no line over 15 minutes",
+      "social": "follows a park fan group that posts live tips",
+      "informed": true
+    },
+    {
+      "id": "walter",
+      "name": "Walter Hughes",
+      "age": 71,
+      "archetype": "casual",
+      "bio": "Retired, walks the park with his wife twice a month.",
+      "personality": "nostalgic, unhurried, distrusts apps",
+      "goal": "Sky Wheel and a sit-down lunch",
+      "social": "wife decides where they eat",
+      "informed": false
+    },
+    {
+      "id": "priya",
+      "name": "Priya Shah",
+      "age": 24,
+      "archetype": "casual",
+      "bio": "Lifestyle influencer filming park content.",
+      "personality": "image-driven, chatty, chases whatever has buzz",
+      "goal": "Film where the crowd and the hype are",
+      "social": "posts constantly; her followers reply with tips",
+      "informed": true
+    },
+    {
+      "id": "ben",
+      "name": "Ben Okoro",
+      "age": 27,
+      "archetype": "casual",
+      "bio": "On a date with his girlfriend, trying to make it romantic.",
+      "personality": "eager to please, moderately patient",
+      "goal": "Sky Wheel at sunset and a nice dinner",
+      "social": "girlfriend wants at least one big ride",
+      "informed": false
+    }
+  ]
+}

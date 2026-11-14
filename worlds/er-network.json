@@ -1,0 +1,428 @@
+{
+  "title": "Friday night ER load in Larkfield",
+  "question": "Which emergency department gets overwhelmed first, what do patients actually want, and how many leave without being seen?",
+  "mode": "visit",
+  "duration": 720,
+  "clockStart": 1080,
+  "travelSpeed": 3,
+  "arrivals": {
+    "total": 560,
+    "start": 0,
+    "end": 660,
+    "shape": "peak"
+  },
+  "nodes": [
+    {
+      "id": "north",
+      "name": "Northside",
+      "kind": "entry",
+      "x": 20,
+      "y": 12,
+      "weight": 0.28
+    },
+    {
+      "id": "downtown",
+      "name": "Downtown",
+      "kind": "entry",
+      "x": 52,
+      "y": 46,
+      "weight": 0.38
+    },
+    {
+      "id": "riverside",
+      "name": "Riverside",
+      "kind": "entry",
+      "x": 86,
+      "y": 70,
+      "weight": 0.22
+    },
+    {
+      "id": "westfield",
+      "name": "Westfield",
+      "kind": "entry",
+      "x": 10,
+      "y": 80,
+      "weight": 0.12
+    },
+    {
+      "id": "stbrigid",
+      "name": "St. Brigid's Regional",
+      "kind": "service",
+      "x": 34,
+      "y": 28,
+      "servers": 24,
+      "serviceTime": 95,
+      "appeal": 0.9,
+      "price": 2200,
+      "tags": [
+        "trauma",
+        "cardiac",
+        "general"
+      ],
+      "about": "Level 1 trauma and heart center; best reputation in the region; famous for long ER waits"
+    },
+    {
+      "id": "general",
+      "name": "Larkfield General",
+      "kind": "service",
+      "x": 64,
+      "y": 58,
+      "servers": 20,
+      "serviceTime": 80,
+      "appeal": 0.6,
+      "price": 1800,
+      "tags": [
+        "general",
+        "cardiac"
+      ],
+      "about": "Community hospital ER; mixed reviews; posts its wait time online"
+    },
+    {
+      "id": "childrens",
+      "name": "Children's Medical",
+      "kind": "service",
+      "x": 26,
+      "y": 66,
+      "servers": 10,
+      "serviceTime": 60,
+      "appeal": 0.75,
+      "price": 1600,
+      "tags": [
+        "pediatric"
+      ],
+      "about": "Pediatric ER only; parents rave about it"
+    },
+    {
+      "id": "lakeside",
+      "name": "Lakeside Urgent Care",
+      "kind": "service",
+      "x": 82,
+      "y": 34,
+      "servers": 8,
+      "serviceTime": 30,
+      "appeal": 0.45,
+      "price": 180,
+      "tags": [
+        "minor"
+      ],
+      "about": "Urgent care with x-ray on site; cannot handle emergencies"
+    },
+    {
+      "id": "eastgate",
+      "name": "Eastgate Urgent Care",
+      "kind": "service",
+      "x": 88,
+      "y": 88,
+      "servers": 6,
+      "serviceTime": 25,
+      "appeal": 0.4,
+      "price": 150,
+      "tags": [
+        "minor"
+      ],
+      "about": "Small urgent care, no x-ray"
+    },
+    {
+      "id": "westclinic",
+      "name": "Westfield Walk-in",
+      "kind": "service",
+      "x": 8,
+      "y": 50,
+      "servers": 4,
+      "serviceTime": 25,
+      "appeal": 0.35,
+      "price": 120,
+      "tags": [
+        "minor"
+      ],
+      "about": "Cheap walk-in clinic in a strip mall; basic care only"
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "critical",
+      "name": "Critical (chest pain, trauma)",
+      "share": 0.14,
+      "description": "Need a full ED; ambulance or rushed drive.",
+      "weights": {
+        "appeal": 2,
+        "wait": 0.2,
+        "distance": 1.5,
+        "price": 0
+      },
+      "visits": 1,
+      "patience": 600,
+      "info": 0.3,
+      "rationality": 4,
+      "likes": [
+        "trauma",
+        "cardiac"
+      ],
+      "needs": [
+        "trauma",
+        "cardiac",
+        "general"
+      ]
+    },
+    {
+      "id": "moderate",
+      "name": "Moderate adult",
+      "share": 0.46,
+      "description": "Fever, abdominal pain, breathing trouble; picks the hospital they trust.",
+      "weights": {
+        "appeal": 1.2,
+        "wait": 0.8,
+        "distance": 1,
+        "price": 0.2
+      },
+      "visits": 1,
+      "patience": 150,
+      "info": 0.35,
+      "rationality": 2.5,
+      "likes": [
+        "general"
+      ],
+      "needs": [
+        "general",
+        "cardiac",
+        "trauma"
+      ]
+    },
+    {
+      "id": "minor",
+      "name": "Minor injury",
+      "share": 0.25,
+      "description": "Cuts, sprains and colds; checks wait times on their phone.",
+      "weights": {
+        "appeal": 0.6,
+        "wait": 1.5,
+        "distance": 0.8,
+        "price": 0.3
+      },
+      "visits": 1,
+      "patience": 80,
+      "info": 0.65,
+      "rationality": 2.5,
+      "likes": [
+        "minor"
+      ],
+      "needs": [
+        "minor",
+        "general"
+      ]
+    },
+    {
+      "id": "parent",
+      "name": "Parent with child",
+      "share": 0.15,
+      "description": "Heads for pediatric care if it is anywhere close.",
+      "weights": {
+        "appeal": 1.4,
+        "wait": 0.6,
+        "distance": 0.8,
+        "price": 0
+      },
+      "visits": 1,
+      "patience": 140,
+      "info": 0.4,
+      "rationality": 3,
+      "likes": [
+        "pediatric"
+      ]
+    }
+  ],
+  "minds": [
+    {
+      "id": "dana",
+      "name": "Dana Whitfield",
+      "age": 58,
+      "archetype": "critical",
+      "entry": "north",
+      "bio": "Crushing chest pain while cooking dinner; her husband is driving.",
+      "personality": "frightened, defers to her husband",
+      "goal": "Get to the heart center",
+      "social": "husband insists on St. Brigid's because \"they have the heart people\"",
+      "informed": false
+    },
+    {
+      "id": "robert",
+      "name": "Robert Haines",
+      "age": 71,
+      "archetype": "critical",
+      "entry": "westfield",
+      "bio": "Fell off a ladder; possible broken hip; neighbor is driving him.",
+      "personality": "stoic, in pain, downplays it",
+      "goal": "Not to be a bother",
+      "social": "neighbor is a retired nurse who has opinions about every hospital",
+      "informed": false
+    },
+    {
+      "id": "kevin",
+      "name": "Kevin Osei",
+      "age": 24,
+      "archetype": "critical",
+      "entry": "downtown",
+      "bio": "Motorcycle crash with a deep leg laceration; friends drove him.",
+      "personality": "adrenaline-high, impatient",
+      "goal": "Get stitched up fast",
+      "social": "friends are checking wait times on their phones",
+      "informed": true
+    },
+    {
+      "id": "grace",
+      "name": "Grace Liu",
+      "age": 45,
+      "archetype": "moderate",
+      "entry": "north",
+      "bio": "Severe abdominal pain for six hours; a nurse friend said it could be appendicitis.",
+      "personality": "anxious, thorough, reads reviews",
+      "goal": "Be seen somewhere that can do surgery",
+      "social": "texts her nurse friend before every decision",
+      "informed": true
+    },
+    {
+      "id": "samuel",
+      "name": "Samuel Okafor",
+      "age": 78,
+      "archetype": "moderate",
+      "entry": "riverside",
+      "bio": "Dizzy and short of breath; his wife once waited nine hours at Larkfield General.",
+      "personality": "proud, loyal, distrusts anything new",
+      "goal": "Go to St. Brigid's, nowhere else",
+      "social": "daughter on the phone is begging him to go to the closest ER",
+      "informed": false
+    },
+    {
+      "id": "tanya",
+      "name": "Tanya Brooks",
+      "age": 41,
+      "archetype": "moderate",
+      "entry": "downtown",
+      "bio": "Migraine with vision changes; terrified it is a stroke.",
+      "personality": "worried, wants the best",
+      "goal": "Rule out a stroke",
+      "social": "sister is driving and will go wherever Tanya says",
+      "informed": false
+    },
+    {
+      "id": "maria",
+      "name": "Maria Gonzalez",
+      "age": 52,
+      "archetype": "moderate",
+      "entry": "riverside",
+      "bio": "Diabetic with an infected foot wound; must be at her night shift by 11pm.",
+      "personality": "practical, time-pressured",
+      "goal": "Antibiotics and back to work",
+      "social": "coworker said urgent care can handle infections",
+      "informed": true
+    },
+    {
+      "id": "ahmed",
+      "name": "Ahmed Karim",
+      "age": 63,
+      "archetype": "moderate",
+      "entry": "north",
+      "bio": "Kidney stone pain; St. Brigid's treated him for the same thing last year.",
+      "personality": "in agony, wants relief now",
+      "goal": "Pain relief as fast as possible",
+      "social": "wife will drive anywhere",
+      "informed": false
+    },
+    {
+      "id": "nia",
+      "name": "Nia Thompson",
+      "age": 36,
+      "archetype": "moderate",
+      "entry": "westfield",
+      "bio": "Asthma flare and her inhaler is not helping; kids are home with a neighbor.",
+      "personality": "anxious, cannot be gone long",
+      "goal": "Breathe normally and get home",
+      "social": "neighbor texts every 20 minutes asking when she'll be back",
+      "informed": true
+    },
+    {
+      "id": "luis",
+      "name": "Luis Moreno",
+      "age": 29,
+      "archetype": "minor",
+      "entry": "westfield",
+      "bio": "Sprained ankle at Friday soccer; no insurance.",
+      "personality": "cost-conscious, tough",
+      "goal": "Find out if it is broken without a huge bill",
+      "social": "teammates in the group chat share where they got seen",
+      "informed": true
+    },
+    {
+      "id": "eli",
+      "name": "Eli Navarro",
+      "age": 19,
+      "archetype": "minor",
+      "entry": "downtown",
+      "bio": "College student who cut his hand on broken glass at a party.",
+      "personality": "embarrassed, easily swayed",
+      "goal": "Stitches and back before anyone notices",
+      "social": "drunk friends keep changing their minds about where to go",
+      "informed": true
+    },
+    {
+      "id": "hannah",
+      "name": "Hannah Price",
+      "age": 27,
+      "archetype": "minor",
+      "entry": "riverside",
+      "bio": "Bad sore throat; flying out for a wedding tomorrow morning.",
+      "personality": "impatient, efficient",
+      "goal": "Strep test and antibiotics tonight",
+      "social": "picks wherever the posted wait is shortest",
+      "informed": true
+    },
+    {
+      "id": "frank",
+      "name": "Frank DiMarco",
+      "age": 66,
+      "archetype": "minor",
+      "entry": "north",
+      "bio": "Twisted knee gardening; on Medicare; has all night.",
+      "personality": "chatty, patient, trusts his doctor",
+      "goal": "An x-ray",
+      "social": "his doctor told him to use urgent care for anything non-urgent",
+      "informed": false
+    },
+    {
+      "id": "priya",
+      "name": "Priya Raman",
+      "age": 33,
+      "archetype": "parent",
+      "entry": "downtown",
+      "bio": "Toddler with a 104°F fever and a new rash.",
+      "personality": "frightened, research-driven",
+      "goal": "Pediatric specialists, whatever the drive",
+      "social": "local parents' Facebook group swears by Children's Medical",
+      "informed": true
+    },
+    {
+      "id": "jason",
+      "name": "Jason Miller",
+      "age": 38,
+      "archetype": "parent",
+      "entry": "riverside",
+      "bio": "Son, 8, broke his wrist at a trampoline park.",
+      "personality": "practical, calm",
+      "goal": "Fastest x-ray and a cast",
+      "social": "wife says urgent care is fine for a wrist",
+      "informed": true
+    },
+    {
+      "id": "chloe",
+      "name": "Chloe Bennett",
+      "age": 31,
+      "archetype": "parent",
+      "entry": "north",
+      "bio": "Infant wheezing and struggling to breathe.",
+      "personality": "panicking",
+      "goal": "Get her baby seen immediately",
+      "social": "nurse hotline told her to go to the nearest ER",
+      "informed": false
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "name": "swarmscope",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Claude imagines the people. Jev makes thousands of them decide.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "swarm": "bin/swarm.js"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "swarm": "node bin/swarm.js",
+    "serve": "node bin/swarm.js serve",
+    "mcp": "node mcp/server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}

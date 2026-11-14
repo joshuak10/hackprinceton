@@ -1,8 +1,10 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.13 · Nov 13, 2026 · HackPrinceton Fall 2026
-> **Mirrors:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx)
+> **Version:** v0.14 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
+> **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
+> **Build contract for the code:** [docs/PROTOTYPE.md](docs/PROTOTYPE.md) (module interfaces, decision protocol, file formats)
 >
 > This is the ground-truth context document for the project. Humans and coding agents should read it before changing code. **Rule: change this file first, then the code, and log every decision in the change log (section 14).**
 >
@@ -27,7 +29,9 @@ Swarmscope answers questions like "which ER gets overwhelmed on a Friday night?"
 
 ### Status of the prototype
 
-The prototype (in the artifact) is the **rule-based baseline**. Agents follow archetype-level stochastic policies, and Claude compiles the world, analyzes results and interviews agents. The Jev-per-agent version is the committed direction and does not exist yet.
+The original prototype (the "Swarmscope" artifact, v0.1) has a **Minds** switch. With minds off, agents follow archetype-level rule-based stochastic policies. With minds on, Claude role-plays up to 40 personas (about 15 in the examples), batching up to 20 per call, and each persona's decision steers its whole crowd. Claude also compiles the world, analyzes results and interviews agents. The team doc's description ("about 15 personas that each steer a crowd") matches minds-on mode.
+
+**v0.2 (Nov 14):** the first Jev-per-agent prototype is being built in this repo per [docs/PROTOTYPE.md](docs/PROTOTYPE.md): the engine extracted as a Node module, one Jev request per agent decision, a rules provider, run recording and replay, a local viewer with a time scrubber, a world compiler, a Claude Code slash command, and an MCP server. Claude cohort minds are removed; Claude no longer decides for agents.
 
 ---
 
@@ -252,8 +256,10 @@ From the team doc, using TypeSafe's published price of $0.042 per million input 
 
 Two assumptions to verify first:
 
-1. **Roads:** ~5,000 requests for 3,600 agents implies one route choice per trip, but the current engine chooses at every intersection. Per-intersection calls would multiply requests several times.
-2. TypeSafe's docs recommend one well-scoped question at a time. If that means one question per request, requests and wall time roughly triple.
+1. **Roads:** ~5,000 requests for 3,600 agents implies one route choice per trip, but the current engine chooses at every intersection. Per-intersection calls would multiply requests several times. **v0.2 decision:** Jev picks one route per trip from up to 3 options; links along the way use the rule-based logit.
+2. ~~TypeSafe's docs recommend one well-scoped question at a time.~~ **Resolved (Nov 14):** the docs say there is no limit on questions per request (only the 64k per-request and 32k per-question context limits) and recommend packing related questions into one request. Each decision is one request with all its questions.
+
+**Measured once (Nov 14, `jev-latest` = `jev-1.14.0`, from the hackathon network):** about 100–250 ms per request (p50 100–155 ms, p95 135–250 ms). A realistic agent decision with 4 questions used 914 input tokens; a one-question request used 325. 8, 32 and 64 parallel requests all returned 200 with no rate limiting. Org rate limits are listed in the TypeSafe console. One measurement is not a benchmark; recheck before the demo.
 
 Thousands of agents per run is realistic. Millions is not.
 
@@ -355,7 +361,7 @@ None of these is built yet. Office utilization uses the interior scans most dire
 - `[open]` **Entry rules.** Confirm with the organizers whether one project can enter CoStar, Peri, LangChain and Amazon together.
 - `[open]` **Access.** Jev is in early access. We need an API key and do not know its rate limits.
 - `[open]` **Unverified claims.** Speed, cost and calibration are TypeSafe's figures. Measure them in the first hour.
-- `[open]` **Doc vs prototype.** The team doc says Claude role-plays about 15 personas that each steer a crowd. The prototype runs up to 6 archetypes with rule-based stochastic policies. Confirm which version the doc describes, then fix whichever is wrong.
+- `[confirmed]` **Doc vs prototype (resolved Nov 14).** Both descriptions were right about different modes of the prototype: minds off is rule-based (up to 6 archetypes), minds on is about 15 Claude personas each steering a crowd. See section 1.
 - `[open]` **Request counts and questions per request** (section 9).
 - `[open]` **Stereotyped or too-similar agents.** Sampling helps, and the robustness check shows whether it changes conclusions.
 - `[open]` **State size.** How much history an agent carries depends on Jev's context limit; the API has a separate long-context option.
@@ -386,6 +392,21 @@ Pitch lines:
 ---
 
 ## 14. Change log
+
+- **v0.14 · Nov 14, 2026.** Started the first Jev-per-agent prototype (v0.2) and wrote its build contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md). Decisions:
+  - Every agent decision is one Jev request (`jev-latest`) that packs all its questions: the primary question plus speculative follow-ups (where else to go, frustration, whether to tell others, remark kind).
+  - Join and keep-waiting are Noul questions, with a speculative next-place Choice in the same request.
+  - Frustration and tell-others are asked only after the agent has experienced something.
+  - Waits, distances, times and patience comparisons are computed in code and sent as words, because Jev is weak with numbers.
+  - Choice options are shuffled deterministically per state, because Jev leans toward the first option.
+  - Route mode asks Jev once per trip, plus an "arrive" moment for remarks after a slow trip.
+  - Fixed ticks with a decision batch window, applied in request order, plus per-agent and per-decision random streams. Runs don't depend on API response order, and the same seed gives the same arrivals under every provider and patch.
+  - Answers are cached by exact request.
+  - New spec fields: `context`, `leaveLabel`, Poisson arrivals, a service-time distribution, linear edge costs (the last three for validation).
+  - The key is named `TYPESAFE_API_KEY`, the name TypeSafe's SDKs read.
+  - Recorded the first Jev measurements and resolved the questions-per-request assumption (section 9).
+  - Corrected the prototype's description and resolved the doc-vs-prototype item.
+  - Fixed the header so it links the original prototype separately from the spec's page copy.
 
 - **v0.13 · Nov 13, 2026.** Set the two headline simulations from CoStar data: building congestion (movement inside a building, from Matterport geometry) and the retail store parking lot (Vexcel imagery plus CoStar data). Added a building-congestion row to the candidate worlds, engine needs for doorway capacity and walkable-graph movement, and a risk that two worlds double the engine work.
 - **v0.12 · Nov 13, 2026.** After talking with the CoStar engineers: build the Jev simulation from CoStar data first, then generalize the central agent to other cases. Added a time scrubber to replay the simulation over time, and a roles feature where the central agent assigns a share of the Jev agents to a role (spec field, engine support and build-order steps added).
@@ -448,8 +469,8 @@ MATTERPORT_SDK_KEY=
 MATTERPORT_SDK_DOMAIN=
 SWARM_API_KEY=
 VERCEL_API_KEY=
-ANTHROPIC_API_KEY=
-JEV_API_KEY=
+ANTHROPIC_API_KEY=         # optional; only for `swarm compile`
+TYPESAFE_API_KEY=          # Jev; the name TypeSafe's SDKs read (was JEV_API_KEY before v0.14)
 VEXCEL_API_KEY=
 COSTAR_API_KEY=
 ```

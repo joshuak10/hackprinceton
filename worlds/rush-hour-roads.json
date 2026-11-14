@@ -1,0 +1,455 @@
+{
+  "title": "Morning rush across the Kessel River",
+  "question": "Which road segment is the bottleneck, and do navigation apps help or make it worse?",
+  "mode": "route",
+  "duration": 180,
+  "clockStart": 390,
+  "arrivals": {
+    "total": 3600,
+    "start": 0,
+    "end": 120,
+    "shape": "peak"
+  },
+  "nodes": [
+    {
+      "id": "maple",
+      "name": "Maple Heights",
+      "kind": "origin",
+      "x": 6,
+      "y": 20
+    },
+    {
+      "id": "lakeshore",
+      "name": "Lakeshore",
+      "kind": "origin",
+      "x": 6,
+      "y": 80
+    },
+    {
+      "id": "onramp",
+      "name": "I-9 on-ramp",
+      "kind": "intersection",
+      "x": 22,
+      "y": 50
+    },
+    {
+      "id": "fulton",
+      "name": "Fulton & 3rd",
+      "kind": "intersection",
+      "x": 30,
+      "y": 20
+    },
+    {
+      "id": "harbor",
+      "name": "Harbor Sq",
+      "kind": "intersection",
+      "x": 30,
+      "y": 80
+    },
+    {
+      "id": "elm",
+      "name": "Elm & Oak",
+      "kind": "intersection",
+      "x": 46,
+      "y": 28
+    },
+    {
+      "id": "bridgew",
+      "name": "Bridge West",
+      "kind": "intersection",
+      "x": 46,
+      "y": 52
+    },
+    {
+      "id": "canal",
+      "name": "Canal & 9th",
+      "kind": "intersection",
+      "x": 48,
+      "y": 76
+    },
+    {
+      "id": "pine",
+      "name": "Pine Hill",
+      "kind": "intersection",
+      "x": 64,
+      "y": 26
+    },
+    {
+      "id": "bridgee",
+      "name": "Bridge East",
+      "kind": "intersection",
+      "x": 62,
+      "y": 52
+    },
+    {
+      "id": "ferry",
+      "name": "Ferry Landing",
+      "kind": "intersection",
+      "x": 66,
+      "y": 78
+    },
+    {
+      "id": "central",
+      "name": "Central Interchange",
+      "kind": "intersection",
+      "x": 78,
+      "y": 50
+    },
+    {
+      "id": "downtown",
+      "name": "Downtown",
+      "kind": "destination",
+      "x": 94,
+      "y": 56
+    },
+    {
+      "id": "tech",
+      "name": "Tech Park",
+      "kind": "destination",
+      "x": 92,
+      "y": 14
+    }
+  ],
+  "edges": [
+    {
+      "from": "maple",
+      "to": "fulton",
+      "name": "Maple Blvd",
+      "length": 4,
+      "capacity": 120
+    },
+    {
+      "from": "maple",
+      "to": "onramp",
+      "name": "Northern Pkwy",
+      "length": 6,
+      "capacity": 160
+    },
+    {
+      "from": "lakeshore",
+      "to": "onramp",
+      "name": "Southern Pkwy",
+      "length": 6,
+      "capacity": 160
+    },
+    {
+      "from": "lakeshore",
+      "to": "harbor",
+      "name": "Lakeshore Dr",
+      "length": 4,
+      "capacity": 120
+    },
+    {
+      "from": "onramp",
+      "to": "bridgew",
+      "name": "I-9 West",
+      "length": 5,
+      "capacity": 420
+    },
+    {
+      "from": "bridgew",
+      "to": "bridgee",
+      "name": "Liberty Bridge",
+      "length": 3,
+      "capacity": 110
+    },
+    {
+      "from": "bridgee",
+      "to": "central",
+      "name": "I-9 East",
+      "length": 3,
+      "capacity": 420
+    },
+    {
+      "from": "central",
+      "to": "downtown",
+      "name": "Exit 12",
+      "length": 3,
+      "capacity": 200
+    },
+    {
+      "from": "central",
+      "to": "tech",
+      "name": "Tech Pkwy",
+      "length": 5,
+      "capacity": 180
+    },
+    {
+      "from": "fulton",
+      "to": "elm",
+      "name": "Fulton Ave",
+      "length": 5,
+      "capacity": 70
+    },
+    {
+      "from": "elm",
+      "to": "pine",
+      "name": "Elm St (residential)",
+      "length": 8,
+      "capacity": 25
+    },
+    {
+      "from": "pine",
+      "to": "tech",
+      "name": "Pine St",
+      "length": 6,
+      "capacity": 60
+    },
+    {
+      "from": "pine",
+      "to": "central",
+      "name": "Hill Rd",
+      "length": 6,
+      "capacity": 60
+    },
+    {
+      "from": "elm",
+      "to": "bridgew",
+      "name": "Bridge Connector",
+      "length": 4,
+      "capacity": 80
+    },
+    {
+      "from": "harbor",
+      "to": "canal",
+      "name": "Harbor Rd",
+      "length": 6,
+      "capacity": 80
+    },
+    {
+      "from": "canal",
+      "to": "ferry",
+      "name": "Old Swing Bridge",
+      "length": 4,
+      "capacity": 35
+    },
+    {
+      "from": "ferry",
+      "to": "downtown",
+      "name": "Canal Way",
+      "length": 6,
+      "capacity": 80
+    },
+    {
+      "from": "canal",
+      "to": "bridgew",
+      "name": "Canal Connector",
+      "length": 5,
+      "capacity": 80
+    },
+    {
+      "from": "ferry",
+      "to": "central",
+      "name": "Ferry Rd",
+      "length": 5,
+      "capacity": 60
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "app",
+      "name": "App-routed drivers",
+      "share": 0.55,
+      "description": "Follow live-traffic navigation turn by turn.",
+      "info": 1,
+      "rationality": 0.9,
+      "origins": [
+        "maple",
+        "lakeshore"
+      ],
+      "destinations": [
+        "downtown",
+        "tech"
+      ]
+    },
+    {
+      "id": "habit",
+      "name": "Creatures of habit",
+      "share": 0.35,
+      "description": "Drive the route that is fastest on empty roads.",
+      "info": 0,
+      "rationality": 1.2,
+      "origins": [
+        "maple",
+        "lakeshore"
+      ],
+      "destinations": [
+        "downtown",
+        "tech"
+      ]
+    },
+    {
+      "id": "delivery",
+      "name": "Delivery vans",
+      "share": 0.1,
+      "description": "Fleet routing with live traffic, mostly downtown.",
+      "info": 1,
+      "rationality": 1.5,
+      "origins": [
+        "maple",
+        "lakeshore"
+      ],
+      "destinations": [
+        "downtown"
+      ]
+    }
+  ],
+  "minds": [
+    {
+      "id": "megan",
+      "name": "Megan Park",
+      "age": 34,
+      "archetype": "app",
+      "origin": "maple",
+      "destination": "downtown",
+      "bio": "ICU nurse heading downtown for a 7:30 shift.",
+      "personality": "anxious, follows her navigation app religiously",
+      "goal": "Never be late for handoff",
+      "social": "reads the commuter group chat at red lights",
+      "informed": true
+    },
+    {
+      "id": "greg",
+      "name": "Greg Lawson",
+      "age": 51,
+      "archetype": "habit",
+      "origin": "maple",
+      "destination": "tech",
+      "bio": "Has driven I-9 to Tech Park for twenty years.",
+      "personality": "stubborn, distrusts apps",
+      "goal": "Same route, same coffee, same parking spot",
+      "social": "only listens to the traffic report on the radio",
+      "informed": false
+    },
+    {
+      "id": "ana",
+      "name": "Ana Silva",
+      "age": 29,
+      "archetype": "app",
+      "origin": "maple",
+      "destination": "tech",
+      "bio": "Startup employee who takes any shortcut the app suggests.",
+      "personality": "risk-taking, restless",
+      "goal": "Shave off every minute",
+      "social": "posts traffic hacks to coworkers",
+      "informed": true
+    },
+    {
+      "id": "olivia",
+      "name": "Olivia Grant",
+      "age": 41,
+      "archetype": "app",
+      "origin": "maple",
+      "destination": "downtown",
+      "bio": "Lawyer with a 7:45 court appearance downtown.",
+      "personality": "aggressive, checks traffic constantly",
+      "goal": "Arrive with ten minutes to spare",
+      "social": "her assistant texts her jam reports",
+      "informed": true
+    },
+    {
+      "id": "karen",
+      "name": "Karen Wu",
+      "age": 55,
+      "archetype": "habit",
+      "origin": "maple",
+      "destination": "downtown",
+      "bio": "Hospital manager who always takes the bridge she knows.",
+      "personality": "calm, methodical",
+      "goal": "A predictable commute",
+      "social": "hears complaints from staff who got stuck",
+      "informed": false
+    },
+    {
+      "id": "mike",
+      "name": "Mike Tran",
+      "age": 33,
+      "archetype": "delivery",
+      "origin": "maple",
+      "destination": "downtown",
+      "bio": "Courier van driver; dispatch radios in jam reports.",
+      "personality": "pragmatic, avoids residential streets with the van",
+      "goal": "Finish the route without tickets",
+      "social": "trusts dispatch over any app",
+      "informed": true
+    },
+    {
+      "id": "derek",
+      "name": "Derek Owens",
+      "age": 45,
+      "archetype": "delivery",
+      "origin": "lakeshore",
+      "destination": "downtown",
+      "bio": "Delivery driver paid per route, not per hour.",
+      "personality": "efficient, hates narrow bridges with a big van",
+      "goal": "Downtown drops before 8",
+      "social": "swaps tips with other drivers on CB-style group chat",
+      "informed": true
+    },
+    {
+      "id": "sam",
+      "name": "Sam Whitaker",
+      "age": 38,
+      "archetype": "habit",
+      "origin": "lakeshore",
+      "destination": "downtown",
+      "bio": "Dad who drops his kids at school on Harbor Rd first.",
+      "personality": "routine-bound, avoids the highway with kids",
+      "goal": "School drop-off then work",
+      "social": "other parents at drop-off talk about the traffic",
+      "informed": false
+    },
+    {
+      "id": "raymond",
+      "name": "Raymond Price",
+      "age": 62,
+      "archetype": "habit",
+      "origin": "lakeshore",
+      "destination": "downtown",
+      "bio": "Retired engineer volunteering downtown; loves the Old Swing Bridge view.",
+      "personality": "unhurried, sentimental",
+      "goal": "A pleasant drive",
+      "social": "chats with neighbors about road work",
+      "informed": false
+    },
+    {
+      "id": "jenny",
+      "name": "Jenny Cho",
+      "age": 27,
+      "archetype": "app",
+      "origin": "lakeshore",
+      "destination": "tech",
+      "bio": "Grad student late for an 8am exam at the Tech Park campus.",
+      "personality": "stressed, will try anything",
+      "goal": "Make the exam on time",
+      "social": "classmates are texting about which roads are jammed",
+      "informed": true
+    },
+    {
+      "id": "lisa",
+      "name": "Lisa Romero",
+      "age": 48,
+      "archetype": "habit",
+      "origin": "lakeshore",
+      "destination": "tech",
+      "bio": "Accountant who leaves at the same time every day.",
+      "personality": "hates surprises, cautious",
+      "goal": "The route she knows",
+      "social": "ignores rumors unless the radio confirms them",
+      "informed": false
+    },
+    {
+      "id": "theo",
+      "name": "Theo Banks",
+      "age": 22,
+      "archetype": "app",
+      "origin": "lakeshore",
+      "destination": "tech",
+      "bio": "Rideshare driver with a passenger headed to Tech Park.",
+      "personality": "rating-sensitive, follows the app exactly",
+      "goal": "Five stars and a fast drop-off",
+      "social": "passenger keeps suggesting shortcuts",
+      "informed": true
+    }
+  ]
+}
