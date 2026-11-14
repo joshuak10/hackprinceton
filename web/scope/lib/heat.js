@@ -2,9 +2,11 @@
 // Accumulates Gaussian stamps on a coarse grid per floor; moves forward incrementally and rebuilds when the
 // slider goes back. The colour scale is fixed to the whole run's peak, so heat visibly grows over time.
 
-export function createHeat(bounds, floors, { cell = 0.6, sigma = 2.6 } = {}) {
+// The grid extends `pad` map units past the plan so glows at entrances (just outside) aren't clipped.
+export function createHeat(bounds, floors, { cell = 0.6, sigma = 2.6, pad = 8 } = {}) {
   const [, , W, H] = bounds;
-  const w = Math.ceil(W / cell), h = Math.ceil(H / cell);
+  const x0 = -pad, y0 = -pad;
+  const w = Math.ceil((W + 2 * pad) / cell), h = Math.ceil((H + 2 * pad) / cell);
   const grids = Array.from({ length: floors }, () => new Float32Array(w * h));
   const r = Math.ceil(sigma * 2.6 / cell);
   const kernel = [];
@@ -12,13 +14,13 @@ export function createHeat(bounds, floors, { cell = 0.6, sigma = 2.6 } = {}) {
     const d2 = (dx * cell) ** 2 + (dy * cell) ** 2;
     kernel.push([dx, dy, Math.exp(-d2 / (2 * sigma * sigma))]);
   }
-  return { w, h, cell, grids, kernel, upto: 0, t: -1, peak: 1, canvases: [], version: 0 };
+  return { x0, y0, w, h, cell, grids, kernel, upto: 0, t: -1, peak: 1, canvases: [], version: 0 };
 }
 
 function stamp(heat, it) {
   const g = heat.grids[it.floor || 0];
   if (!g) return;
-  const cx = Math.floor(it.x / heat.cell), cy = Math.floor(it.y / heat.cell);
+  const cx = Math.floor((it.x - heat.x0) / heat.cell), cy = Math.floor((it.y - heat.y0) / heat.cell);
   const wgt = it.severity || 1;
   for (const [dx, dy, k] of heat.kernel) {
     const x = cx + dx, y = cy + dy;

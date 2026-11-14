@@ -298,7 +298,7 @@ export function createRenderer(canvas) {
     // Heat
     if (st.layers.heat && st.heat) {
       const hc = heatCanvas(st.heat, st.floor, pal.ramp);
-      const [a, b] = R.toScreen(0, 0);
+      const [a, b] = R.toScreen(st.heat.x0, st.heat.y0);
       ctx.save();
       ctx.globalCompositeOperation = pal['heat-blend'] || 'screen';
       ctx.globalAlpha = pal.light ? 0.75 : 0.9;

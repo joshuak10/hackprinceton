@@ -428,6 +428,7 @@ A display built for the two CoStar simulations (building congestion and the reta
 
 **Incidents** `{ id, t, cat: 'decision' | 'congestion' | 'complaint', kind, x, y, floor, placeId, agentId, severity, text }`, derived in `web/scope/lib/incidents.js`:
 - Decisions: a `line` answered no ("walked away from the line"), a `long` answered no ("gave up waiting"), leaving after either ("left without being served"), and in the lot giving up the search ("drove off without parking").
+- Turned away: a `line` decision with `why: 'door'` answered no ("saw the line and left"). The person judged the line from the entrance. Observations for these decisions list `people_ahead` for each place.
 - Complaints: remarks of kind `long_line`, `bad_service` and `heavy_traffic`.
 - Congestion, from frames: more people within 1.5 m of an opening than 2.5 × its width in metres; more than 2 people/m² in a room; more than 6 cars queued at a driveway. A condition must hold for 2 frames, and each episode is one incident.
 

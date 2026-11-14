@@ -37,6 +37,12 @@ const CAST = {
 
 const DEFAULT_MIX = { office: 160, cafe: 140, shopper: 150, visitor: 24, courier: 16 };
 
+// Patience depends on the place: a coffee or a sandwich isn't worth the wait a full basket is.
+const PLACE_PATIENCE = { cafe_counter: 0.6 };
+// People judge a line by how many people they see, not by dividing by the number of registers.
+// Head-count limit = patience at the place × this factor (café: about 7–14 people).
+const HEAD_LIMIT = { cafe_counter: 2.0, market_checkout: 1.3, reception: 1.5, restroom: 1.2 };
+
 export function runBuilding(geometry, opts = {}) {
   const {
     seed = 7, duration = 90, clockStart = 11 * 60 + 45, frameEverySec = 4, mix = DEFAULT_MIX,
@@ -110,6 +116,8 @@ export function runBuilding(geometry, opts = {}) {
   });
   const need = id => { const p = pois.get(id); if (!p) throw new Error(`Point of interest "${id}" is missing from the geometry.`); return p; };
   const nameOf = id => pois.get(id)?.name || id;
+  const tolAt = (a, poi) => a.tolerance * (PLACE_PATIENCE[poi.id] ?? 1);
+  const headLimit = (a, poi) => Math.max(3, tolAt(a, poi) * (HEAD_LIMIT[poi.id] ?? 1.5));
   const linkSeconds = (a, b) => {
     const l = (geometry.links || []).find(k => (k.from === a && k.to === b) || (k.from === b && k.to === a));
     return l ? l.seconds : 60;
@@ -187,7 +195,7 @@ export function runBuilding(geometry, opts = {}) {
       case 'cafe': {
         const e = need('cafe_front');
         place(a, e.fi, e.cell);
-        return [{ k: 'service', poi: 'cafe_counter' }, { k: 'after_cafe', entry: 'cafe_front' }];
+        return [{ k: 'service', poi: 'cafe_counter', atDoor: true }, { k: 'after_cafe', entry: 'cafe_front' }];
       }
       case 'shopper': {
         const e = need(pickWeighted(r, ['market_front', 'market_side', 'west_door'], id => ({ market_front: 0.55, market_side: 0.3, west_door: 0.15 })[id]));
@@ -225,7 +233,7 @@ export function runBuilding(geometry, opts = {}) {
   function placesFor(a, ids) {
     return ids.map(id => {
       const p = pois.get(id);
-      return { option: id, name: p?.name || id, line: p?.queue ? (a.informed ? waitWords(estWait(p)) : "unknown (can't see it from here)") : 'no line' };
+      return { option: id, name: p?.name || id, line: p?.queue ? (a.informed ? waitWords(estWait(p)) : "unknown (can't see it from here)") : 'no line', ...(p?.queue ? { people_ahead: p.queue.length } : {}) };
     });
   }
 
@@ -233,7 +241,7 @@ export function runBuilding(geometry, opts = {}) {
     const cafe = need('cafe_counter');
     const heard = log.heardBy(a, t, nameOf);
     const cafeLine = estWait(cafe);
-    const crowdPenalty = a.informed ? clamp(cafeLine / a.tolerance, 0, 2) : 0;
+    const crowdPenalty = a.informed ? clamp(cafeLine / tolAt(a, cafe), 0, 2) : 0;
     const w = { cafe_counter: 1.6 - 0.6 * crowdPenalty - 0.15 * heard.length, market_checkout: 0.7 + 0.3 * crowdPenalty, leave: 0.25 + 0.2 * crowdPenalty };
     const probs = noisyProbs(a.rng, w);
     const u = seedRng(seed, 'decide', a.id, a.decisionIndex)();
@@ -258,7 +266,7 @@ export function runBuilding(geometry, opts = {}) {
     const desk = a.home;
     if (action === 'cafe_counter') {
       return [{ k: 'exit', entry: 'stair_door' }, { k: 'transfer', from: 'stair_door', to: 'cafe_front' },
-        { k: 'service', poi: 'cafe_counter' }, { k: 'after_cafe', entry: 'cafe_front', returnTo: desk }];
+        { k: 'service', poi: 'cafe_counter', atDoor: true }, { k: 'after_cafe', entry: 'cafe_front', returnTo: desk }];
     }
     if (action === 'market_checkout') {
       return [{ k: 'exit', entry: 'stair_door' }, { k: 'transfer', from: 'stair_door', to: 'market_front' },
@@ -297,28 +305,34 @@ export function runBuilding(geometry, opts = {}) {
     return rest;
   }
 
-  function lineDecision(a, t, poi) {
+  // Join a line? Judged by the head count a person can see (the app adds minutes for those who have it).
+  // atDoor: the line is visible from the entrance, so they decide as they walk in.
+  function lineDecision(a, t, poi, atDoor = false) {
+    const n = poi.queue.length;
     const est = estWait(poi);
+    const limit = headLimit(a, poi);
     const heard = log.heardBy(a, t, nameOf);
     const aboutHere = heard.filter(h => h.endsWith(poi.name)).length;
-    const yesProb = clamp(sigmoid((a.tolerance * 1.25 - est) / (0.3 * a.tolerance)) * 0.92 + 0.05 - 0.07 * aboutHere, 0.02, 0.98);
+    const yesProb = clamp(sigmoid((limit - n) / 1.8) * 0.94 + 0.03 - 0.07 * aboutHere, 0.02, 0.98);
     const u = seedRng(seed, 'decide', a.id, a.decisionIndex);
     const yes = u() < yesProb;
-    const fr = frustrationAnswer(a.rng, (a.frustration ?? 0) * 0.5 + est / a.tolerance * 1.6);
+    const fr = frustrationAnswer(a.rng, (a.frustration ?? 0) * 0.5 + n / limit * 1.6);
     a.frustration = fr.expected;
     const tellProb = clamp(0.08 + 0.12 * fr.expected, 0, 0.7);
     u();
     const tell = !yes && u() < tellProb;
     const remarkProbs = { long_line: 0.78, bad_service: 0.17, good_experience: 0.05 };
     const remarkKind = tell ? sampleKey(remarkProbs, u()) : null;
-    const summary = yes ? `joined the line at ${poi.name}` : `walked away from the line at ${poi.name}`;
+    const summary = yes ? `joined the line at ${poi.name}` : atDoor ? `saw the line at ${poi.name} and left` : `walked away from the line at ${poi.name}`;
+    const feel = n < 0.6 * limit ? 'well within what they will put up with' : n < 1.1 * limit ? 'about the most they will put up with' : 'more than they will put up with';
+    const ahead = `${n} ${n === 1 ? 'person is' : 'people are'} in line${a.informed ? ` (the app says about ${Math.max(1, Math.round(est))} min)` : ''}`;
     log.record({
-      t, agent: a, kind: 'line', placeId: poi.id, aboutPlace: poi.id,
+      t, agent: a, kind: 'line', why: atDoor ? 'door' : null, placeId: poi.id, aboutPlace: poi.id,
       options: [{ key: 'leave', label: 'Skip it and leave' }],
       asks: { choice: 'next_place', yesNo: 'join', frustration: true, tellOthers: true },
-      now: `Just reached ${poi.name}. The line is ${waitWords(est)}: ${est < 0.6 * a.tolerance ? 'well within what they will put up with' : est < 1.1 * a.tolerance ? 'about the most they will put up with' : 'more than they will put up with'}.`,
+      now: atDoor ? `Just walked in. ${ahead} at ${poi.name}: ${feel}.` : `Just reached ${poi.name}. ${ahead}: ${feel}.`,
       places: placesFor(a, [poi.id]), heard,
-      auto: { action: est > a.tolerance ? 'no' : 'yes' },
+      auto: { action: n > limit ? 'no' : 'yes' },
       decision: { yesProb: +yesProb.toFixed(3), choiceProbs: { leave: 1 }, frustration: fr, tellProb: +tellProb.toFixed(3), remarkProbs, latencyMs: Math.round(90 + a.rng() * 140) },
       applied: { yes, action: yes ? null : 'leave', tell, remarkKind, frustration: fr.expected, summary }
     });
@@ -330,10 +344,11 @@ export function runBuilding(geometry, opts = {}) {
 
   function longDecision(a, t, poi, waited) {
     const left = Math.max(0.5, estWait(poi) * (poi.queue.indexOf(a) + 1) / Math.max(1, poi.queue.length));
-    const yesProb = clamp(sigmoid((a.tolerance * 1.4 - waited - left) / (0.3 * a.tolerance)) * 0.9 + 0.05, 0.03, 0.97);
+    const tol = tolAt(a, poi);
+    const yesProb = clamp(sigmoid((tol * 1.4 - waited - left) / (0.3 * tol)) * 0.9 + 0.05, 0.03, 0.97);
     const u = seedRng(seed, 'decide', a.id, a.decisionIndex);
     const yes = u() < yesProb;
-    const fr = frustrationAnswer(a.rng, 1 + waited / a.tolerance * 1.5);
+    const fr = frustrationAnswer(a.rng, 1 + waited / tol * 1.5);
     a.frustration = fr.expected;
     const tellProb = clamp(0.12 + 0.13 * fr.expected, 0, 0.8);
     u();
@@ -347,7 +362,7 @@ export function runBuilding(geometry, opts = {}) {
       asks: { choice: 'next_place', yesNo: 'keep_waiting', frustration: true, tellOthers: true },
       now: `Has waited ${Math.round(waited)} minutes in line at ${poi.name}. About ${Math.max(1, Math.round(left))} more minutes expected.`,
       places: placesFor(a, [poi.id]), heard: log.heardBy(a, t, nameOf),
-      auto: { action: waited > a.tolerance * 1.3 ? 'no' : 'yes' },
+      auto: { action: waited > tol * 1.3 ? 'no' : 'yes' },
       decision: { yesProb: +yesProb.toFixed(3), choiceProbs: { leave: 1 }, frustration: fr, tellProb: +tellProb.toFixed(3), remarkProbs, latencyMs: Math.round(90 + a.rng() * 140) },
       applied: { yes, action: yes ? null : 'leave', tell, remarkKind, frustration: fr.expected, summary }
     });
@@ -514,13 +529,21 @@ export function runBuilding(geometry, opts = {}) {
           const sv = a.svc;
           if (sv.phase === 'approach') {
             a.state = a.leaving ? S.leave : S.walk;
+            if (task.atDoor && !sv.decided) {
+              sv.decided = true;
+              if (poi.queue.length >= 3 && !lineDecision(a, t, poi, true)) {
+                a.abandons++; counters.abandoned++; poi.abandons++;
+                a.svc = null;
+                a.tasks = bailOut(a);
+                break;
+              }
+            }
             const f = field(a.fi, poi.cell);
             const tail = poi.slots[Math.min(poi.queue.length, poi.slots.length - 1)];
             const tailD = f[tail] ?? 0;
             walkToward(a, f);
             if (f[a.cell] <= tailD + 3) {
-              const est = estWait(poi);
-              const ask = est > 4 && est > 0.6 * a.tolerance;
+              const ask = !sv.decided && poi.queue.length >= 4;
               if (ask && !lineDecision(a, t, poi)) {
                 a.abandons++; counters.abandoned++; poi.abandons++;
                 a.svc = null;
@@ -530,7 +553,7 @@ export function runBuilding(geometry, opts = {}) {
               sv.phase = 'queued'; sv.since = t; sv.asked = false;
               release(a);
               poi.queue.push(a);
-              if (!ask) trace(a, t, `joined the line at ${poi.name}`);
+              if (!ask && !sv.decided) trace(a, t, `joined the line at ${poi.name}`);
             }
           } else if (sv.phase === 'queued') {
             a.state = S.queue;
@@ -539,7 +562,7 @@ export function runBuilding(geometry, opts = {}) {
             const [sx, sy] = cellCenter(floors[a.fi].grid, slot);
             slideTo(a, sx, sy);
             const waited = t - sv.since;
-            if (!sv.asked && waited > a.tolerance && waited > 6) {
+            if (!sv.asked && waited > tolAt(a, poi) && waited > 4) {
               sv.asked = true;
               if (!longDecision(a, t, poi, waited)) {
                 poi.queue.splice(idx, 1);

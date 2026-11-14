@@ -405,6 +405,7 @@ Pitch lines:
   - Interior and lot worlds record frames at least every 5 s of simulated time, so replayed dots don't cut through walls.
   - The parking-lot world is synthetic until a property is chosen and Vexcel access is set up.
   - The display targets laptops and a projector (1280 px and up), dark by default.
+  - People judge a line by the head count they can see, not by minutes worked out from the number of registers. A line visible from the entrance (the café) is judged as people walk in, so the losses show up at the door. Café patience is 0.6 × a group's usual patience. In the mock this caps café and checkout lines at about 15. For Jev: add `people_ahead` to each place in the observation, and allow the `line` moment when a person first sees the line, not only when they reach it.
 
 - **v0.14 · Nov 14, 2026.** Started the first Jev-per-agent prototype (v0.2) and wrote its build contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md). Decisions:
   - Every agent decision is one Jev request (`jev-latest`) that packs all its questions: the primary question plus speculative follow-ups (where else to go, frustration, whether to tell others, remark kind).

@@ -48,6 +48,7 @@ function decisionIncidents(bundle, F, nodes, agents, nameOf, isLot) {
     if (isLot && place === 'entry_drive') { kind = 'drove_past'; text = 'Drove past without turning in'; group = 'Drivers skipping the lot'; }
     else if (isLot && place === 'search') { kind = 'drove_off'; text = 'Drove off without finding a space'; group = 'Drivers giving up on parking'; }
     else if (isLot && place === 'checkout') { kind = 'left_without_buying'; text = 'Left the store without buying'; group = 'Shoppers leaving without buying'; }
+    else if (d.why === 'door') { kind = 'turned_away'; text = `Saw the line at ${nameOf(place)} and left`; group = `Turned away at ${nameOf(place)}`; }
     else if (d.kind === 'line') { kind = 'walked_away'; text = `Walked away from the line at ${nameOf(place)}`; group = `Walk-aways at ${nameOf(place)}`; }
     else { kind = 'gave_up'; text = `Gave up waiting at ${nameOf(place)}`; group = `Walk-aways at ${nameOf(place)}`; }
     const pos = agentPos(F, d.agentId, d.t);
