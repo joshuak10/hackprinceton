@@ -18,11 +18,12 @@
     <a class="brand" href="./" aria-label="Swarmscope, start over">Swarmscope</a>
     <form class="ask" id="askForm" autocomplete="off">
       <label class="visually-hidden" for="askIn">What do you want to simulate?</label>
-      <input id="askIn" type="text" placeholder="What do you want to simulate? For example: where do people get stuck in this building at lunch?" spellcheck="false">
+      <input id="askIn" type="text" placeholder="Ask about crowding, queues, or parking…" spellcheck="false">
       <button class="btn primary" id="askBtn" type="submit">Simulate</button>
       <div class="ask-card" id="askCard" hidden></div>
     </form>
     <div class="top-tools">
+      <button class="btn" id="feedbackBtn" type="button" disabled aria-expanded="false" aria-controls="feedbackDialog">Suggestions</button>
       <span class="badge" id="sourceBadge" title="Where this run's decisions came from">Mock data</span>
       <button class="btn ghost" id="detailsBtn" type="button" aria-expanded="false" aria-controls="drawer">Run details</button>
       <button class="btn ghost icon" id="themeBtn" type="button" aria-label="Switch to light theme"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="4.2" fill="currentColor"/><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 1.8v2.1M10 16.1v2.1M1.8 10h2.1M16.1 10h2.1M4.2 4.2l1.5 1.5M14.3 14.3l1.5 1.5M4.2 15.8l1.5-1.5M14.3 5.7l1.5-1.5"/></g></svg></button>
@@ -33,8 +34,9 @@
     <section class="mapcol" aria-label="Simulation map">
       <div class="maphead">
         <div class="place">
-          <h1 id="placeTitle">Choose what to simulate</h1>
-          <p id="placeSub" class="sub">Two cases are ready: crowding inside a building, and a retail parking lot.</p>
+          <p class="eyebrow">Simulation workspace</p>
+          <h1 id="placeTitle">See where people get stuck.</h1>
+          <p id="placeSub" class="sub">Explore a space, follow individual decisions, and find the bottlenecks.</p>
         </div>
         <div class="floors" id="floorTabs" role="tablist" aria-label="Floors" hidden></div>
       </div>
@@ -90,8 +92,24 @@
     </section>
 
     <aside class="side idle" id="side" aria-label="What is happening">
-      <p class="side-empty">Counters, bottlenecks and incidents appear here once a simulation runs.</p>
+      <div class="side-empty">
+        <p class="eyebrow">From movement to insight</p>
+        <h2>A closer look at the crowd.</h2>
+        <p>Choose a scenario to explore how people move through a space.</p>
+        <ol class="getting-started">
+          <li><b>Explore the map</b><span>See movement and the places where incidents build up.</span></li>
+          <li><b>Find the friction</b><span>Jump to key moments and compare bottlenecks as the run unfolds.</span></li>
+          <li><b>Follow a decision</b><span>Select a person to see what they chose and why.</span></li>
+        </ol>
+        <p class="demo-note">Sample scenarios use recorded mock decisions. No live AI requests are needed.</p>
+      </div>
       <section class="counters" id="counters" aria-label="Right now"></section>
+      <section class="feedback-preview" id="feedbackPreview" hidden aria-label="Run feedback">
+        <p class="eyebrow">Suggestions · Full run</p>
+        <h2 id="feedbackStatus" role="status">Reviewing completed run…</h2>
+        <p id="feedbackSummary"></p>
+        <button class="btn small" id="feedbackOpen" type="button">View feedback &amp; suggestions →</button>
+      </section>
       <section class="block">
         <div class="block-head stack"><h2>Bottlenecks so far</h2><p class="hint">Minutes waited, plus 30 for each person lost</p></div>
         <ol class="rank" id="rank"></ol>
@@ -111,6 +129,14 @@
     </div>
     <div class="drawer-body" id="drawerBody"></div>
   </aside>
+  <dialog class="feedback-dialog" id="feedbackDialog" aria-labelledby="feedbackTitle">
+    <div class="drawer-head">
+      <div><p class="eyebrow">From evidence to experiments</p><h2 id="feedbackTitle">Feedback &amp; suggestions</h2></div>
+      <button class="btn ghost small" id="feedbackClose" type="button" autofocus>Close</button>
+    </div>
+    <div class="feedback-body" id="feedbackBody"></div>
+    <div class="feedback-footer"><button class="btn" id="feedbackRetry" type="button" hidden>Retry analysis</button></div>
+  </dialog>
 </div>
 </body>
 </html>

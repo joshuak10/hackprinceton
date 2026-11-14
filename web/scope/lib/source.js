@@ -75,5 +75,5 @@ export async function apiRun({ world, provider = 'jev', seed = 7, onStatus, sign
   const [meta, spec, frames, metrics, agents, remarks] = await Promise.all(['meta', 'spec', 'frames', 'metrics', 'agents', 'remarks'].map(part));
   const decisions = await part('decisions').catch(() => []);
   const incidents = await part('incidents').catch(() => undefined);
-  return normalizeBundle({ meta, spec, frames, metrics, agents, remarks, decisions, incidents });
+  return normalizeBundle({ runId: id, meta, spec, frames, metrics, agents, remarks, decisions, incidents });
 }

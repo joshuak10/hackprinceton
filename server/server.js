@@ -9,6 +9,7 @@ import { join, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { hasKey } from '../engine/env.js';
+import { createAnalysisService } from '../analysis/service.js';
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url));
 const BODY_LIMIT = 2 * 1024 * 1024;
@@ -48,6 +49,7 @@ export function startServer({ port = 4173, host = '127.0.0.1', root = process.cw
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'),
     loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null
   };
+  ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
   const server = http.createServer((req, res) => {
     handle(ctx, req, res).catch(err => sendError(res, err));
   });
@@ -73,6 +75,7 @@ function close(ctx, server) {
 // ---------- routing ----------
 
 const ROUTES = [
+  ['POST', ['insights'], postInsights],
   ['GET', ['health'], getHealth],
   ['GET', ['worlds'], getWorlds],
   ['GET', ['worlds', ':file'], getWorld],
@@ -213,7 +216,28 @@ async function serveStatic(req, res, pathname) {
 // ---------- worlds ----------
 
 function getHealth(ctx, req, res) {
-  send(res, 200, { ok: true, jev: hasKey('TYPESAFE_API_KEY'), claude: hasKey('ANTHROPIC_API_KEY') });
+  send(res, 200, { ok: true, insights: true, jev: hasKey('TYPESAFE_API_KEY'), claude: hasKey('ANTHROPIC_API_KEY') });
+}
+
+async function postInsights(ctx, req, res) {
+  const body = await readJsonBody(req);
+  try { send(res, 200, await ctx.feedback(body)); }
+  catch (err) {
+    if ([400, 404, 409, 429].includes(err.status)) throw new HttpError(err.status, err.message);
+    throw err;
+  }
+}
+
+// Share the validated feedback endpoint with the static preview without enabling live runs.
+export function createPreviewFeedbackHandler({ root = process.cwd() } = {}) {
+  const ctx = { loopback: true, feedback: createAnalysisService({ runsDir: join(resolve(root), 'runs'), webDir: WEB_DIR }) };
+  return async (req, res) => {
+    try {
+      if (req.method !== 'POST') throw new HttpError(405, 'Use POST for this endpoint.');
+      checkPost(ctx, req);
+      await postInsights(ctx, req, res);
+    } catch (err) { sendError(res, err); }
+  };
 }
 
 const isWorld = w => w && typeof w === 'object' && !Array.isArray(w) && Array.isArray(w.nodes) && !('$schema' in w);

@@ -10,6 +10,11 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadEnv } from '../engine/env.js';
+import { createPreviewFeedbackHandler } from '../server/server.js';
+
+loadEnv();
+const feedback = createPreviewFeedbackHandler();
 
 const ROOT = fileURLToPath(new URL('../web/', import.meta.url));
 const PORT = Number(process.env.PORT) || 4174;
@@ -21,6 +26,7 @@ const TYPES = {
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/api/insights') return await feedback(req, res);
     let rel = decodeURIComponent(url.pathname);
     if (rel === '/') { res.writeHead(302, { Location: '/scope/' }); return res.end(); }
     if (rel.endsWith('/')) rel += 'index.html';
