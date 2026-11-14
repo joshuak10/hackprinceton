@@ -4,6 +4,8 @@
 //   node scripts/mock_runs.js [--seed 7]
 //
 // Always writes the synthetic runs (committed): web/scope/mock/{building,parking}-synthetic.json + index.json.
+// The sushi restaurant is not generated here. Its file is a recorded engine run, packed with scripts/pack_run.js
+// (docs/PROTOTYPE.md §18); this script only lists it in index.json when the file is there.
 // If real Matterport geometry was extracted (scripts/extract_building.js), also writes a building run on it
 // to web/scope/data/ (gitignored), and web/scope/data/index.json, which the display prefers.
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -47,10 +49,13 @@ const building = runBuilding(syntheticBuilding(), { seed });
 write(MOCK, 'building-synthetic.json', building);
 const parking = runParking(syntheticLot(), { seed });
 write(MOCK, 'parking-synthetic.json', parking);
+const SUSHI = join(MOCK, 'sushi-restaurant.json');
+const sushiMeta = existsSync(SUSHI) ? JSON.parse(readFileSync(SUSHI, 'utf8')).meta : null;
 writeFileSync(join(MOCK, 'index.json'), JSON.stringify({
   cases: {
     building: { ...CASES.building, file: 'mock/building-synthetic.json', place: 'Synthetic office and retail building', source: 'synthetic' },
-    parking: { ...CASES.parking, file: 'mock/parking-synthetic.json', place: 'Synthetic retail center', source: 'synthetic' }
+    parking: { ...CASES.parking, file: 'mock/parking-synthetic.json', place: 'Synthetic retail center', source: 'synthetic' },
+    ...(sushiMeta ? { sushi: { label: 'Sushi restaurant', question: sushiMeta.question, file: 'mock/sushi-restaurant.json', place: 'Sushi restaurant', source: 'drawn', runTitle: sushiMeta.title } } : {})
   }
 }, null, 2) + '\n');
 

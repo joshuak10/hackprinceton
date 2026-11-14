@@ -116,10 +116,11 @@ With no `--plan-raw`, `fitout` reads `data/<model>.json`; `--model <id>` fetches
 | `er-network` | visit | Which emergency department gets overwhelmed first on a Friday night, and how many leave without being seen? |
 | `theme-park` | visit | Which attraction is the real bottleneck, and where should capacity or prices change? |
 | `food-hall-lunch` | visit | Where are diners lost at noon (ramen counter, coffee kiosk or tables), and what is the cheapest fix? |
+| `sushi-restaurant` | visit | On a Friday evening, who waits for one of eight seats, who gives up, and which change would seat more of them? (one walled room, drawn from a hand sketch, with seats) |
 | `rush-hour-roads` | route | Which road segment is the bottleneck, and do navigation apps help or make it worse? |
 | `office-lobby-morning` | route | Where does the 8:30 peak jam (doors, turnstiles or elevators), and which cheap change clears it? |
 
-`er-network` is the smallest (560 agents) and the cheapest to run with Jev.
+`sushi-restaurant` is the smallest (36 people, about 100 Jev requests, under a cent). `er-network` (560 agents) is the smallest of the others.
 
 ## Runs and replay
 

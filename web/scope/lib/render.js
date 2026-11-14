@@ -200,11 +200,30 @@ export function createRenderer(canvas) {
         g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke();
       }
     }
+    // Seats (§18): a small chair at every seat, drawn whether or not someone is sitting on it. In edit mode the
+    // seats are drawn each frame instead, so they can be dragged.
+    if (!st.edit) drawSeats(g, st.nodes.filter(n => (n.floor || 0) === st.floor).flatMap(n => (n.seats || []).map(seatXY)), pal, geo.metersPerUnit || 1, false);
     if (!st.layers.labels) return;
     placed.length = 0;
     // Labels: areas faint and large, points small.
     g.textAlign = 'center';
     g.textBaseline = 'middle';
+    // A solid room nobody enters (a kitchen) gets its name in the middle.
+    for (const o of floor.objects || []) {
+      if (o.kind !== 'room' || !o.name || !o.polygon?.length) continue;
+      const xs = o.polygon.map(p => p[0]), ys = o.polygon.map(p => p[1]);
+      const [sx, sy] = R.toScreen((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2);
+      const size = Math.round(Math.min(22, Math.max(13, s * 1.0)));
+      g.font = `500 ${size}px "Bricolage Grotesque", sans-serif`;
+      const w = g.measureText(o.name).width + 16;
+      g.fillStyle = pal.ground;
+      g.globalAlpha = 0.82;
+      roundRect(g, sx - w / 2, sy - size * 0.8, w, size * 1.6, 6); g.fill();
+      g.globalAlpha = 1;
+      g.fillStyle = pal.muted;
+      g.fillText(o.name, sx, sy + 1);
+      placed.push([sx - w / 2, sy - size * 0.8, sx + w / 2, sy + size * 0.8]);
+    }
     for (const p of floor.pois || []) {
       if (p.kind !== 'area') continue;
       const cx = p.box ? (p.box[0] + p.box[2]) / 2 : p.x, cy = p.box ? (p.box[1] + p.box[3]) / 2 : p.y;
@@ -216,7 +235,12 @@ export function createRenderer(canvas) {
     for (const n of st.nodes) {
       if ((n.floor || 0) !== st.floor || n.kind === 'area') continue;
       const [sx, sy] = R.toScreen(n.x, n.y);
-      if (n.kind === 'service') {
+      if (n.kind === 'service' && n.seats?.length) {
+        // A place with seats is named at its seats, not at the spot where people wait for one.
+        const [lx, ly] = seatLabelSpot(n);
+        const [ax, ay] = R.toScreen(lx, ly);
+        labelFree(g, n.name, [[ax, ay, 'center'], [ax, ay + 16, 'center'], [ax, ay - 16, 'center'], [sx, sy + 15, 'center']], pal, 13);
+      } else if (n.kind === 'service') {
         g.fillStyle = pal.label;
         g.beginPath(); g.moveTo(sx, sy - 5); g.lineTo(sx + 5, sy); g.lineTo(sx, sy + 5); g.lineTo(sx - 5, sy); g.closePath(); g.fill();
         // Below, above, right, left; skipped if all would overlap (the side panel names every place).
@@ -294,6 +318,46 @@ export function createRenderer(canvas) {
     const [xx, xy] = R.toScreen(exitX, streetY + 3.2); label(g, 'Exit', xx, xy, pal, 13, 'center', true);
   }
 
+  const seatXY = p => (Array.isArray(p) ? { x: p[0], y: p[1] } : { x: p.x, y: p.y });
+
+  // Where a seated place's name goes: in the middle of a block of seats (it reads as the table), or just past
+  // the end of a single row, on the side where people wait.
+  function seatLabelSpot(n) {
+    const seats = n.seats.map(seatXY), xs = seats.map(p => p.x), ys = seats.map(p => p.y);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const w = x1 - x0, h = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    // The middle of a block, unless a seat is there (two rows side by side have no gap in the middle).
+    if (Math.min(w, h) > 1.5 && !seats.some(p => Math.hypot(p.x - cx, p.y - cy) < 1.7)) return [cx, cy];
+    const gap = Math.min(2.6, (Math.max(w, h) / Math.max(1, seats.length - 1)) * 0.62 || 2);
+    if (h >= w) { const end = Math.abs(n.y - y1) <= Math.abs(n.y - y0) ? y1 : y0; return [cx, end + (n.y >= end ? gap : -gap)]; }
+    const end = Math.abs(n.x - x1) <= Math.abs(n.x - x0) ? x1 : x0;
+    return [end + (n.x >= end ? gap : -gap), cy];
+  }
+
+  // A chair seen from above: a rounded seat with its back along the top edge. seats: [{ x, y, tag?, bad?, selected? }].
+  function drawSeats(g, seats, pal, mpu, editing) {
+    const s = S(), size = Math.max(10, ((editing ? 0.62 : 0.5) / mpu) * s);
+    for (const seat of seats) {
+      const [sx, sy] = R.toScreen(seat.x, seat.y), half = size / 2, r = Math.min(5, size * 0.22);
+      const line = seat.bad ? pal['i-congestion'] : editing ? pal.accent : pal.muted;
+      g.lineWidth = editing ? 2 : 1.5;
+      g.fillStyle = pal.panel;
+      g.strokeStyle = line;
+      roundRect(g, sx - half, sy - half, size, size, r); g.fill(); g.stroke();
+      g.fillStyle = line;
+      roundRect(g, sx - half, sy - half - Math.max(2, size * 0.1), size, Math.max(3, size * 0.2), Math.min(2, r)); g.fill();
+      if (editing && seat.tag) {
+        g.font = `600 ${Math.round(Math.max(10, size * 0.42))}px "IBM Plex Sans", sans-serif`;
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(seat.tag, sx, sy + 2);
+      }
+      if (seat.selected) {
+        g.strokeStyle = pal.text; g.lineWidth = 2;
+        g.beginPath(); g.arc(sx, sy, size * 0.85, 0, Math.PI * 2); g.stroke();
+      }
+    }
+  }
+
   // Labels placed in this base layer, as screen rectangles, so later labels can avoid them.
   const placed = [];
   function labelFree(g, text, spots, pal, size, muted = false) {
@@ -326,11 +390,13 @@ export function createRenderer(canvas) {
   R.draw = (st) => {
     if (!R.pal) R.pal = readPalette();
     const pal = R.pal;
-    const key = [st.caseId, st.floor, st.theme, R.cw, R.ch, R.view.x.toFixed(3), R.view.y.toFixed(3), R.view.z.toFixed(4), st.layers.labels].join('|');
+    const key = [st.caseId, st.floor, st.theme, R.cw, R.ch, R.view.x.toFixed(3), R.view.y.toFixed(3), R.view.z.toFixed(4), st.layers.labels, st.edit ? 'edit' : 'play'].join('|');
     if (key !== R.baseKey) { R.base = buildBase(st); R.baseKey = key; }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(R.base, 0, 0);
     ctx.setTransform(R.dpr, 0, 0, R.dpr, 0, 0);
+    // Edit the room (§18): only the room and its seats, no people, heat or incidents.
+    if (st.edit) { drawSeats(ctx, st.edit.seats, pal, st.geometry.metersPerUnit || 1, true); return; }
     const s = S();
     const geo = st.geometry;
     const mpu = geo.metersPerUnit || 1;

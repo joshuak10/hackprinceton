@@ -24,11 +24,13 @@ export function normalizeBundle(b) {
   return bundle;
 }
 
+export const CASE_IDS = ['building', 'parking', 'sushi'];
+
 export async function loadCases() {
   const mock = await getJson('mock/index.json').catch(() => ({ cases: {} }));
   const data = await getJson('data/index.json').catch(() => ({ cases: {} }));
   const cases = {};
-  for (const id of ['building', 'parking']) {
+  for (const id of CASE_IDS) {
     const c = data.cases?.[id] || mock.cases?.[id];
     if (c) cases[id] = { id, ...c };
   }
@@ -41,7 +43,9 @@ export async function loadConfig() {
 
 const bundles = new Map();
 export function loadBundle(file) {
-  if (!bundles.has(file)) bundles.set(file, getJson(file).then(normalizeBundle).catch(err => { bundles.delete(file); throw err; }));
+  // A case file is either a mock bundle with its own geometry or a recorded engine run packed into one file.
+  const open = raw => (isEngineRun(raw) ? adaptEngineRun(raw) : normalizeBundle(raw));
+  if (!bundles.has(file)) bundles.set(file, getJson(file).then(open).catch(err => { bundles.delete(file); throw err; }));
   return bundles.get(file);
 }
 
@@ -57,9 +61,11 @@ export async function apiHealth() {
 }
 
 // Recorded building runs (visit mode with walls), newest first, Jev runs before rules runs at the same time.
-export async function apiBuildingRuns({ max = 12 } = {}) {
+// `title` keeps only runs of the world with that title (a case's runTitle); `notTitles` leaves those worlds out,
+// so one case's many runs cannot push another case's runs off the list.
+export async function apiBuildingRuns({ max = 12, title = null, notTitles = [] } = {}) {
   const metas = await getJson('/api/runs').catch(() => []);
-  const candidates = metas.filter(m => m.status === 'done' && m.mode === 'visit')
+  const candidates = metas.filter(m => m.status === 'done' && m.mode === 'visit' && (title ? m.title === title : !notTitles.includes(m.title)))
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, max * 2);
   const out = [];
   for (const meta of candidates) {
@@ -68,6 +74,13 @@ export async function apiBuildingRuns({ max = 12 } = {}) {
     if (out.length >= max) break;
   }
   return out;
+}
+
+// One run's metrics, fetched once: the before/after line needs them for a handful of runs.
+const metricsCache = new Map();
+export function apiRunMetrics(runId) {
+  if (!metricsCache.has(runId)) metricsCache.set(runId, getJson(`/api/runs/${encodeURIComponent(runId)}/metrics`).catch(() => { metricsCache.delete(runId); return null; }));
+  return metricsCache.get(runId);
 }
 
 export async function apiLoadRun(runId, { modelId = null } = {}) {
@@ -86,7 +99,10 @@ export async function apiStartRun({ spec, provider = 'rules', seed = 7, onStatus
     body: JSON.stringify({ spec, provider, seed }), signal
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Starting the run failed (${res.status}).`);
+  if (!res.ok) {
+    const why = Array.isArray(body.errors) && body.errors.length ? ` ${body.errors.slice(0, 2).map(String).join(' ')}` : '';
+    throw new Error(`${body.error || `Starting the run failed (${res.status}).`}${why}`);
+  }
   const id = body.runId;
   for (;;) {
     if (signal?.aborted) throw new Error('Cancelled.');

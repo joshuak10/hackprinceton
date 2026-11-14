@@ -73,6 +73,7 @@ export function adaptEngineRun(raw, { modelId = null } = {}) {
 
   return {
     ...raw,
+    rawSpec: spec,      // the recorded world exactly as the engine wrote it: what "Edit the room" changes and posts back
     spec: { ...spec, minds, archetypes: spec.archetypes || [] },
     frames: { ...frames, stride: frames.stride || 4, nodes },
     geometry,

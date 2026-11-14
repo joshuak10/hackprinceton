@@ -670,3 +670,28 @@ button, input, select { font: inherit; color: inherit; }
 .fb-status { padding: 18px 0; color: var(--muted); }
 .fb-error { padding: 18px 0; color: var(--i-congestion); }
 .fb-footer:has(button:not([hidden])) { padding: 0 22px 22px; }
+
+/* Edit the room (docs/PROTOTYPE.md §18): the panel takes the side column while seats are being moved. */
+.chip.edit { color: var(--accent); border-color: var(--accent); }
+.chip.edit:disabled { opacity: 0.5; cursor: not-allowed; }
+.chip.edit.on { background: var(--accent); color: var(--accent-ink); }
+.side.editing > section:not(#editPanel), .side.editing > .side-empty { display: none; }
+.edit-panel { display: flex; flex-direction: column; gap: 12px; border-bottom: 0; }
+.edit-panel[hidden] { display: none; }
+.edit-panel .block-head { margin-bottom: 0; }
+.edit-places { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.edit-places li { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 15px; }
+.edit-places b { font-weight: 600; margin-right: 8px; }
+.edit-row, .edit-run { display: flex; flex-wrap: wrap; gap: 8px; }
+.edit-run .btn { flex: 1; min-width: 150px; }
+.edit-changes { margin: 0; font-size: 14.5px; }
+.edit-status { margin: 0; min-height: 21px; font-size: 14px; color: var(--muted); }
+.edit-status.warn { color: var(--i-decision); }
+.edit-panel .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Before and after a changed room, under the place's name. */
+.compare { margin: 8px 0 0; padding: 7px 12px; max-width: 72ch; border: 1px solid var(--accent); border-radius: 10px; font-size: 15px; }
+.compare[hidden] { display: none; }
+.compare span { display: block; margin-top: 2px; color: var(--muted); font-size: 13.5px; }
+#map.editing { cursor: default; }
+#map.editing.grab { cursor: grab; }
+#map.editing.grabbing { cursor: grabbing; }

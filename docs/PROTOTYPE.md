@@ -966,3 +966,51 @@ Both behaviors stay the default. A visit world can switch them off with an optio
 **Example world.** `worlds/alder-pine-cafe.json`: a fictional independent café with a chain across the street, 12 cast members, `waiting.tellPatience: false`.
 
 **What it does not show.** One moment, not a morning: no line dynamics, no word of mouth, no repeat visits. The people are unvalidated. Jev reacts weakly to price unless a person's description mentions money, so price answers show direction only, and only for those people (in the example world Tomas, Omar and Priyanka; Bill reacts to the price having changed). The plain-sign answer is one recorded answer per person and moment, so a person whose plain-sign answer happens to sit high or low leans the same way under every sign; the 15-point bar is what keeps that from being named. A warm or sad sign can lower the share, because five of the twelve start near 100% and have no room to rise.
+
+## 18. Seats, and the sushi restaurant as a third place in the scope display (Nov 14)
+
+**Why.** The scope display had two places: a building and a parking lot. The team's audience is now independent local businesses (`INDEPENDENT_BUSINESS_SPEC.md`), so the third place is one of those: a small sushi restaurant, drawn by hand as one room with a kitchen, four counter seats and four seats at a table. In a room this small the picture an owner reads is who is in which seat and who is standing by the door. The engine had no notion of a seat: people being served were drawn as a cluster on the place.
+
+**Seats (`nodes[i].seats`, visit-mode service places).** Up to 64 points `{ x, y }` (or `[x, y]`).
+- A person takes the first free seat when their service starts and keeps it until they finish. In frames they are recorded exactly at the seat.
+- Seats are for drawing only. The walk still ends at the place's own point, lines form there, and waits, choices and decision requests are the same with and without seats.
+- With more servers than seats, the people left over are drawn around the place as before.
+- With walls, a seat that has a wall or an object between it and the place is dropped with a warning, because the dot moves from the place to the seat in a straight line.
+- `frames.nodes[i]` carries `seats: [[x, y], ...]` only for places that have them.
+- A world without seats normalizes, hashes, runs and replays exactly as before: the key exists only when seats are given.
+
+**The world (`worlds/sushi-restaurant.json`).** What comes from the sketch and what is assumed:
+
+| From the sketch | Assumed |
+|---|---|
+| One tall rectangular room. | Scale: one square of the sketch's grid is 1 m, so the room is 7.8 m by 12 m. |
+| The kitchen fills the upper left: 60% of the width and 57% of the height. | The street door: the sketch has none. It is a 1 m gap in the bottom wall, right of centre. |
+| Four seats in one column on the right, beside the kitchen. | Seat times: about 30 minutes at the counter and 40 at the table. Prices: $38 and $32. |
+| Four seats in a 2 by 2 block in the lower left. | 36 people arriving between 6:00 and 7:50 pm on a Friday; four groups and ten cast members, all fictional. |
+
+- The kitchen is one object of kind `room`: solid, so nobody walks in, and drawn hatched with its name.
+- The two places ("Counter seats", "Table") have 4 servers each, one per seat. Each place's own point is in the open floor by the door: that is where people wait. The seats are where they sit.
+- The room is small on the engine's map on purpose. The engine words distance and sight in map units: `distanceWords` says "far" from 35 units, and a line is visible within 30. The first version drew the room 52 by 80 units, and a person at the door was told the counter was "far" and its line "unknown (can't see it from here)", which is false in one room. At 19.5 by 30 units (0.4 m per unit) both places read "close" and every line is in view.
+- `waiting` is `{ tellPatience: false, askAgainEvery: 10 }` (§16): the person decides whether to keep waiting, and is asked again every ten minutes.
+
+**Recorded run.** One Jev run (seed 7, `jev-1.14.0`, 103 decisions, under half a cent): of 36 people, 22 were seated and 14 left without eating. Both places had people waiting about 10 minutes on average, with up to 5 waiting at once. It is one seed and has not been checked against a real restaurant.
+- `scripts/pack_run.js <run folder> <out file>` packs a recorded run folder into one file: `{ meta, spec, frames, metrics, agents, remarks, decisions }`, the same parts `GET /api/runs/<id>/<part>` serves. `web/scope/mock/sushi-restaurant.json` is that Jev run, so the display can replay it with no key and no engine server.
+- To record it again after changing the world: `node bin/swarm.js run worlds/sushi-restaurant.json --provider jev --seed 7`, then pack the new run folder to the same file.
+
+**Display.** "Sushi restaurant" is the third case of the scope display (`?case=sushi`), listed in `web/scope/mock/index.json` with a `runTitle`.
+- A case file may be a packed engine run: `loadBundle` passes it through `adaptEngineRun`.
+- Served by the engine, a case with a `runTitle` takes the recorded runs with that title and the building takes the rest, so the restaurant's runs never appear under the building.
+- Every seat is drawn as a small chair whether or not someone sits on it. An object of kind `room` is labelled with its name. A place with seats is named at its seats, not where people wait.
+
+**Edit the room.** With the engine serving the page, "Edit the room" appears on a world that has seats (`web/scope/lib/edit.js`, rules in `lib/layout.js`).
+- Drag a seat to move it, click one and remove it (or use Delete and the arrow keys), or add a seat to a place. A place always has one server per seat.
+- A spot is refused, with the reason shown, when it is within 0.25 m of a wall or the kitchen, within 0.55 m of another seat, or has a wall between it and where people wait. Those are the engine's own rules, so every room the editor allows validates with no warning.
+- "Run again with rules" or "Run again with Jev" posts the changed world to `POST /api/runs` once per seed, on the seeds the room as sketched already has runs of with that provider (three at most), then opens the first new run.
+- Under the place's name a line compares the two rooms on the same seeds and provider, for example "Seated 24 of 36. Before your change: 21.3. Averaged over 3 runs each." When the change is no larger than the spread between the sketched room's own runs, it says the difference could be chance. The run picker marks runs of a changed room.
+- Only seats can be changed. Walls, the kitchen and the door cannot.
+
+**What it does not show.**
+- Parties. Each simulated person is one diner who takes one seat and decides alone. A couple is two arrivals, and nothing keeps them together.
+- Reservations, takeout, a waiting list, or waiting outside.
+- The real door, the real seat times and the real number of people on a Friday: all assumed.
+- More than one seed, or any check against real customers.

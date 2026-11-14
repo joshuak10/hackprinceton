@@ -150,7 +150,8 @@ export class Sim {
     this.t = 0; this.tick = 0;
     this.nodes = this.spec.nodes.map((n, i) => ({
       ...n, idx: i, queue: [], busy: [], arrivals: 0, served: 0, abandoned: 0,
-      waitSum: 0, waitN: 0, maxQueue: 0, busyTime: 0, walkLog: []
+      waitSum: 0, waitN: 0, maxQueue: 0, busyTime: 0, walkLog: [],
+      ...(n.seats ? { seatTaken: n.seats.map(() => false) } : {})
     }));
     this.byId = new Map(this.nodes.map(n => [n.id, n]));
     this.arch = this.spec.archetypes.map((a, i) => ({ ...a, idx: i, count: 0 }));
@@ -219,7 +220,7 @@ export class Sim {
 
     this.frames = {
       mode: this.mode,
-      nodes: this.nodes.map(n => ({ id: n.id, name: n.name, kind: n.kind, x: n.x, y: n.y })),
+      nodes: this.nodes.map(n => ({ id: n.id, name: n.name, kind: n.kind, x: n.x, y: n.y, ...(n.seats ? { seats: n.seats.map(s => [round2(s.x), round2(s.y)]) } : {}) })),
       edges: route ? this.edges.map(e => {
         const out = { id: e.id, name: e.name, from: e.from, to: e.to };
         if (e.via?.length) out.via = e.via.map(p => ({ x: round2(p.x), y: round2(p.y) }));
@@ -696,6 +697,7 @@ export class Sim {
             a.placesDone.push(n.name);
             a.servedAt.push(n.id);
             a.spent += a.quote?.id === n.id ? a.quote.price : n.price;
+            if (a.seat != null) { n.seatTaken[a.seat] = false; a.seat = null; }
             this.log(a, `Finished at ${n.name}`);
             this.decide(a, 'next', n);
           } else still.push(a);
@@ -731,6 +733,12 @@ export class Sim {
         n.waitSum += wt; n.waitN++; a.waitTotal += wt; a.state = 'serve';
         a.tf = t + this.serviceTime(n, a);
         if (wt >= 1) this.log(a, `Waited ${Math.round(wt)} min at ${n.name}`);
+        // Seats (§18): the person keeps the first free seat until they finish. With more servers than seats,
+        // the people left over are drawn around the place as before.
+        if (n.seats) {
+          const k = n.seats.findIndex((_, i) => !n.seatTaken[i]);
+          if (k >= 0) { n.seatTaken[k] = true; a.seat = k; }
+        }
         n.busy.push(a);
       }
       n.busyTime += n.busy.length * dt;
@@ -1169,6 +1177,7 @@ export class Sim {
           putNear(a, n.x, n.y, Math.cos(ang) * rad, Math.sin(ang) * rad, a.req ? STATE_CODE.think : STATE_CODE.queue);
         });
         for (const a of n.busy) {
+          if (n.seats && a.seat != null) { put(a, n.seats[a.seat].x, n.seats[a.seat].y, a.req ? STATE_CODE.think : STATE_CODE.serve); continue; }
           const ang = a.jit * 6.2832, rad = 0.3 + 1.5 * ((a.jit * 7.3) % 1);
           putNear(a, n.x, n.y, Math.cos(ang) * rad, Math.sin(ang) * rad, a.req ? STATE_CODE.think : STATE_CODE.serve);
         }

@@ -78,6 +78,7 @@ Common fields:
 | `servers` | `service` | integer, 1–1000 | 10 | People served at the same time: desks, beds, cooks, ride seats, tables' seats. |
 | `serviceTime` | `service` | minutes, 0.2–720 | 5 | Average minutes per person per server. Capacity per hour = `servers` ÷ `serviceTime` × 60. |
 | `serviceDist` | `service` | `uniform`, `exp`, `fixed` | `uniform` | Spread of service times: uniform 0.6–1.4 × `serviceTime`; exponential with mean `serviceTime`; or exactly `serviceTime`. |
+| `seats` | `service` | up to 64 points `{ x, y }`, 0–100 | none | Where the people being served are drawn, one person per seat: a person takes the first free seat when their service starts and keeps it until they finish. Display only: the walk still ends at the place, and lines form there. Give one seat per server. With more servers than seats, the people left over are drawn around the place. With walls, a seat that has a wall or object between it and the place is ignored with a warning. |
 | `appeal` | `service` | 0–1 | 0.5 | Popularity and reputation as a number. Used by the rules policy (section 8). |
 | `price` | `service` | dollars, ≥ 0 | 0 | What it costs one person. Agents see "free" or "about $N". |
 | `tags` | `service` | up to 12 lowercase strings | `[]` | What the place offers (`"pediatric"`, `"coffee"`, `"thrill"`). Matched against archetype `needs` and `likes`; shown to agents as "offers". |
@@ -306,7 +307,7 @@ These are deliberately small. A real world should have a 10–20 person cast.
 }
 ```
 
-Full examples: [theme-park](theme-park.json) and [er-network](er-network.json) (visit), [food-hall-lunch](food-hall-lunch.json) (visit with seating as a place), [rush-hour-roads](rush-hour-roads.json) (route, roads), [office-lobby-morning](office-lobby-morning.json) (route, a building: doors, turnstiles, elevators and stairs as links).
+Full examples: [theme-park](theme-park.json) and [er-network](er-network.json) (visit), [food-hall-lunch](food-hall-lunch.json) (visit with seating as a place), [sushi-restaurant](sushi-restaurant.json) (visit, one walled room where each person being served sits in a drawn seat), [rush-hour-roads](rush-hour-roads.json) (route, roads), [office-lobby-morning](office-lobby-morning.json) (route, a building: doors, turnstiles, elevators and stairs as links).
 
 ## 13. Checklist
 

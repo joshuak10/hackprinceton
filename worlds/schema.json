@@ -134,7 +134,12 @@
         "appeal": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5, "description": "Visit service: popularity and reputation as a number, used by the rules policy. Keep it consistent with about." },
         "price": { "type": "number", "minimum": 0, "default": 0, "description": "Visit service: dollars per person. Agents see 'free' or 'about $N'. What each person pays (after any offer) adds up in their spent." },
         "tags": { "$ref": "#/$defs/tags", "description": "Visit service: what the place offers. Matched against archetype needs (hard filter) and likes (soft preference)." },
-        "about": { "type": "string", "maxLength": 160, "description": "Visit service: the reputation agents read, in plain words (known for, rumors, quirks)." }
+        "about": { "type": "string", "maxLength": 160, "description": "Visit service: the reputation agents read, in plain words (known for, rumors, quirks)." },
+        "seats": {
+          "type": "array", "maxItems": 64,
+          "description": "Visit service: where the people being served are drawn, one person per seat, in the order they are filled. Display only: the walk still ends at the place. A seat with a wall or object between it and the place is ignored.",
+          "items": { "type": "object", "additionalProperties": false, "required": ["x", "y"], "properties": { "x": { "type": "number", "minimum": 0, "maximum": 100 }, "y": { "type": "number", "minimum": 0, "maximum": 100 } } }
+        }
       }
     },
     "edge": {

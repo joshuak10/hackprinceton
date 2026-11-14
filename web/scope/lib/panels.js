@@ -27,9 +27,9 @@ export function renderCounters(root, st) {
   } else {
     const inLine = agents.filter(a => a.s === 1).length;
     items = [
-      [fmt(f.c.active), 'In the building now'],
+      [fmt(f.c.active), st.caseId === 'sushi' ? 'In the restaurant now' : 'In the building now'],
       [fmt(inLine), 'In a line now'],
-      [fmt(f.c.served), 'Served so far'],
+      [fmt(f.c.served), st.caseId === 'sushi' ? 'Seated so far' : 'Served so far'],
       [fmt(f.c.abandoned), 'Walked away or gave up', f.c.abandoned > 0]
     ];
   }

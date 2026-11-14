@@ -35,7 +35,8 @@
       <div class="maphead">
         <div class="place">
           <h1 id="placeTitle">Choose what to simulate</h1>
-          <p id="placeSub" class="sub">Two cases are ready: crowding inside a building, and a retail parking lot.</p>
+          <p id="placeSub" class="sub">Three cases are ready: crowding inside a building, a retail parking lot, and an eight-seat sushi restaurant.</p>
+          <p id="compareLine" class="compare" role="status" hidden></p>
         </div>
         <div class="headtools">
           <label class="runpick" id="runPick" hidden><span>Run</span><select id="runSel" aria-label="Recorded run"></select></label>
@@ -59,6 +60,7 @@
             <button type="button" class="chip on" data-layer="agents" aria-pressed="true">People</button>
             <button type="button" class="chip on" data-layer="labels" aria-pressed="true">Labels</button>
           </div>
+          <button type="button" class="chip edit" id="editBtn" hidden>Edit the room</button>
           <button type="button" class="chip" id="resetView" hidden>Reset view</button>
         </div>
         <div class="callout" id="callout" hidden></div>
@@ -94,6 +96,7 @@
 
     <aside class="side idle" id="side" aria-label="What is happening">
       <p class="side-empty">Counters, bottlenecks and incidents appear here once a simulation runs.</p>
+      <section class="block edit-panel" id="editPanel" hidden aria-label="Edit the room"></section>
       <section class="counters" id="counters" aria-label="Right now"></section>
       <section class="fb-preview" id="feedbackPreview" hidden aria-label="Suggestions">
         <div class="fb-preview-text">

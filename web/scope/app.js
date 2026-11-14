@@ -1,5 +1,5 @@
 // Swarmscope scope display: wiring. One state object; derive → draw → panels.
-// URL params for reproducible views: ?case=building|parking&t=40&floor=0&theme=light&autoplay=0
+// URL params for reproducible views: ?case=building|parking|sushi&t=40&floor=0&theme=light&autoplay=0
 import { prepareFrames, frameIndex, frameAt, agentsAt, clockText } from './lib/frames.js';
 import { deriveRun } from './lib/incidents.js';
 import { createHeat, calibrate, advance } from './lib/heat.js';
@@ -8,7 +8,9 @@ import { createTimeline } from './lib/timeline.js';
 import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer } from './lib/panels.js';
 import { matchCase, showConfirm, showChoices, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
-import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun } from './lib/source.js';
+import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics } from './lib/source.js';
+import { createEditor } from './lib/edit.js';
+import { seatedPlaces, sameLayout, describeChanges, pairRuns, compare, compareWords } from './lib/layout.js';
 import { createFeedback, feedbackTarget } from './lib/feedback.js';
 
 const $ = id => document.getElementById(id);
@@ -74,7 +76,8 @@ function drawState() {
     F: st.F, t: st.t, heat: st.heat, incidents: st.run.incidents, filters: st.filters,
     selectedIncident: st.selectedIncident, selectedAgent: st.selectedAgent, frame: frameAt(st.F, st.t),
     nodes: st.bundle.frames.nodes || [], colorBy: st.colorBy, frustration: st.run.frustration.at,
-    archIndex: st.archIndex, agentArch: st.agentArch, reducedMotion
+    archIndex: st.archIndex, agentArch: st.agentArch, reducedMotion,
+    edit: editor.active ? editor.drawState() : null
   };
 }
 
@@ -115,6 +118,11 @@ function setBundle(bundle, caseInfo) {
     : prov === 'jev' || prov === 'replay' ? 'Every decision in this run came from Jev (replays make no new requests).'
       : 'Decisions came from the engine\'s rule policy, not Jev.';
   renderRunPicker();
+  if (editor.active) leaveEdit();
+  $('editBtn').hidden = !editor.available(bundle);
+  $('editBtn').disabled = !st.live;
+  $('editBtn').title = st.live ? 'Move, add or remove seats, then run the changed room' : 'Start the engine to run a changed room: node bin/swarm.js serve';
+  updateCompare();
   // Suggestions belong to this run and are only requested when someone clicks Suggestions.
   feedback.reset(feedbackTarget(bundle, caseInfo), st.question);
 
@@ -171,7 +179,9 @@ function renderRunPicker() {
     const when = r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
     o.value = r.meta.runId;
     const n = r.meta.decisions || 0;
-    o.textContent = `${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}${n ? ` (${n.toLocaleString('en-US')} decisions)` : ''}`;
+    const seats = r.spec.nodes.reduce((k, x) => k + (x.seats?.length || 0), 0);
+    const room = c.sketch && !sameLayout(r.spec, c.sketch) ? `Changed room, ${seats} seats: ` : '';
+    o.textContent = `${room}${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}${n ? ` (${n.toLocaleString('en-US')} decisions)` : ''}`;
     o.selected = r.meta.runId === (selectedRun(c)?.meta.runId);
     return o;
   }));
@@ -194,7 +204,7 @@ async function runOnServer(c, provider) {
     onStatus: s => p.set(1, `Running the swarm: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated${s.decisions ? `, ${s.decisions} decisions` : ''}`)
   });
   p.set(2);
-  c.runs = await apiBuildingRuns();
+  c.runs = await apiBuildingRuns(c.runTitle ? { title: c.runTitle, max: 24 } : { notTitles: Object.values(st.cases).filter(x => x.runTitle).map(x => x.runTitle) });
   c.selected = runId;
   const bundle = await loadEngineRun(runId);
   p.done();
@@ -251,6 +261,16 @@ async function openCase(id, { question = '', progress = false, autoplay = true, 
 // Staged progress for mock runs, so the flow matches what a live run will look like. Labelled as mock.
 async function mockProgress(id, load) {
   const c = st.cases[id];
+  if (id === 'sushi') {
+    // The sushi file is a recorded Jev run, not a mock: say so.
+    const p = showProgress($('progress'), [{ label: 'Reading the sketched room' }, { label: 'Opening the recorded Jev run' }], 'Recorded Jev run. Replaying it makes no Jev requests.');
+    p.set(0);
+    const b = await load;
+    p.set(1, `Opening the recorded Jev run: ${b.agents.length} diners, ${b.decisions.length} decisions`);
+    await new Promise(r => setTimeout(r, reducedMotion ? 0 : 500));
+    p.done();
+    return;
+  }
   const steps = id === 'parking'
     ? [{ label: 'Reading the lot layout' }, { label: 'Casting drivers' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }]
     : [{ label: c.source === 'matterport' ? 'Reading the Matterport floor plan and mesh' : 'Reading the floor plan' }, { label: 'Casting people' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }];
@@ -302,7 +322,7 @@ function renderPanels() {
   const fi = frameIndex(st.F, st.t);
   st.allAgents = agentsAt(st.F, st.t);
   const ps = {
-    geometry: st.bundle.geometry, frame: frameAt(st.F, st.t), visibleAgents: st.allAgents, t: st.t,
+    caseId: st.caseId, geometry: st.bundle.geometry, frame: frameAt(st.F, st.t), visibleAgents: st.allAgents, t: st.t,
     incidents: st.run.incidents, filters: st.filters, selectedIncident: st.selectedIncident, floor: st.floor,
     bottlenecks: st.run.bottlenecks.at(fi, st.t), bottleneckMax: st.run.bottlenecks.max(),
     bottlenecksNow: st.run.bottlenecks.now(fi), bottleneckNowMax: st.run.bottlenecks.nowMax(), rankMode: st.rankMode
@@ -461,13 +481,26 @@ $('resetView').addEventListener('click', () => {
 
 const map = $('map');
 let drag = null;
+let seatDrag = false;
+const mapPoint = e => { const r = map.getBoundingClientRect(); return R.toMap(e.clientX - r.left, e.clientY - r.top); };
+const seatReach = () => 16 / R.scale();          // a seat is grabbed within 16 px of its middle
 map.addEventListener('pointerdown', e => {
   if (!st.bundle) return;
+  if (editor.active) {
+    const [mx, my] = mapPoint(e);
+    if (editor.pointerDown(mx, my, seatReach())) {
+      seatDrag = true;
+      map.setPointerCapture(e.pointerId);
+      map.classList.add('grabbing');
+      return;
+    }
+  }
   drag = { x: e.clientX, y: e.clientY, vx: R.view.x, vy: R.view.y, moved: false };
   map.setPointerCapture(e.pointerId);
 });
 map.addEventListener('pointermove', e => {
   if (!st.bundle) return;
+  if (seatDrag) { editor.pointerMove(...mapPoint(e)); return; }
   if (drag) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; map.classList.add('dragging'); }
@@ -480,15 +513,23 @@ map.addEventListener('pointermove', e => {
     }
     return;
   }
+  if (editor.active) {
+    const [mx, my] = mapPoint(e);
+    map.classList.toggle('grab', Boolean(seatedPlaces(editor.spec).some(p => p.seats.some(s => Math.hypot(s.x - mx, s.y - my) <= seatReach()))));
+    return;
+  }
   const r = map.getBoundingClientRect();
   map.classList.toggle('pointing', !!R.hit(drawState(), e.clientX - r.left, e.clientY - r.top));
 });
+map.addEventListener('pointercancel', () => { if (seatDrag) { seatDrag = false; editor.pointerUp(); map.classList.remove('grabbing'); } drag = null; });
 map.addEventListener('pointerup', e => {
+  if (seatDrag) { seatDrag = false; editor.pointerUp(); map.classList.remove('grabbing'); return; }
   if (!st.bundle || !drag) return;
   const wasDrag = drag.moved;
   drag = null;
   map.classList.remove('dragging');
   if (wasDrag) return;
+  if (editor.active) { editor.select(null); return; }      // a click on the floor lets go of the selected seat
   const r = map.getBoundingClientRect();
   const hit = R.hit(drawState(), e.clientX - r.left, e.clientY - r.top);
   if (hit?.type === 'agent') selectAgent(hit.id);
@@ -584,12 +625,21 @@ function factsFor(id) {
       ['Scenario', r.spec.title],
       ['People', `${m.agents} over ${Math.round(m.duration)} minutes`],
       ['When', `${clockText(m.clockStart, 0)} to ${clockText(m.clockStart, m.duration)}`],
-      ['Map', `Matterport walls and doors (${r.spec.walls.length} walls, ${r.spec.doors?.length || 0} doors); counters from the proposed fit-out, assumed`],
+      ['Map', id === 'sushi'
+        ? `Drawn from a hand sketch: one room, a kitchen and ${r.spec.nodes.reduce((n, x) => n + (x.seats?.length || 0), 0)} seats; the door position is assumed`
+        : `Matterport walls and doors (${r.spec.walls.length} walls, ${r.spec.doors?.length || 0} doors); counters from the proposed fit-out, assumed`],
       ['Selected run', `${providerWords(m)}, seed ${m.seed}${m.provider === 'jev' ? `, ${m.decisions} decisions` : ''}`],
       ...(st.live?.jev ? [['A new Jev run', jevRuns.length ? `about ${jevRuns[0].meta.providerStats?.requests ?? jevRuns[0].meta.decisions} requests, like the last one` : 'about 1,000 requests for this building (a few cents at TypeSafe\'s published price, unverified)']] : [])
     ];
   }
   const mock = true;
+  if (id === 'sushi') {
+    return [
+      ['People', '36 over two and a half hours'], ['When', 'Friday dinner, 6:00 to 8:30 pm'],
+      ['Map', 'Drawn from a hand sketch: one room, a kitchen and eight seats; the door position is assumed'],
+      ['Decisions', 'Recorded from Jev, one request per decision; replaying makes no new requests']
+    ];
+  }
   if (id === 'parking') {
     return [
       ['Drivers', '350 over two hours'], ['When', 'Saturday, 12:30 to 2:30 pm'],
@@ -625,7 +675,7 @@ $('askForm').addEventListener('submit', e => {
   const text = $('askIn').value.trim();
   const cases = Object.values(st.cases);
   if (!text) {
-    showChoices($('askCard'), { message: 'Pick one of the two cases Swarmscope can run right now.', cases, onPick: id => confirmCase(id, st.cases[id].question), onCancel: () => hideCard($('askCard')) });
+    showChoices($('askCard'), { message: 'Pick one of the three cases Swarmscope can run right now.', cases, onPick: id => confirmCase(id, st.cases[id].question), onCancel: () => hideCard($('askCard')) });
     return;
   }
   const m = matchCase(text);
@@ -633,8 +683,8 @@ $('askForm').addEventListener('submit', e => {
   else {
     showChoices($('askCard'), {
       message: m?.tie
-        ? 'That could be either case. Which one did you mean?'
-        : 'Swarmscope can simulate two things right now: crowding inside a building, and a retail parking lot. Pick the closer one, or rephrase your question.',
+        ? 'That could be more than one case. Which one did you mean?'
+        : 'Swarmscope can simulate three things right now: crowding inside a building, a retail parking lot, and seating at a small sushi restaurant. Pick the closest one, or rephrase your question.',
       cases, onPick: id => confirmCase(id, text), onCancel: () => hideCard($('askCard'))
     });
   }
@@ -647,6 +697,11 @@ document.addEventListener('keydown', e => {
   // so it doesn't also toggle playback; the arrow keys still step the replay.
   const typing = e.target.closest('input, select, textarea, [role="tab"], [contenteditable="true"]');
   if (e.key === ' ' && e.target.closest('button, a, [role="button"]')) return;
+  // Edit the room: the editor takes Escape, Delete and the arrow keys; nothing drives the replay meanwhile.
+  if (editor.active && $('askCard').hidden) {
+    if (!typing && editor.key(e)) e.preventDefault();
+    return;
+  }
   if (e.key === 'Escape') {
     if (!$('askCard').hidden) hideCard($('askCard'));
     else if (!$('tour').hidden) tour.hide();
@@ -719,7 +774,8 @@ function renderEmpty() {
     const p = document.createElement('p'); p.textContent = c.question;
     const src = document.createElement('p'); src.className = 'src';
     src.textContent = c.runs?.length ? `${c.place}, recorded by the engine (${providerWords(selectedRun(c).meta)})`
-      : c.source === 'matterport' ? `${c.place}, from a Matterport scan (mock run)` : c.source === 'synthetic' ? `${c.place} (drawn, mock run)` : c.place;
+      : c.source === 'matterport' ? `${c.place}, from a Matterport scan (mock run)` : c.source === 'synthetic' ? `${c.place} (drawn, mock run)`
+        : c.source === 'drawn' ? `${c.place}, drawn from a hand sketch (recorded Jev run)` : c.place;
     text.append(h, p, src);
     b.append(cv, text);
     b.addEventListener('click', () => { $('askIn').value = c.question; confirmCase(c.id, c.question); });
@@ -757,6 +813,120 @@ async function drawThumbs() {
   }
 }
 
+// Recorded engine runs for each case, newest first; a Jev run with the lowest seed is selected when there is one.
+async function attachRuns(cases) {
+  const titled = Object.values(cases).filter(c => c.runTitle);
+  const pick = runs => {
+    const jev = runs.filter(r => r.meta.provider === 'jev' || r.meta.provider === 'replay');
+    return (jev.length ? jev.slice().sort((a, b) => (a.meta.seed ?? 0) - (b.meta.seed ?? 0))[0] : runs[0]).meta.runId;
+  };
+  for (const c of titled) {
+    // The room as sketched is the packed file's world: every changed room is compared with it.
+    if (!c.sketch) c.sketch = await loadBundle(c.file).then(b => b.rawSpec || null).catch(() => null);
+    const runs = await apiBuildingRuns({ title: c.runTitle, max: 24 });
+    // The page opens on the room as sketched, not on a changed room someone ran later.
+    const sketched = c.sketch ? runs.filter(r => sameLayout(r.spec, c.sketch)) : [];
+    if (runs.length) cases[c.id] = { ...c, runs, selected: cases[c.id].selected && runs.some(r => r.meta.runId === cases[c.id].selected) ? cases[c.id].selected : pick(sketched.length ? sketched : runs) };
+    else { delete cases[c.id].runs; delete cases[c.id].selected; }
+  }
+  if (cases.building) {
+    const runs = await apiBuildingRuns({ notTitles: titled.map(c => c.runTitle) });
+    if (runs.length) {
+      const jev = runs.find(r => r.meta.provider === 'jev' || r.meta.provider === 'replay');
+      cases.building = { ...cases.building, runs, selected: (jev || runs[0]).meta.runId, source: 'engine', question: runs[0].meta.question || cases.building.question };
+    }
+  }
+}
+
+// ---------- edit the room (§18) ----------
+const editor = createEditor({ panel: $('editPanel'), onChange: () => { st.dirty = true; }, onRun: runEdited, onClose: leaveEdit });
+const sameProvider = p => (p === 'replay' ? 'jev' : p);
+
+async function enterEdit() {
+  if (!st.bundle || editor.active || !st.live) return;
+  const c = st.caseInfo;
+  pause();
+  closeInspector();
+  st.selectedIncident = null;
+  $('callout').hidden = true;
+  if (c && !c.sketch) c.sketch = c.file ? await loadBundle(c.file).then(b => b.rawSpec || null).catch(() => null) : null;
+  editor.open({ spec: st.bundle.rawSpec, sketch: c?.sketch || st.bundle.rawSpec, hasJev: Boolean(st.live?.jev) });
+  $('side').classList.add('editing');
+  $('editBtn').classList.add('on');
+  $('editBtn').setAttribute('aria-pressed', 'true');
+  $('legendMini').hidden = true;
+  $('timeline').hidden = true;
+  map.classList.add('editing');
+  st.dirty = true;
+}
+
+function leaveEdit() {
+  editor.close();
+  $('side').classList.remove('editing');
+  $('editBtn').classList.remove('on');
+  $('editBtn').setAttribute('aria-pressed', 'false');
+  $('legendMini').hidden = false;
+  $('timeline').hidden = false;
+  map.classList.remove('editing', 'grab', 'grabbing');
+  st.lastPanels = -1;
+  st.dirty = true;
+  if (st.bundle) update();
+}
+$('editBtn').addEventListener('click', () => (editor.active ? leaveEdit() : enterEdit()));
+
+// Run the edited room on the seeds the sketched room already has runs of with this provider (three at most), one
+// after another, then open the first of the new runs. A seed with no run of the sketched room gets one first.
+async function runEdited(provider, spec) {
+  const c = st.caseInfo, sketch = editor.sketch;
+  const have = [...new Set((c.runs || []).filter(r => sameProvider(r.meta.provider) === provider && sameLayout(r.spec, sketch)).map(r => r.meta.seed))]
+    .filter(Number.isFinite).sort((a, b) => a - b).slice(0, 3);
+  const seeds = have.length ? have : [7];
+  const jobs = [];
+  for (const seed of seeds) {
+    if (!have.includes(seed)) jobs.push({ spec: st.bundle.rawSpec && sameLayout(st.bundle.rawSpec, sketch) ? st.bundle.rawSpec : sketch, seed, what: 'the room as sketched' });
+    jobs.push({ spec, seed, what: 'your room', mine: true });
+  }
+  const p = showProgress($('progress'), [...jobs.map((j, i) => ({ label: `Run ${i + 1} of ${jobs.length}: ${j.what}, seed ${j.seed}` })), { label: 'Opening the replay' }],
+    provider === 'jev' ? 'Live Jev runs: every decision is one Jev request to TypeSafe.' : 'Rules runs: the engine\'s rule policy decides; no Jev requests.');
+  let first = null;
+  try {
+    for (let i = 0; i < jobs.length; i++) {
+      const j = jobs[i];
+      p.set(i);
+      const id = await apiStartRun({
+        spec: j.spec, provider, seed: j.seed,
+        onStatus: s => p.set(i, `Run ${i + 1} of ${jobs.length}: ${j.what}, seed ${j.seed}, ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated${s.decisions ? `, ${s.decisions} decisions` : ''}`)
+      });
+      if (j.mine && first == null) first = id;
+    }
+    p.set(jobs.length);
+    c.runs = await apiBuildingRuns({ title: c.runTitle, max: 24 });
+    c.selected = first;
+  } finally {
+    p.done();
+  }
+  leaveEdit();
+  await openCase(c.id, { question: st.question, autoplay: true });
+}
+
+// Under the place's name: how a changed room did against the room as sketched, on the same seeds and provider.
+let compareToken = 0;
+async function updateCompare() {
+  const line = $('compareLine'), token = ++compareToken;
+  line.hidden = true;
+  const c = st.caseInfo, mine = st.bundle?.rawSpec;
+  if (!c?.runs?.length || !c.sketch || !mine || sameLayout(c.sketch, mine)) return;
+  const provider = sameProvider(st.bundle.meta.provider);
+  const wanted = c.runs.filter(r => sameProvider(r.meta.provider) === provider && (sameLayout(r.spec, c.sketch) || sameLayout(r.spec, mine)));
+  const runs = await Promise.all(wanted.map(async r => ({ ...r, metrics: await apiRunMetrics(r.meta.runId) })));
+  if (token !== compareToken) return;                  // another run was opened meanwhile
+  const result = compare(pairRuns(c.sketch, mine, runs), provider);
+  const changes = describeChanges(c.sketch, mine).join('. ');
+  line.replaceChildren(result ? compareWords(result) : 'This is a changed room. There is no run of the room as sketched with the same seed to compare it with.');
+  if (changes) line.append(Object.assign(document.createElement('span'), { textContent: `Your change: ${changes}. ${provider === 'jev' ? 'Decided by Jev.' : 'Decided by the rules policy, not Jev.'}` }));
+  line.hidden = false;
+}
+
 // ---------- start ----------
 async function start() {
   R.resize();
@@ -766,14 +936,9 @@ async function start() {
   st.cases = cases;
   st.config = config;
   st.live = live;
-  // Served by the engine (node bin/swarm.js serve): the building case plays recorded engine runs.
-  if (live && cases.building) {
-    const runs = await apiBuildingRuns();
-    if (runs.length) {
-      const jev = runs.find(r => r.meta.provider === 'jev' || r.meta.provider === 'replay');
-      cases.building = { ...cases.building, runs, selected: (jev || runs[0]).meta.runId, source: 'engine', question: runs[0].meta.question || cases.building.question };
-    }
-  }
+  // Served by the engine (node bin/swarm.js serve): a case plays the recorded engine runs of its own world.
+  // A case with a runTitle (the sushi restaurant) takes the runs with that title; the building takes the rest.
+  if (live) await attachRuns(cases);
   if (!Object.keys(cases).length) {
     $('emptyState').replaceChildren(Object.assign(document.createElement('p'), { className: 'lead', textContent: 'No runs found. Run "node scripts/mock_runs.js" from the repo root to build the mock runs, then reload.' }));
     return;

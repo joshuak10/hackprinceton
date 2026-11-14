@@ -1,4 +1,4 @@
-// Prompt box: match free text to one of the two supported cases, confirm, then show run progress.
+// Prompt box: match free text to one of the supported cases, confirm, then show run progress.
 // Later this becomes Claude's compile step (POST /api/compile); the confirm card stays.
 
 const KEYWORDS = {
@@ -6,7 +6,9 @@ const KEYWORDS = {
     'stair', 'elevator', 'office', 'offices', 'cafe', 'café', 'counter', 'restroom', 'checkout', 'line', 'queue', 'crowd', 'crowding',
     'congestion', 'congested', 'stuck', 'lunch', 'walk', 'walking', 'people', 'matterport', 'market', 'evacuat'],
   parking: ['parking', 'park', 'lot', 'car', 'cars', 'drive', 'driving', 'driver', 'drivers', 'space', 'spaces', 'stall', 'stalls', 'traffic',
-    'entrance', 'exit', 'saturday', 'shopping center', 'retail center', 'strip', 'vexcel', 'aerial', 'circling', 'garage']
+    'entrance', 'exit', 'saturday', 'shopping center', 'retail center', 'strip', 'vexcel', 'aerial', 'circling', 'garage'],
+  sushi: ['sushi', 'restaurant', 'seat', 'seats', 'seated', 'table', 'tables', 'diner', 'diners', 'dinner', 'omakase', 'chef', 'kitchen',
+    'reservation', 'eight-seat']
 };
 
 export function matchCase(text) {
