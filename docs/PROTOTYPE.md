@@ -930,3 +930,35 @@ Both behaviors stay the default. A visit world can switch them off with an optio
 - Validation: a non-boolean `tellPatience` becomes `true`; `askAgainEvery` between 0 and 5 becomes 5 and above 240 becomes 240; each with a warning.
 - `[open]` `feeling` is still handed to Jev as the engine's word for the person's last frustration score. In the same test, frustration answers separated by person only when it was left out.
 - `[open]` There is no "speak up" action: a message such as "tell the nurse now and you go first" can only be answered by staying in line or leaving it.
+
+---
+
+## 17. Ask the room: one moment, every customer, live (Nov 14)
+
+**Why.** A run answers "what happens over a morning" in tens of seconds. An owner, or a judge, also wants to try a change and see who reacts while they are still looking at the page. Asking Jev one moment for every cast member takes about a quarter of a second, so that is what this does.
+
+**What it is.** `run/room.js` builds, for each cast member, the arrival question the engine itself asks ("Just arrived. Choosing where to go first.") through `visitObservation`, with the line, price and sign taken from the page. For the same person and moment the request is byte-identical to the engine's (tested). It never states a patience verdict, whatever the world's `waiting` says.
+
+- `roomView(spec)`: the service places, the cast, the default scenario, limits.
+- `normalizeScenario(spec, raw)`: `{ shop, ahead: { placeId: people in line }, price, priorPrice, sign, minute }`, all clamped. The shop is the first service place unless named. A line of n people reads as a wait of (n + 1) × serviceTime ÷ servers.
+- `askRoom({ spec, scenario, compareTo, edits, only, provider })` asks each person up to three questions:
+  - **before:** the default moment (or `compareTo`), with the person as written in the world;
+  - **now:** the page's scenario, with the page's rewrite of that person (`edits[id]` may replace `bio`, `personality`, `goal` for this ask only);
+  - **neutral:** as now, with a fixed neutral sign about restrooms, only when the scenario has a sign.
+- `recordProvider(record)`: answers only from recorded Jev answers.
+
+**Rules the page follows, each from a measured finding (§16 and the Nov 14 café tests).**
+- A sign is judged against the neutral sign, never against no sign: any added sentence moves Jev's answers by a few points.
+- A change under 5 points counts as no change (`ROOM_NOISE`): asking the same question twice differs by about 2 points on average and sometimes more.
+- Prices are whole dollars, because `priceWords` rounds to dollars. "They know it was $5 last week" appends `(it was about $5 last week)` to the price the person is told. That wording lives here, not in the engine: it is a stand-in for the planned memory of past visits.
+- Option order is fixed (`shuffle: false`) in every question, so adding a sign cannot reorder the choices.
+
+**Server.** `GET /api/room[?world=file]` returns the view plus `live` (a Jev key is set) and `recorded` (answers on record). `POST /api/room/ask` takes `{ world?, scenario, compareTo?, edits?, only?, offline? }` and returns each person's `before`, `now`, `neutral`, what they were `told`, and `source` (`live`, `recorded` or `failed`), with the shop's share before and now. One ask at a time (429 otherwise); at most 3 questions per cast member and 120 per ask.
+
+**Recorded answers.** Every live answer is kept by request hash in `data/room/record.json` (never committed). `web/room/seed-record.json` holds 696 recorded answers for the example world: prices $3 to $9 with and without the remembered price, lines of 0 to 20 at each place, and the four preset signs. With no key the page answers from the record, and a question that was never asked live is shown as unanswered, never invented. A test fails if the example world and the seed drift apart.
+
+**Page.** `web/room/` (served at `/room/`): controls on the left (lines, price, sign), every cast member on the right with a bar for the chance of choosing the shop, a tick for before, and the change. Opening a person shows exactly what they were told and lets you rewrite their situation and ask again. `?world=file` loads another visit world from `worlds/`.
+
+**Example world.** `worlds/alder-pine-cafe.json`: a fictional independent café with a chain across the street, 12 cast members, `waiting.tellPatience: false`.
+
+**What it does not show.** One moment, not a morning: no line dynamics, no word of mouth, no repeat visits. The people are unvalidated. Jev reacts weakly to price unless a person's description mentions money, so price answers show direction, not size.

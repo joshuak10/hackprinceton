@@ -1,0 +1,38 @@
+{
+  "title": "Alder & Pine Coffee, weekday morning (fictional)",
+  "question": "If the cafe raises its price, which kinds of customers go across the street or skip coffee?",
+  "context": "A weekday morning on Maple Street in a fictional college town. Alder & Pine Coffee is an independent cafe. Brewline, a chain coffee shop, is directly across the street.",
+  "leaveLabel": "Skip coffee this morning",
+  "mode": "visit",
+  "duration": 210,
+  "clockStart": 420,
+  "travelSpeed": 40,
+  "arrivals": { "total": 280, "start": 0, "end": 180, "shape": "peak" },
+  "waiting": { "tellPatience": false, "askAgainEvery": 5 },
+  "nodes": [
+    { "id": "west", "name": "Maple Street, west end", "kind": "gate", "x": 30, "y": 50, "weight": 1 },
+    { "id": "east", "name": "Maple Street, east end", "kind": "gate", "x": 70, "y": 50, "weight": 1 },
+    { "id": "cafe", "name": "Alder & Pine Coffee", "kind": "service", "x": 45, "y": 42, "servers": 2, "serviceTime": 2.5, "appeal": 0.75, "price": 5, "tags": ["coffee"], "about": "Independent cafe. Espresso drinks made to order by baristas who know the regulars by name. One register." },
+    { "id": "chain", "name": "Brewline (chain)", "kind": "service", "x": 55, "y": 58, "servers": 3, "serviceTime": 1.5, "appeal": 0.5, "price": 5, "tags": ["coffee"], "about": "Chain coffee shop across the street. Fast and consistent, with mobile ordering. Nothing special." }
+  ],
+  "archetypes": [
+    { "id": "regulars", "name": "Regulars", "share": 0.3, "needs": ["coffee"], "visits": 1, "patience": 10, "info": 0 },
+    { "id": "students", "name": "Students", "share": 0.25, "needs": ["coffee"], "visits": 1, "patience": 7, "info": 0 },
+    { "id": "commuters", "name": "Commuters", "share": 0.3, "needs": ["coffee"], "visits": 1, "patience": 5, "info": 0 },
+    { "id": "passersby", "name": "Passers-by", "share": 0.15, "needs": ["coffee"], "visits": 1, "patience": 6, "info": 0 }
+  ],
+  "minds": [
+    { "id": "june", "name": "June Hadley", "age": 67, "archetype": "regulars", "bio": "Retired teacher. Her morning walk has ended at Alder & Pine every day for six years, and the baristas start her order when she walks in.", "personality": "warm, loyal, on a fixed pension", "goal": "Her usual coffee and a few minutes of conversation", "social": "tells her walking group about any change" },
+    { "id": "marcus", "name": "Marcus Oyelaran", "age": 41, "archetype": "regulars", "bio": "Runs the print shop two doors down and comes in twice a day.", "personality": "busy, friendly, believes shop owners on the street should support each other", "goal": "A quick coffee before opening his own shop", "social": "talks to the other shop owners on the street" },
+    { "id": "priyanka", "name": "Priyanka Desai", "age": 29, "archetype": "regulars", "bio": "Freelance designer who works from the cafe two mornings a week. Money has been tighter since she went freelance.", "personality": "thoughtful, watches her spending, likes the atmosphere", "goal": "A coffee and a table to work at", "social": "posts about places she likes" },
+    { "id": "tomas", "name": "Tomas Reyes", "age": 20, "archetype": "students", "bio": "Undergraduate on financial aid who counts every dollar. He likes this cafe but it is a treat, not a habit.", "personality": "careful with money, a little self-conscious about it", "goal": "A coffee before his nine o'clock class, if it is worth it", "social": "tells his roommates where the deals are" },
+    { "id": "ellie", "name": "Ellie Park", "age": 19, "archetype": "students", "bio": "Meets the same three friends for coffee before class most mornings.", "personality": "sociable, goes where the group goes", "goal": "To be wherever her friends are", "social": "group chat with her friends all morning" },
+    { "id": "dev", "name": "Dev Malhotra", "age": 22, "archetype": "students", "bio": "Graduate student who was in the lab until two in the morning and is due back at eight.", "personality": "tired, practical, indifferent to brands", "goal": "Caffeine as fast as possible", "social": "keeps to himself" },
+    { "id": "karen", "name": "Karen Liu", "age": 38, "archetype": "commuters", "bio": "Her train leaves in twelve minutes and the next one is an hour later.", "personality": "anxious about the clock, decisive", "goal": "Coffee in hand without missing the train", "social": "none in the morning" },
+    { "id": "bill", "name": "Bill Novak", "age": 54, "archetype": "commuters", "bio": "Has ordered the same coffee at the same place on the way to work for ten years.", "personality": "a creature of habit who dislikes change and notices it", "goal": "His usual, the usual way", "social": "complains to coworkers when something changes" },
+    { "id": "shanice", "name": "Shanice Brown", "age": 33, "archetype": "commuters", "bio": "Nurse on her way home after a twelve-hour night shift.", "personality": "exhausted, wants one small good thing before bed, no patience for fuss", "goal": "A really good coffee, quickly", "social": "none right now" },
+    { "id": "greta", "name": "Greta Lindqvist", "age": 45, "archetype": "passersby", "bio": "Visiting town for the day and exploring Maple Street before a meeting.", "personality": "curious, prefers local places to chains when she travels", "goal": "A coffee somewhere with character", "social": "posts photos from trips" },
+    { "id": "omar", "name": "Omar Farouk", "age": 26, "archetype": "passersby", "bio": "Delivery driver with two minutes between stops.", "personality": "in a hurry, looks for the cheapest quick option", "goal": "Any coffee, fast and cheap", "social": "none" },
+    { "id": "lucy", "name": "Lucy Chen", "age": 31, "archetype": "passersby", "bio": "Out with a baby in a stroller who has finally fallen asleep.", "personality": "protective of the nap, avoids crowds and long lines", "goal": "A coffee without waking the baby", "social": "texts other parents" }
+  ]
+}

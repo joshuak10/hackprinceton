@@ -4,7 +4,7 @@
 // module fails to load, and the optional Claude SDK behind compile loads only when asked for.
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
@@ -53,7 +53,8 @@ export function startServer({ port = 4173, host = '127.0.0.1', root = process.cw
   const base = resolve(root);
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
-    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null
+    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null,
+    roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomBusy: false
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
   const server = http.createServer((req, res) => {
@@ -92,7 +93,9 @@ const ROUTES = [
   ['GET', ['runs', ':id', 'status'], getStatus],
   ['GET', ['runs', ':id', 'agents', ':agentId'], getAgent],
   ['GET', ['runs', ':id', 'advice'], getAdvice],
-  ['GET', ['runs', ':id', ':file'], getRunFile]
+  ['GET', ['runs', ':id', ':file'], getRunFile],
+  ['GET', ['room'], getRoom],
+  ['POST', ['room', 'ask'], postRoomAsk]
 ];
 
 async function handle(ctx, req, res) {
@@ -366,6 +369,80 @@ async function getAdvice(ctx, req, res, { id }) {
   let advice;
   try { advice = JSON.parse(json); } catch { throw new HttpError(500, `Run ${id} has an advice.json that is not valid JSON.`); }
   send(res, 200, { advice, markdown: (await readText('advice.md')) ?? '' });
+}
+
+// ---------- ask the room (docs/PROTOTYPE.md §17) ----------
+
+const ROOM_WORLD = 'alder-pine-cafe.json';
+// Recorded Jev answers for the example world, so the page works with no key and no network.
+const ROOM_SEED = join(WEB_DIR, 'room', 'seed-record.json');
+
+// Recorded answers by request hash: the committed seed first, then this machine's own (data/room/, never committed).
+async function roomRecord(ctx) {
+  if (ctx.roomRecord) return ctx.roomRecord;
+  const record = new Map();
+  for (const file of [ROOM_SEED, join(ctx.roomDir, 'record.json')]) {
+    try {
+      for (const [hash, value] of Object.entries(JSON.parse(await readFile(file, 'utf8')))) if (value && value.answers) record.set(hash, value);
+    } catch (err) {
+      if (err.code !== 'ENOENT' && !(err instanceof SyntaxError)) throw err;
+    }
+  }
+  ctx.roomRecord = record;
+  ctx.roomSaved = record.size;
+  return record;
+}
+
+async function saveRoomRecord(ctx) {
+  const record = ctx.roomRecord;
+  if (!record || record.size === ctx.roomSaved) return;
+  await mkdir(ctx.roomDir, { recursive: true });
+  await writeFile(join(ctx.roomDir, 'record.json'), JSON.stringify(Object.fromEntries(record)));
+  ctx.roomSaved = record.size;
+}
+
+const roomWorldName = value => (value == null || value === '' ? ROOM_WORLD : safeName(String(value), 'world name'));
+
+async function getRoom(ctx, req, res) {
+  const file = roomWorldName(new URL(req.url, 'http://localhost').searchParams.get('world'));
+  const raw = await readWorld(ctx, file);
+  const { roomView } = await lib('../run/room.js');
+  let view;
+  try { view = roomView(raw); } catch (err) { throw new HttpError(400, err.message); }
+  send(res, 200, { world: file, ...view, live: hasKey('TYPESAFE_API_KEY'), recorded: (await roomRecord(ctx)).size });
+}
+
+// Each ask is at most 3 questions per cast member (before, now, and now with the neutral sign), one ask at a time.
+async function postRoomAsk(ctx, req, res) {
+  const body = await readJsonBody(req);
+  const file = roomWorldName(body.world);
+  const raw = await readWorld(ctx, file);
+  const { askRoom, recordProvider } = await lib('../run/room.js');
+  const record = await roomRecord(ctx);
+  const live = hasKey('TYPESAFE_API_KEY') && body.offline !== true;
+  if (ctx.roomBusy) throw new HttpError(429, 'The room is still answering the last question. Try again in a moment.');
+  ctx.roomBusy = true;
+  try {
+    let provider = recordProvider(record);
+    if (live) {
+      const { makeProvider } = await lib('../providers/index.js');
+      provider = makeProvider('jev', { shuffle: false, cache: record, concurrency: 16, maxRequests: 120 });
+    }
+    let result;
+    try {
+      result = await askRoom({
+        spec: raw, scenario: body.scenario, compareTo: body.compareTo ?? null,
+        edits: body.edits && typeof body.edits === 'object' ? body.edits : {},
+        only: Array.isArray(body.only) ? body.only : null, provider
+      });
+    } catch (err) {
+      throw new HttpError(/rejected the API key/.test(err?.message || '') ? 502 : 400, err?.message || 'The room could not be asked.');
+    }
+    if (live) await saveRoomRecord(ctx);
+    send(res, 200, { world: file, ...result, live, recorded: record.size });
+  } finally {
+    ctx.roomBusy = false;
+  }
 }
 
 async function getAgent(ctx, req, res, { id, agentId }) {
