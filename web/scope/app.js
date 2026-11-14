@@ -10,6 +10,7 @@ import { matchCase, showConfirm, showChoices, hideCard, showProgress } from './l
 import { createTour } from './lib/tour.js';
 import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics } from './lib/source.js';
 import { createEditor } from './lib/edit.js';
+import { langButton, onLang } from './lib/i18n.js';
 import { seatedPlaces, sameLayout, sameWorld, describeChanges, pairRuns, compare, compareWords } from './lib/layout.js';
 import { createFeedback, suggestionFor, applySuggestion, compareRows } from './lib/feedback.js';
 
@@ -1003,6 +1004,9 @@ async function updateCompare() {
 
 // ---------- start ----------
 async function start() {
+  // The language button (§19). Labels drawn on the map are redrawn when the language changes.
+  onLang(() => { R.baseKey = ''; st.dirty = true; drawThumbs(); });
+  langButton($('langBtn'));
   R.resize();
   applyTheme();
   setSpeed(4);

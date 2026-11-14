@@ -1,6 +1,7 @@
 // Map canvas: plan base layer (cached per floor and view), heat, people, incidents, selection.
 import { agentsAt, agentTrail, heldAt } from './frames.js';
 import { heatCanvas, makeRamp } from './heat.js';
+import { tr } from './i18n.js';
 
 const STATE_VAR = ['--a-walk', '--a-queue', '--a-serve', '--a-think', '--a-leave', '--a-car'];
 const FRUSTRATION = ['#8ec5ff', '#b9a2ff', '#f2c14e', '#f08a4b', '#e5484d'];
@@ -215,13 +216,14 @@ export function createRenderer(canvas) {
       const [sx, sy] = R.toScreen((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2);
       const size = Math.round(Math.min(22, Math.max(13, s * 1.0)));
       g.font = `500 ${size}px "Bricolage Grotesque", sans-serif`;
-      const w = g.measureText(o.name).width + 16;
+      const roomName = tr(o.name);
+      const w = g.measureText(roomName).width + 16;
       g.fillStyle = pal.ground;
       g.globalAlpha = 0.82;
       roundRect(g, sx - w / 2, sy - size * 0.8, w, size * 1.6, 6); g.fill();
       g.globalAlpha = 1;
       g.fillStyle = pal.muted;
-      g.fillText(o.name, sx, sy + 1);
+      g.fillText(roomName, sx, sy + 1);
       placed.push([sx - w / 2, sy - size * 0.8, sx + w / 2, sy + size * 0.8]);
     }
     for (const p of floor.pois || []) {
@@ -230,7 +232,7 @@ export function createRenderer(canvas) {
       const [sx, sy] = R.toScreen(cx, cy);
       g.font = `500 ${Math.round(Math.min(20, Math.max(13, s * 2.6)))}px "Bricolage Grotesque", sans-serif`;
       g.fillStyle = pal.faint;
-      g.fillText(p.name, sx, sy);
+      g.fillText(tr(p.name), sx, sy);
     }
     for (const n of st.nodes) {
       if ((n.floor || 0) !== st.floor || n.kind === 'area') continue;
@@ -361,6 +363,7 @@ export function createRenderer(canvas) {
   // Labels placed in this base layer, as screen rectangles, so later labels can avoid them.
   const placed = [];
   function labelFree(g, text, spots, pal, size, muted = false) {
+    text = tr(text);
     g.font = `500 ${size}px "IBM Plex Sans", sans-serif`;
     const w = g.measureText(text).width + 6, h = size + 4;
     for (const [x, y, align] of spots) {
@@ -376,6 +379,7 @@ export function createRenderer(canvas) {
   }
 
   function label(g, text, x, y, pal, size = 13, align = 'center', muted = false) {
+    text = tr(text);
     g.font = `500 ${size}px "IBM Plex Sans", sans-serif`;
     g.textAlign = align;
     g.textBaseline = 'middle';
@@ -534,6 +538,7 @@ export function createRenderer(canvas) {
   }
 
   function pill(g, text, x, y, pal) {
+    text = tr(text);
     g.font = '600 13px "IBM Plex Sans", sans-serif';
     const w = g.measureText(text).width + 18;
     g.fillStyle = pal.panel;

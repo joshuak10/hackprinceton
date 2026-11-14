@@ -1025,3 +1025,19 @@ Both behaviors stay the default. A visit world can switch them off with an optio
 - Reservations, takeout, a waiting list, or waiting outside.
 - The real door, the real seat times and the real number of people on a Friday: all assumed.
 - More than one seed, or any check against real customers.
+
+## 19. The language button: English and Simplified Chinese (Nov 14)
+
+**Why.** An owner should be able to read the page in their own language. The scope display (`/scope/`) and Ask the room (`/room/`) have a button in the header that switches everything on screen between English and Simplified Chinese.
+
+**How.** The pages are written in English and are not changed. `web/scope/lib/i18n.js` translates what is on screen, one piece at a time: the text of a DOM text node, a placeholder, a title, an aria-label, or a string drawn on the map (canvas text goes through `tr()` in `lib/render.js`).
+- `web/scope/lib/zh.js` holds the Chinese: `EXACT` for whole pieces of text, and `PATTERNS` (a regular expression and a Chinese sentence with `$1`, `$2`) for text with changing parts such as numbers, names and places. Each captured part is translated on its own, so a place name inside a sentence gets its Chinese too.
+- In Chinese mode a `MutationObserver` translates text as the app writes it. In English mode nothing runs: no observer and no change to the page.
+- Switching back restores the English that was there. The choice is remembered in the browser; `?lang=zh` opens a page in Chinese.
+- An element with `data-i18n-skip` is left alone (the button itself). Typed text (the sign box, the rewrite boxes) is never translated.
+
+**Limits.**
+- Text that is not in `zh.js` stays in English. That includes anything typed, and wording nobody listed.
+- People were asked in English and Jev answered in English. The Chinese shown for what a person was told is a translation for the reader, not what Jev read. A sign typed in Chinese is sent to Jev as typed.
+- The translations were produced by machine on Nov 14 and have not been read by a native speaker.
+- The older run viewer at `/` has no language button.
