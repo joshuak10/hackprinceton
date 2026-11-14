@@ -71,6 +71,12 @@
       "maxProperties": 300,
       "description": "Optional: where each value came from, keyed by field path (e.g. 'nodes[3].servers', 'walls', 'arrivals.total'). Kept as-is.",
       "additionalProperties": { "enum": ["data", "vision", "assumed", "owner-reported"] }
+    },
+    "offers": {
+      "type": "array",
+      "maxItems": 50,
+      "description": "Optional targeted offers: a message, and optionally a discount at one service place, for some kinds of people during a window. A person in the audience sees up to 3 offer texts in what they decide from, and pays the discounted price at that place (in what they are shown, in the rules policy and in what they spend). An offer informs; it never forces anyone anywhere. Results: metrics().offers gives, per offer, how many people it reached and how many of them then went to its place; each visit agent's spent and visits, and metrics().segments, show outcomes by kind of simulated person. A what-if patch can add one with { \"kind\": \"offer\", \"offer\": { ... } }.",
+      "items": { "$ref": "#/$defs/offer" }
     }
   },
   "$defs": {
@@ -111,7 +117,7 @@
         "serviceTime": { "type": "number", "minimum": 0.2, "maximum": 720, "default": 5, "description": "Visit service: average minutes per person per server. Capacity per hour = servers / serviceTime x 60." },
         "serviceDist": { "enum": ["uniform", "exp", "fixed"], "default": "uniform", "description": "Visit service: spread of service times. uniform 0.6-1.4 x serviceTime, exponential with mean serviceTime, or fixed." },
         "appeal": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5, "description": "Visit service: popularity and reputation as a number, used by the rules policy. Keep it consistent with about." },
-        "price": { "type": "number", "minimum": 0, "default": 0, "description": "Visit service: dollars per person. Agents see 'free' or 'about $N'." },
+        "price": { "type": "number", "minimum": 0, "default": 0, "description": "Visit service: dollars per person. Agents see 'free' or 'about $N'. What each person pays (after any offer) adds up in their spent." },
         "tags": { "$ref": "#/$defs/tags", "description": "Visit service: what the place offers. Matched against archetype needs (hard filter) and likes (soft preference)." },
         "about": { "type": "string", "maxLength": 160, "description": "Visit service: the reputation agents read, in plain words (known for, rumors, quirks)." }
       }
@@ -212,6 +218,28 @@
         "x2": { "type": "number", "minimum": 0, "maximum": 100, "description": "The other jamb." },
         "y2": { "type": "number", "minimum": 0, "maximum": 100 },
         "exterior": { "type": "boolean", "default": false, "description": "true for a door to the outside." }
+      }
+    },
+    "offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id", "description": "Unique; filled as offer1, offer2, ... when missing." },
+        "text": { "type": "string", "maxLength": 160, "description": "What the person is told, e.g. 'Eastgate Urgent Care: seen in 20 minutes, half the ER price'. Longer text is cut to 160 characters. When missing, an offer with a place and a discount is told '<N>% off at <place name>'; any other offer without text is dropped." },
+        "to": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Who receives it: anyone in one of these groups or copying one of these cast members. Missing or empty means everyone. Unknown ids are warnings and are dropped; an offer whose named audience is all unknown is dropped, never sent to everyone.",
+          "properties": {
+            "groups": { "type": "array", "items": { "type": "string" }, "description": "Archetype ids (or exact names)." },
+            "cast": { "type": "array", "items": { "type": "string" }, "description": "Cast member ids (or exact names) from minds." }
+          }
+        },
+        "place": { "type": ["string", "null"], "default": null, "description": "Visit service node id (or exact name) the offer is about. Anything else is a warning and the offer is about no place. Route worlds have no service places, so their offers are messages only." },
+        "priceOff": { "type": "number", "minimum": 0, "maximum": 1, "default": 0, "description": "Discount at place for the people who receive it: 0.5 is half price. Clamped to 0-1; ignored without a place. When several offers cover the same place, the largest discount applies (they do not stack)." },
+        "from": { "type": "number", "minimum": 0, "default": 0, "description": "Minutes after clockStart when the offer starts; at most duration." },
+        "until": { "type": "number", "minimum": 0, "description": "Minutes after clockStart when it ends; between from and duration. Default duration." }
       }
     },
     "persona": {

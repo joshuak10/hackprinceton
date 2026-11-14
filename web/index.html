@@ -141,6 +141,24 @@
     </div>
   </section>
 
+  <section class="insight" id="insight" hidden>
+    <div class="card" id="whoCard" hidden>
+      <div class="row between">
+        <div><div class="eyebrow">Kinds of simulated people</div><h2>Who</h2></div>
+        <div class="seg" role="group" aria-label="Group the people by" id="whoToggle">
+          <button type="button" data-who="byGroup" class="on" aria-pressed="true">by group</button>
+          <button type="button" data-who="byCast" aria-pressed="false">by person in the cast</button>
+        </div>
+      </div>
+      <p class="muted small">These are kinds of simulated people, not real individuals. Click a column heading to sort.</p>
+      <div class="tablewrap"><table class="who" id="whoTable"></table></div>
+    </div>
+    <div class="card" id="adviceCard">
+      <div><div class="eyebrow">What to try next</div><h2>Advice</h2></div>
+      <div id="adviceBody" class="stack"></div>
+    </div>
+  </section>
+
   <section class="minds">
     <div class="card" id="inspector" aria-live="polite">
       <div><div class="eyebrow">Agent inspector</div><h2>One person, every decision</h2></div>

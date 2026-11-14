@@ -1,6 +1,6 @@
 // World spec: normalize (lenient: clamps and fills defaults), validate (reports every fix and problem),
 // clean (mode-relevant fields only), patch (what-if changes) and hash. Contract: docs/PROTOTYPE.md §2,
-// walls and building fields §13a and §14d; field reference: worlds/SCHEMA.md.
+// walls and building fields §13a and §14d, targeted offers §15b; field reference: worlds/SCHEMA.md.
 import { clamp, truthy, slug, sha256Hex } from './util.js';
 import { normalizeWalls, createNav, crossesWall, polylineCrossesWall, polylineLength } from './walls.js';
 
@@ -13,7 +13,8 @@ const PROVENANCE_LABELS = ['data', 'vision', 'assumed', 'owner-reported'];
 const DEFAULT_TITLE = 'Untitled world';
 const DEFAULT_QUESTION = 'Where are the bottlenecks?';
 const DEFAULT_LEAVE = 'Leave and go home';
-const MAX = { nodes: 60, edges: 150, archetypes: 6, minds: 40, tags: 12, walls: 4000, doors: 500, via: 12, provenance: 300 };
+const MAX = { nodes: 60, edges: 150, archetypes: 6, minds: 40, tags: 12, walls: 4000, doors: 500, via: 12, provenance: 300, offers: 50 };
+const OFFER_TEXT = 160;      // characters of an offer's text
 const DEFAULT_CLEARANCE = 0.2;
 const SPEED = { def: 4, min: 0.2, max: 600 }; // travelSpeed, map units per minute (§14d raised the maximum from 60)
 const MIN_WALL_GAP = 0.05;   // every node keeps at least this distance from every wall (§13a)
@@ -22,7 +23,7 @@ const DOOR_NEAR_WALL = 0.5;  // a door with no wall this close to either end is 
 
 const KNOWN = {
   top: ['$schema', 'title', 'question', 'context', 'leaveLabel', 'mode', 'duration', 'clockStart', 'travelSpeed', 'walkSpeed',
-    'arrivals', 'nodes', 'edges', 'archetypes', 'minds', 'walls', 'geo', 'doors', 'provenance'],
+    'arrivals', 'nodes', 'edges', 'archetypes', 'minds', 'walls', 'geo', 'doors', 'provenance', 'offers'],
   arrivals: ['total', 'start', 'end', 'shape'],
   node: ['id', 'name', 'kind', 'x', 'y', 'servers', 'serviceTime', 'serviceDist', 'appeal', 'price', 'tags', 'about', 'weight'],
   edge: ['from', 'to', 'name', 'length', 'capacity', 'twoWay', 'costModel', 'via'],
@@ -32,7 +33,9 @@ const KNOWN = {
   mind: ['id', 'name', 'age', 'archetype', 'bio', 'personality', 'goal', 'social', 'informed', 'weight', 'entry', 'origin', 'destination'],
   geo: ['metersPerUnit', 'clearance', 'floor', 'source'],
   door: ['id', 'name', 'x1', 'y1', 'x2', 'y2', 'exterior'],
-  point: ['x', 'y']
+  point: ['x', 'y'],
+  offer: ['id', 'text', 'to', 'place', 'priceOff', 'from', 'until'],
+  offerTo: ['groups', 'cast']
 };
 
 // ---------- reporting ----------
@@ -215,7 +218,7 @@ function build(raw, rep) {
       shape: choice(rep, 'arrivals.shape', ar.shape, SHAPES, 'peak')
     },
     nodes: [], edges: [], archetypes: [], minds: [],
-    walls: [], geo: null, doors: [], provenance: null
+    walls: [], geo: null, doors: [], provenance: null, offers: []
   };
 
   // ----- nodes -----
@@ -457,12 +460,94 @@ function build(raw, rep) {
     }
   }
 
+  const refs = offerRefs(spec), usedOffers = new Set();
+  list(rep, 'offers', raw.offers, MAX.offers).forEach((o, i) => {
+    const offer = normalizeOffer(rep, `offers[${i}]`, o, i, { spec, refs, used: usedOffers });
+    if (offer) spec.offers.push(offer);
+  });
+
   checkReach(spec, rep, nodePath, archPath);
   const { wallIndex, doorPaths } = buildingFields(raw, spec, rep);
   const wallName = k => `walls[${wallIndex[k] ?? k}]`;
   checkWalls(spec, rep, { nodePath, edgePaths, wallName });
   checkDoors(spec, rep, { doorPaths, wallName });
   return spec;
+}
+
+// ---------- offers (§15b) ----------
+// Lookups by id, name or slugged name over a normalized (or cleaned) spec: { group, cast, node }(ref) → item | undefined.
+function offerRefs(spec) {
+  const finder = items => {
+    const m = new Map();
+    for (const x of items) m.set(x.id, x);
+    for (const x of items) for (const k of [x.name, slug(x.name, 0)]) if (k && !m.has(k)) m.set(k, x);
+    return r => (missing(r) || typeof r === 'object' ? undefined : m.get(String(r)) ?? m.get(slug(r, 0)));
+  };
+  return { group: finder(spec.archetypes), cast: finder(spec.minds), node: finder(spec.nodes) };
+}
+
+// One offer: a message, and optionally a discount at one service place, for some kinds of people
+// during a window. Returns the normalized offer or null when it is dropped. Unknown audience ids are
+// dropped with a warning; an offer whose whole named audience is unknown is dropped too, so a typo
+// never turns a targeted offer into one for everyone.
+function normalizeOffer(rep, p, o, i, { spec, refs, used }) {
+  if (!isObj(o)) { rep.warn(p, 'not an object; ignored'); return null; }
+  unknownFields(rep, p, o, KNOWN.offer);
+
+  let to = o.to;
+  if (missing(to)) to = {};
+  else if (!isObj(to)) { rep.warn(`${p}.to`, `${show(to)} is not an object { groups, cast }; offer dropped`); return null; }
+  unknownFields(rep, `${p}.to`, to, KNOWN.offerTo);
+  let named = 0;
+  const audience = (key, find, what) => {
+    const v = to[key];
+    if (missing(v)) return [];
+    if (!Array.isArray(v)) { named++; rep.warn(`${p}.to.${key}`, `${show(v)} is not a list; ignored`); return []; }
+    named += v.length;
+    const ids = [];
+    v.forEach((r, j) => {
+      const hit = find(r);
+      if (!hit) rep.warn(`${p}.to.${key}[${j}]`, `${show(r)} is not ${what}; dropped`);
+      else if (!ids.includes(hit.id)) ids.push(hit.id);
+    });
+    return ids;
+  };
+  const groups = audience('groups', refs.group, 'an archetype id or name');
+  const cast = audience('cast', refs.cast, 'a cast member id or name');
+  if (named && !groups.length && !cast.length) { rep.warn(`${p}.to`, 'none of the people it names exist; offer dropped'); return null; }
+
+  let place = null;
+  if (!missing(o.place)) {
+    const n = refs.node(o.place);
+    if (!n) rep.warn(`${p}.place`, `${show(o.place)} is not a node id or name; the offer is about no place`);
+    else if (n.kind !== 'service') rep.warn(`${p}.place`, `"${n.id}" is ${article(n.kind)}, not a service place; the offer is about no place`);
+    else place = n.id;
+  }
+  let priceOff = number(rep, `${p}.priceOff`, o.priceOff, 0, 0, 1);
+  if (priceOff > 0 && !place) { rep.warn(`${p}.priceOff`, 'a discount needs a service place; ignored'); priceOff = 0; }
+  const from = number(rep, `${p}.from`, o.from, 0, 0, spec.duration);
+  const until = number(rep, `${p}.until`, o.until, spec.duration, from, spec.duration);
+
+  let words = text(rep, `${p}.text`, o.text, OFFER_TEXT);
+  if (!words) {
+    if (!(place && priceOff > 0)) { rep.warn(`${p}.text`, 'missing; offer dropped'); return null; }
+    words = `${Math.round(priceOff * 100)}% off at ${refs.node(place).name}`;
+    rep.warn(`${p}.text`, `missing; using "${words}"`);
+  }
+  // A missing id is filled quietly (offer1, offer2, ...): patches written by the advisor often leave it out.
+  const id = missing(o.id) ? uniqueId(SILENT, p, { name: `offer${i + 1}` }, i, used) : uniqueId(rep, p, o, i, used);
+  return { id, text: words, to: { groups, cast }, place, priceOff, from, until };
+}
+
+// "Offer half_price · 50% off at QuickCare · to Students, minutes 0–120", for patch reports.
+function offerLabel(o, spec) {
+  const name = (items, id) => items.find(x => x.id === id)?.name ?? id;
+  const who = [...o.to.groups.map(id => name(spec.archetypes, id)), ...o.to.cast.map(id => name(spec.minds, id))];
+  const what = !o.place ? 'a message' : o.priceOff > 0
+    ? `${fmt(Math.round(o.priceOff * 1000) / 10)}% off at ${name(spec.nodes, o.place)}`
+    : `about ${name(spec.nodes, o.place)}`;
+  const when = o.from > 0 || o.until < spec.duration ? `, minutes ${fmt(o.from)}–${fmt(o.until)}` : '';
+  return `Offer ${o.id} · ${what} · to ${who.length ? who.join(', ') : 'everyone'}${when}`;
 }
 
 // walls, geo, doors and provenance (§13a, §14d). Returns the input index of every kept wall and the
@@ -727,8 +812,8 @@ export function validateWorld(raw) {
 }
 
 // Strip fields that do not apply to the world's mode, for display, hashing and Claude. Takes a normalized spec.
-// Building fields (walls, geo, doors, provenance, edges[].via, archetypes[].entries and .exits) appear only when set,
-// so a world without them cleans, and hashes, exactly as before they existed.
+// Building fields (walls, geo, doors, provenance, edges[].via, archetypes[].entries and .exits) and offers appear
+// only when set, so a world without them cleans, and hashes, exactly as before they existed.
 export function cleanSpec(spec) {
   const route = spec.mode === 'route';
   const walls = spec.walls ?? [], doors = spec.doors ?? [];
@@ -782,25 +867,45 @@ export function cleanSpec(spec) {
     ...(doors.length ? {
       doors: doors.map(d => ({ id: d.id, name: d.name, x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, exterior: d.exterior }))
     } : {}),
-    ...(spec.provenance && Object.keys(spec.provenance).length ? { provenance: spec.provenance } : {})
+    ...(spec.provenance && Object.keys(spec.provenance).length ? { provenance: spec.provenance } : {}),
+    ...(spec.offers?.length ? {
+      offers: spec.offers.map(o => ({
+        id: o.id, text: o.text, to: { groups: o.to.groups.slice(), cast: o.to.cast.slice() },
+        place: o.place, priceOff: o.priceOff, from: o.from, until: o.until
+      }))
+    } : {})
   };
 }
 
 // What-if levers. serviceDist and costModel are deliberately not patchable. A node's weight applies
-// to visit gates and entries only.
+// to visit gates and entries only. `offer` is not a field op: { kind: 'offer', offer: { ... } } adds one
+// targeted offer (§15b), and its list names the offer's fields.
 export const PATCH_FIELDS = {
   node: ['servers', 'serviceTime', 'appeal', 'price', 'weight'],
   edge: ['capacity', 'length', 'closed'],
   archetype: ['info', 'patience', 'rationality', 'visits', 'share'],
-  global: ['arrivals.total', 'arrivals.start', 'arrivals.end', 'travelSpeed']
+  global: ['arrivals.total', 'arrivals.start', 'arrivals.end', 'travelSpeed'],
+  offer: ['id', 'text', 'to', 'place', 'priceOff', 'from', 'until']
 };
 
-// Applies [{ kind, id, field, value }] to a normalized spec. Returns { spec, applied: string[], skipped: op[] }.
+// Applies [{ kind, id, field, value }] and [{ kind: 'offer', offer }] to a normalized spec.
+// Returns { spec, applied: string[], skipped: op[] }. An offer that would be dropped (no text, nobody
+// it names exists) or that would go past the 50-offer limit is skipped.
 export function applyPatch(spec, patch) {
   const s = JSON.parse(JSON.stringify(cleanSpec(spec)));
   const applied = [], skipped = [];
   for (const op of (Array.isArray(patch) ? patch : [])) {
     const kind = String(op?.kind || ''), field = String(op?.field || ''), id = String(op?.id ?? '');
+    if (kind === 'offer') {
+      const offers = s.offers ?? [];
+      const o = offers.length < MAX.offers
+        ? normalizeOffer(SILENT, 'offer', op.offer, offers.length, { spec: s, refs: offerRefs(s), used: new Set(offers.map(x => x.id)) })
+        : null;
+      if (!o) { skipped.push(op); continue; }
+      s.offers = [...offers, o];
+      applied.push(offerLabel(o, s));
+      continue;
+    }
     const value = typeof op?.value === 'number' || typeof op?.value === 'string' ? Number(op.value) : NaN;
     if (!PATCH_FIELDS[kind]?.includes(field) || !Number.isFinite(value)) { skipped.push(op); continue; }
     if (kind === 'node') {

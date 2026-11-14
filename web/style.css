@@ -243,3 +243,32 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
 .door-row:hover { border-color: var(--line); }
 .door-row.on { border-color: var(--accent); background: var(--accent-soft); }
 .sev.entrance { color: var(--muted); }
+
+/* Who and Advice panels (§15) */
+.insight { display: grid; gap: 16px; min-width: 0; }
+.tablewrap { overflow-x: auto; max-width: 100%; }
+table.who { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+table.who th, table.who td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.who th:first-child, table.who td:first-child { text-align: left; white-space: normal; min-width: 9em; }
+table.who td { font-family: var(--f-mono); }
+table.who td:first-child { font-family: var(--f-body); font-weight: 600; }
+table.who th button { border: 0; background: none; padding: 0; font: inherit; font-family: var(--f-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+table.who th[aria-sort] button { color: var(--ink); }
+table.who .grp { display: block; font-family: var(--f-body); font-weight: 400; font-size: 0.74rem; color: var(--muted); }
+.answer { font-size: 1.02rem; max-width: 70ch; }
+.recs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.rec { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); min-width: 0; align-content: start; }
+.rec h3 { font-size: 1rem; }
+.rec .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.rec .why { font-size: 0.9rem; }
+.effect { border-collapse: collapse; font-size: 0.8rem; width: 100%; }
+.effect th, .effect td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--line); font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.effect th { font-weight: 400; color: var(--muted); font-size: 0.68rem; text-transform: uppercase; }
+.effect th:first-child, .effect td:first-child { text-align: left; font-family: var(--f-body); overflow-wrap: anywhere; }
+.effect .good { color: var(--accent); }
+.effect .bad { color: var(--heat2); }
+.tag.high { border-color: var(--accent); color: var(--accent); }
+.tag.medium { border-color: var(--heat1); color: var(--heat1); }
+.tag.low { border-color: var(--heat2); color: var(--heat2); }
+.advice-list { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: 0.9rem; }
+.advice-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }

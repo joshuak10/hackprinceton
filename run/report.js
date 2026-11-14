@@ -4,7 +4,7 @@ import { clockText, feelingWords } from '../engine/util.js';
 import { loadRun } from './recorder.js';
 import { headlineKpis } from './runner.js';
 
-const TORN_GAP = 0.15;
+export const TORN_GAP = 0.15;
 const TORN_SHOWN = 10;
 const FALLBACK_LIMIT = 0.2;
 
@@ -125,7 +125,7 @@ function optionNamer(line, nameOf) {
 }
 
 // The probabilities behind a decision's primary question, best first, renormalized over valid options.
-function primaryProbs(line) {
+export function primaryProbs(line) {
   const d = line.decision ?? {};
   if (line.asks?.yesNo && isNum(d.yesProb)) {
     const probs = [['yes', d.yesProb], ['no', 1 - d.yesProb]].sort((a, b) => b[1] - a[1]);
@@ -193,6 +193,74 @@ function groupSection(metrics) {
   }
   return ['## Outcomes by group', '', ...mdTable(['Group', 'Agents', 'Avg wait per agent', 'Avg places served', 'Abandons per agent'],
     groups.map(g => [g.name, fmtInt(g.count), fmtMin(g.avgWaitPerAgent), fmtNum(g.avgServed, 2), fmtNum(g.abandonsPerAgent, 2)]))];
+}
+
+// ---------- segments and offers (§15a, §15b) ----------
+
+export const SEGMENT_NOTE =
+  'A segment is a kind of simulated person (a group, or everyone who copies one cast member), not a real individual.';
+
+// A segment's bad-time score uses the place bottleneck weighting per person: wait minutes + 30 × walk-aways.
+export const segmentScore = s => (isNum(s.avgWait) ? s.avgWait : 0) + 30 * (isNum(s.walkAwaysPerPerson) ? s.walkAwaysPerPerson : 0);
+
+export const fmtMoney = v => (isNum(v) ? `$${v.toFixed(2)}` : '–');
+const feelingText = v => (isNum(v) ? `${fmtNum(v, 2)} (${feelingWords(v)})` : '–');
+const topPlacesText = list => (list ?? []).slice(0, 3).map(p => `${p.name ?? p.id} ${fmtInt(p.visits)}`).join(' · ') || '–';
+
+function segmentSection(metrics, spec) {
+  const byGroup = metrics.segments?.byGroup ?? [];
+  const byCast = metrics.segments?.byCast ?? [];
+  if (!byGroup.length && !byCast.length) return [];
+  const groupName = id => (spec?.archetypes ?? []).find(a => a.id === id)?.name ?? id ?? '–';
+  const out = ['## Who had the worst time', '', SEGMENT_NOTE];
+  const parts = [['By group', byGroup, false], ['By cast member (everyone who copies them)', byCast, true]].filter(([, list]) => list.length);
+
+  if (metrics.mode === 'route') {
+    for (const [title, list, cast] of parts) {
+      const rows = [...list].sort((a, b) => (b.avgDelay ?? 0) - (a.avgDelay ?? 0)).slice(0, 10)
+        .map(s => [s.name ?? s.id, ...(cast ? [groupName(s.group)] : []), fmtInt(s.count), fmtMin(s.avgTrip), fmtMin(s.avgDelay), feelingText(s.avgFrustration)]);
+      out.push('', `### ${title} (most delay first)`, '', ...mdTable(
+        ['Segment', ...(cast ? ['Group'] : []), 'People', 'Avg trip', 'Avg delay', 'Frustration'], rows));
+    }
+    return out;
+  }
+
+  for (const [title, list, cast] of parts) {
+    const rows = [...list].sort((a, b) => segmentScore(b) - segmentScore(a)).slice(0, 10)
+      .map(s => [s.name ?? s.id, ...(cast ? [groupName(s.group)] : []), fmtInt(s.count), fmtMin(s.avgWait),
+        fmtNum(s.walkAwaysPerPerson, 2), fmtPct(s.shareNeverServed, 0), feelingText(s.avgFrustration)]);
+    out.push('', `### ${title} (worst first: wait minutes + 30 × walk-aways per person)`, '', ...mdTable(
+      ['Segment', ...(cast ? ['Group'] : []), 'People', 'Avg wait', 'Walk-aways per person', 'Never served', 'Frustration'], rows));
+  }
+  out.push('', '## Who spent the most');
+  for (const [title, list, cast] of parts) {
+    const rows = [...list].sort((a, b) => (b.avgSpent ?? 0) - (a.avgSpent ?? 0)).slice(0, 10)
+      .map(s => [s.name ?? s.id, ...(cast ? [groupName(s.group)] : []), fmtInt(s.count), fmtMoney(s.avgSpent),
+        fmtNum(s.avgVisits, 2), topPlacesText(s.topPlaces)]);
+    out.push('', `### ${title}`, '', ...mdTable(
+      ['Segment', ...(cast ? ['Group'] : []), 'People', 'Avg spent', 'Avg visits', 'Top places'], rows));
+  }
+  return out;
+}
+
+function offerSection(metrics, spec, nameOf) {
+  const results = metrics.offers ?? [];
+  if (!results.length) return [];
+  const defs = new Map((spec?.offers ?? []).map(o => [o.id, o]));
+  const groupName = id => (spec?.archetypes ?? []).find(a => a.id === id)?.name ?? id;
+  const castName = id => (spec?.minds ?? []).find(m => m.id === id)?.name ?? id;
+  const audience = to => {
+    const names = [...(to?.groups ?? []).map(groupName), ...(to?.cast ?? []).map(castName)];
+    return names.length ? names.join(', ') : 'everyone';
+  };
+  const rows = results.map(r => {
+    const o = defs.get(r.id) ?? {};
+    const text = o.text ? (o.text.length > 80 ? `${o.text.slice(0, 77)}…` : o.text) : '–';
+    return [r.id, text, audience(o.to), o.place ? nameOf(o.place) : '–', isNum(o.priceOff) ? fmtPct(o.priceOff, 0) : '–',
+      fmtInt(r.reached), fmtInt(r.wentToPlace), r.reached ? fmtPct(r.wentToPlace / r.reached, 0) : '–'];
+  });
+  return ['## Offers', '', 'An offer is a simulated message (and optional discount) shown to a kind of simulated person.', '',
+    ...mdTable(['Offer', 'What they are told', 'To', 'Place', 'Price off', 'Reached', 'Went to the place', 'Share'], rows)];
 }
 
 function remarkSection(remarks, nameOf) {
@@ -326,6 +394,8 @@ export function reportMarkdown(runDir) {
   for (const section of [
     bottleneckSection(metrics),
     groupSection(metrics),
+    // Only when present, so reports of runs without segments or offers stay exactly as before.
+    ...[segmentSection(metrics, spec), offerSection(metrics, spec, nameOf)].filter(s => s.length),
     doorSection(metrics),
     remarkSection(remarks, nameOf),
     tornSection(decisions, spec, nameOf),
