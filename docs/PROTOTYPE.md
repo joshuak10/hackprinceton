@@ -1014,6 +1014,12 @@ Both behaviors stay the default. A visit world can switch them off with an optio
 - Under the place's name a line compares the two rooms on the same seeds and provider, for example "Seated 24 of 36. Before your change: 21.3. Averaged over 3 runs each." When the change is no larger than the spread between the sketched room's own runs, it says the difference could be chance. The run picker marks runs of a changed room.
 - Only seats can be changed. Walls, the kitchen and the door cannot.
 
+**The promotion (the restaurant's one suggestion).** The Suggestions dialog from main offers one hard-coded suggestion per run. For the sushi case (`"suggestion": "promotion"` in `mock/index.json`) it is "Run a promotion: 20% off today"; the building keeps "one more server at the worst bottleneck" (`suggestionFor` in `web/scope/lib/feedback.js`).
+- It is a fixed rule, not written by AI. `applySuggestion` adds three offers (§15b) for everyone: the message "Promotion today: 20% off everything for everyone who comes in.", and 20% off at each of the two places, so the price a person is told and pays is the promotion price.
+- "Simulate the promotion" starts a run of the same world on the same seed with the same decision-maker as the run on screen (Jev for a Jev run). The dropdown then switches between the baseline and the promotion run, and the table puts their numbers side by side.
+- A promotion adds a reason to come in and to wait. It does not add seats or bring more people to the door. On seed 7 with Jev: served 22 to 24, walk-aways 18 to 12, average wait 9.6 to 12.3 minutes. The three baseline seeds alone serve 22, 24 and 22, so the two extra people served are within what a different seed gives; the longer wait and the fewer walk-aways are the clearer effect. One seed each.
+- A run with a promotion is not a baseline: "Edit the room" compares only runs with the same seats and the same offers (`sameWorld` in `lib/layout.js`).
+
 **What it does not show.**
 - Parties. Each simulated person is one diner who takes one seat and decides alone. A couple is two arrivals, and nothing keeps them together.
 - Reservations, takeout, a waiting list, or waiting outside.
