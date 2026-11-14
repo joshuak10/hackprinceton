@@ -572,7 +572,8 @@
       "goal": "Optical counter first, then the bakery",
       "social": "chats with neighbors and passes on what she hears",
       "informed": false,
-      "entry": "south_front_a"
+      "entry": "south_front_a",
+      "weight": 0.25
     },
     {
       "id": "dev",
@@ -596,7 +597,8 @@
       "goal": "Parcel desk and straight back out",
       "social": "does not talk to anyone",
       "informed": false,
-      "entry": "south_back"
+      "entry": "south_back",
+      "weight": 0.8
     },
     {
       "id": "andre",
@@ -609,6 +611,149 @@
       "social": "warns other couriers in a group chat about slow kitchens",
       "informed": true,
       "entry": "north_front_a"
+    },
+    {
+      "id": "hector",
+      "name": "Hector Ruiz",
+      "age": 58,
+      "archetype": "market_shoppers",
+      "bio": "Building superintendent from an apartment block nearby, buying lunch groceries and bread.",
+      "personality": "unhurried, friendly, chats with staff",
+      "goal": "A sandwich from the deli and a loaf from the bakery",
+      "social": "talks to everyone and passes on what he hears",
+      "informed": false,
+      "entry": "south_front_a",
+      "weight": 1.2
+    },
+    {
+      "id": "simone",
+      "name": "Simone Carter",
+      "age": 27,
+      "archetype": "market_shoppers",
+      "bio": "Works from her studio two blocks away and shops on a short break.",
+      "personality": "efficient, plans her route, dislikes waiting",
+      "goal": "A few groceries and out in ten minutes",
+      "social": "checks reviews before she goes anywhere",
+      "informed": true,
+      "entry": "south_front_a",
+      "weight": 1.2
+    },
+    {
+      "id": "walt",
+      "name": "Walter Kim",
+      "age": 74,
+      "archetype": "market_shoppers",
+      "bio": "Retiree on a fixed income who does a small shop every day.",
+      "personality": "patient, careful with money, enjoys the routine",
+      "goal": "The cheapest basics, then a look at the bakery",
+      "social": "greets the cashiers by name",
+      "informed": false,
+      "entry": "south_front_b",
+      "weight": 1
+    },
+    {
+      "id": "bianca",
+      "name": "Bianca Flores",
+      "age": 33,
+      "archetype": "market_shoppers",
+      "bio": "New mother from the apartments nearby, out with a stroller.",
+      "personality": "tired, avoids crowds and tight spaces",
+      "goal": "A deli sandwich and a pastry while the baby sleeps",
+      "social": "texts her sister about where is calm",
+      "informed": false,
+      "entry": "south_front_a",
+      "weight": 1
+    },
+    {
+      "id": "omar",
+      "name": "Omar Haddad",
+      "age": 41,
+      "archetype": "market_shoppers",
+      "bio": "Runs a small shop down the street and is dropping off parcels for his business.",
+      "personality": "impatient, counts every minute away from his shop",
+      "goal": "Parcel desk and straight back",
+      "social": "complains loudly if the desk is slow",
+      "informed": false,
+      "entry": "south_back",
+      "weight": 0.8
+    },
+    {
+      "id": "jules",
+      "name": "Jules Martin",
+      "age": 24,
+      "archetype": "market_shoppers",
+      "bio": "Graduate student buying cheap groceries for the week.",
+      "personality": "price-sensitive, headphones in, unbothered by lines",
+      "goal": "The week's groceries for as little as possible",
+      "social": "does not talk to anyone",
+      "informed": false,
+      "entry": "south_front_b",
+      "weight": 1
+    },
+    {
+      "id": "keisha",
+      "name": "Keisha Brown",
+      "age": 31,
+      "archetype": "lunch_crowd",
+      "bio": "Paralegal from an office two blocks away on a 45-minute lunch with two coworkers.",
+      "personality": "organized, moderately patient, wants to sit together",
+      "goal": "A bowl or salad and a table for three",
+      "social": "her coworkers vote on where to eat",
+      "informed": false,
+      "entry": "north_front_b",
+      "weight": 1
+    },
+    {
+      "id": "victor",
+      "name": "Victor Nguyen",
+      "age": 52,
+      "archetype": "lunch_crowd",
+      "bio": "Wholesaler from the jewelry district eating between appointments.",
+      "personality": "decisive, creature of habit, eats fast",
+      "goal": "Tacos, standing up if he has to",
+      "social": "trusts his own routine over anyone's advice",
+      "informed": false,
+      "entry": "north_front_a",
+      "weight": 1
+    },
+    {
+      "id": "sofia",
+      "name": "Sofia Marin",
+      "age": 26,
+      "archetype": "lunch_crowd",
+      "bio": "Visiting downtown with a friend and exploring on foot.",
+      "personality": "curious, unhurried, drawn to whatever looks popular",
+      "goal": "Try the most popular counter, even if the line is long",
+      "social": "follows the crowd and posts photos",
+      "informed": true,
+      "entry": "north_front_a",
+      "weight": 0.8
+    },
+    {
+      "id": "ben",
+      "name": "Ben Adler",
+      "age": 37,
+      "archetype": "lunch_crowd",
+      "bio": "Software contractor who lives in a loft nearby and works from home.",
+      "personality": "avoids the peak rush, in no mood to queue",
+      "goal": "A coffee and something quick to take home",
+      "social": "checks how busy it is before he leaves home",
+      "informed": true,
+      "entry": "north_front_b",
+      "weight": 1
+    },
+    {
+      "id": "li",
+      "name": "Li Wei",
+      "age": 22,
+      "archetype": "couriers",
+      "bio": "Scooter courier collecting returns from the parcel desk and the odd food order.",
+      "personality": "calm but on the clock",
+      "goal": "Pick up and leave within a few minutes",
+      "social": "shares tips with other couriers",
+      "informed": true,
+      "entry": "south_back",
+      "weight": 1
     }
   ],
   "assumptions": [
@@ -651,6 +796,11 @@
       "key": "order of visits",
       "value": "not enforced",
       "why": "Nothing yet makes people buy food before sitting at the tables. Known limit."
+    },
+    {
+      "key": "cast",
+      "value": "25 people",
+      "why": "Each simulated person copies one cast member and keeps their own state, so a small cast turns one person's errand into a crowd. Each large group has 9 or more varied people, and rare errands carry a low weight."
     }
   ],
   "provenance": {

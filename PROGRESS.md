@@ -1,10 +1,10 @@
 # Swarmscope: progress
 
-**As of Saturday, Nov 14, 2026, about 2:30 am.** For the plan and every decision, see [SWARMSCOPE_SPEC.md](SWARMSCOPE_SPEC.md) (v0.17). For how the code fits together, see [docs/PROTOTYPE.md](docs/PROTOTYPE.md).
+**As of Saturday, Nov 14, 2026, about 2:40 am.** For the plan and every decision, see [SWARMSCOPE_SPEC.md](SWARMSCOPE_SPEC.md) (v0.17). For how the code fits together, see [docs/PROTOTYPE.md](docs/PROTOTYPE.md).
 
 ## Where things stand
 
-The simulator works end to end with real Jev decisions. It also runs on the real target building with rules, and an independent check found no one passing through a wall. The Jev run of the real building is next.
+The simulator works end to end with real Jev decisions, **including on the real target building**: Floor 1 at weekday lunch has run with Jev on five seeds. An independent check found no one passing through a wall.
 
 - **Target:** Matterport model `6FNMVoyPrL1` ("Office/Retail - 45,726SF"), a two-story building that is currently an empty shell.
 - **Scenario:** a proposed fit-out, retail on the ground floor and offices upstairs, on a weekday at lunch and in the morning.
@@ -16,7 +16,7 @@ The simulator works end to end with real Jev decisions. It also runs on the real
 |---|---|---|
 | Engine: places with lines, or a network of routes | Works | All 5 example worlds run with rules in under 0.3 s each |
 | Jev per agent (`jev-latest`) | Works | ER world, 560 people: 1,276 Jev requests, 10 cache hits, 0 fallbacks to rules, 57 s, median 81 ms per request, about $0.05 at TypeSafe's published price (unverified) |
-| Jev changes the outcome | Seen once | On the ER world the worst bottleneck is Larkfield General with rules and St. Brigid's Regional with Jev. One seed only. |
+| Jev changes the outcome | Seen on two worlds | ER world: the worst bottleneck is Larkfield General with rules and St. Brigid's Regional with Jev (one seed). Real building: see the results below (five seeds). |
 | Record and replay | Works | The recorded Jev run replays with identical results and zero API calls |
 | Walls | Works | People walk the shortest path that touches no wall; a place with no path is never offered as an option; the run stops with an error rather than record a move through a wall |
 | Matterport import | Works on the real model | 2 floors, 334 wall edges, 23 openings. Floor 1 becomes 134 wall segments and 10 doors (5 exterior); Floor 2 becomes 80 wall segments and 7 doors |
@@ -25,7 +25,7 @@ The simulator works end to end with real Jev decisions. It also runs on the real
 | CoStar kit | Fully read | Digests of every guide and schema, a profile of all eight datasets, a dossier on the building and a study of its surroundings (all local-only) |
 | Real building, rules run | Works | Built from the Matterport walls and the fit-out file with `swarm fitout`; validates with 0 errors and 0 warnings |
 | No walking through walls | Confirmed independently | A separate checker with its own geometry code replayed the run at fine time steps: 1,032,558 consecutive positions against the 134 real walls, 0 crossings, and nobody inside the sealed room |
-| Tests | 498 of 498 pass | `npm test`, 23 test files |
+| Tests | 499 of 499 pass | `npm test`, 23 test files |
 
 Also built: a world compiler for plain-English descriptions (`swarm compile`, needs an Anthropic key), a `/swarm` command for Claude Code, and an MCP server (`mcp/server.js`).
 
@@ -47,20 +47,30 @@ File: [buildings/6FNMVoyPrL1/fitout-floor1-lunch.json](buildings/6FNMVoyPrL1/fit
 - **People:** four groups (office workers from upstairs, the neighborhood lunch crowd, market shoppers, couriers) and a cast of 14 named people.
 - **Placement check:** all 20 gates and places are at least 0.9 m from a real wall and reachable on foot.
 
-### Rules runs so far (seed 7)
+### Results on the real building (Floor 1, weekday lunch, 312 people)
 
-| | Draft numbers | CoStar-based numbers (current file) |
+Same people arriving at the same times, seed 7:
+
+| | Rules | Jev |
 |---|---|---|
-| People arriving | 460 | 312 |
-| Visits completed | 756 | 593 |
-| Times someone walked away from a line | 1,261 | 274 |
-| Average wait | 6.3 min | 5.8 min |
-| Worst bottlenecks | Noodle bar, taquería, pizza | Noodle bar, taquería, deli |
-| Busiest doorways | Food hall south door 481, market main entrance 430 | Market main entrance 225, food hall south door 220, food hall north door 209 |
+| Times someone walked away from a line | 226 | 65 |
+| Average wait | 5.8 min | 3.4 min |
+| Worst bottleneck | Noodle bar, then taquería | Pizza counter, then taquería |
+| People who went to the noodle bar | most of any counter | 35, the fewest of the food counters |
+| Busiest doorways | Market main entrance, food hall south door, food hall north door | the same three, in the same order |
 
-- The draft sent 154 office workers downstairs and staffed each counter for only 25 to 30 orders an hour, so its lines were not believable.
-- These are rules runs. The Jev run is next, and Jev changed the ranking on the ER example.
-- Known gap: nothing yet makes people buy food before sitting at the tables.
+Jev across five seeds (7 to 11): 4,725 requests, 0 fallbacks to rules, 70 seconds, about 30 cents at TypeSafe's published price (unverified).
+
+- **Worst bottleneck:** the pizza counter in 3 of 5 runs, the bakery in 2 of 5. The noodle bar and the taquería, which lead under rules, never do.
+- **Walk-aways:** 8.3% of line arrivals on average (standard deviation 2.1%). Average wait 3.1 minutes (0.2).
+- **Why Jev differs:** the noodle bar's description says "great food, slow kitchen", and Jev's people stay away from it. The cheap single-register pizza counter draws a crowd it cannot serve. People also mostly buy food before sitting down (9 of 51 table visits came first), which rules do not manage.
+- **Walls:** 0 crossings in every run.
+
+Cautions:
+- **A small cast distorts results.** Each simulated person copies one cast member. With 3 market shoppers in the cast, 47 people became one woman with an optical errand, and the optical counter looked like the worst bottleneck. The cast is now 25 people, with rare errands weighted low. Check the cast before trusting a ranking.
+- **A live Jev rerun of the same seed does not repeat exactly.** Seed 7 gave 65 walk-aways in one run and 52 in another. A recorded run does replay exactly.
+- **Five seeds is not the 20 the spec asks for,** and no input has been nudged up or down yet.
+- Every place and headcount here is a proposal. These are rankings under stated assumptions, not forecasts.
 
 ### What the CoStar data changed
 
@@ -77,15 +87,16 @@ The shares of nearby workers and residents who show up are still assumptions. Th
 
 ## Still running
 
-- **Stress test of the pathfinding.** Thousands of random floor plans against a separate reference method. It has already found and fixed one bug, where a path could slip through a hairline crack between two walls.
-- **After it:** the `import-matterport` and `import-mesh` commands and an example world with walls.
+- **The `import-matterport` and `import-mesh` commands** and an example world with walls.
+
+Finished since the last update: the stress test of the pathfinding. It ran 270 random floor plans against a separate reference method and found one real bug, where a path could slip through a hairline crack between two wall pieces. Gaps too narrow for a person are now sealed.
 
 ## Next
 
-1. Run Floor 1 lunch with Jev. The dry run estimates about 3,200 requests and 12 cents for the draft crowd; the corrected crowd is smaller.
-2. Look at the viewer by eye on the real building.
-3. Make people buy food before they sit down.
-4. Floor 2: the office morning.
+1. Look at the viewer by eye on the real building.
+2. Test a fix on the same seeds, for example a second register at the pizza counter.
+3. Floor 2: the office morning.
+4. The robustness check: 20 seeds, and the assumed inputs moved up and down by 25%.
 
 Parked until the building runs:
 - the queueing-formula and Braess validation scripts;
