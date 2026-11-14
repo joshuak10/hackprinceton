@@ -21,3 +21,10 @@ node_modules/
 .impeccable/hook.cache.json
 # Patch files written by /advise (may describe a real building)
 /patches/
+
+# CoStar hackathon kit (licensed hackathon data and docs; never commit)
+/costar-hackathon-kit/
+
+# Python bytecode
+__pycache__/
+*.pyc
