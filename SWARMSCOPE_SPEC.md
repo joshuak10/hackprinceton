@@ -1,6 +1,7 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.23 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.24 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Direction (Nov 14, v0.24):** the product now targets **independent local businesses**, starting with counter-service food and drink. Owners can test a change on a simulated copy of their own customers before trying it on real ones. The use case is specified in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md). Everything below still describes the engine and the earlier building work, and [docs/PROTOTYPE.md](docs/PROTOTYPE.md) still governs the code.
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -23,11 +24,12 @@ Swarmscope answers questions like "which ER gets overwhelmed on a Friday night?"
 ### Decisions to date
 
 - **Jev per agent is committed.** The Jev-vs-rules comparison is dropped. Rules remain only as an API-outage fallback and as the optimizer's fast proxy.
-- **Tracks.** CoStar is the headline. LangChain Deep Agents and Amazon are stackable targets. **Peri is dropped at Saturday midday** unless a real business has already shared its numbers by then.
+- **Tracks** (superseded by v0.24, see below). CoStar is the headline. LangChain Deep Agents and Amazon are stackable targets. **Peri is dropped at Saturday midday** unless a real business has already shared its numbers by then.
 - **CoStar engineers (Nov 13):** build the Jev simulation from CoStar data first, then generalize the central agent to a wider range of cases. Add visualization of the simulation over time (a time scrubber). The central agent can assign x% of the Jev agents to a specific role (specific roles are undecided).
 - **Emphasis (Nov 13):** the two simulations built from CoStar data are **building congestion** (movement inside a building, from Matterport geometry) and the **retail store parking lot** (Vexcel imagery plus CoStar data).
 
 - **Focus (Nov 14, v0.16):** simulate foot traffic through one real building first: Matterport model `6FNMVoyPrL1` ("Office/Retail - 45,726SF"), using its interior walls and doorways and the building's CoStar data. Everything else waits for this.
+- **Direction (Nov 14, v0.24):** the product now targets independent local businesses that cannot afford consultants and avoid changes (prices, menu, hours, staffing, layout) for fear of losing customers. Counter-service food and drink comes first. Peri becomes the primary track, and the CoStar submission is undecided. The building work above stays in the repo as a capability (walls, doors, objects, replay). Details are in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md).
 
 ### Status of the prototype
 
@@ -38,6 +40,8 @@ The original prototype (the "Swarmscope" artifact, v0.1) has a **Minds** switch.
 ---
 
 ## 1b. The CoStar demo question
+
+> **Earlier focus (before v0.24).** This section describes the CoStar building demo. The current product is the independent-business use case in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md). Whether we still submit this demo to CoStar is `[open]` (section 10).
 
 `[planned]` The demo answers one question about one real retail property:
 
@@ -272,7 +276,9 @@ Thousands of agents per run is realistic. Millions is not.
 
 ## 10. Tracks and integrations
 
-**Decision (Nov 13):** CoStar is the headline demo. A Peri business is a time-boxed second world and calibration case, **dropped at Saturday midday** unless a real business or student org has already shared its numbers.
+**Decision (Nov 14, v0.24), replacing the one below:** Peri is the primary track, with the independent-business product ([INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md), sections 11 and 12). The CoStar submission is `[open]`: undecided, and the building demo stays in the repo. Amazon and LangChain are unchanged.
+
+**Decision (Nov 13), superseded by v0.24:** CoStar is the headline demo. A Peri business is a time-boxed second world and calibration case, **dropped at Saturday midday** unless a real business or student org has already shared its numbers.
 
 ### CoStar: "Inside and Out: AI for the Built World"
 
@@ -282,7 +288,7 @@ Thousands of agents per run is realistic. Millions is not.
 - **Upside:** fits the simulator plus agent loop. Real Houston and LA data (8.5 million commercial properties with leases, sales, tenants and available space), with engineers from all three companies on site and in the Discord. Vexcel imagery is sharp enough to count parking spaces from the air.
 - **Risks:** data covers Houston and LA only. The toolkit provides SDKs, MCP servers and OpenAPI services, and keys are self-generated, so the learning curve is the tools, not access. Organizers say the three layers cover the same buildings, so overlap is expected; the open question is how many are retail with a parking lot. Service times and foot traffic are not in the data, so they are labeled assumptions. The simulation is unvalidated, so present it as a scenario explorer. Needs a real spatial and visual component, not only the 2D abstract map. Highest effort.
 
-### Peri: Forward Deployed Challenge `[candidate]`
+### Peri: Forward Deployed Challenge `[planned]` primary track (v0.24)
 
 - **Rewards:** real-world need, usability (could the business adopt it immediately), end-to-end execution. Must name the business, the person consulted and their role, and give one piece of evidence. Student orgs and clubs qualify.
 - **Prize:** top three get introductions to hiring teams at Cognition, Edra, Ephemeral, Sea12, Arca and Poetic, plus Peri's talent network. No cash listed.
@@ -411,6 +417,13 @@ Pitch lines:
 
 ## 14. Change log
 
+- **v0.24 · Nov 14, 2026.** New direction: independent local businesses. **Decision (team):** the product targets local, independent businesses that cannot afford consultants for financial or operational decisions. These owners often avoid changes (prices, menu, hours, staffing, layout) because one mistake can lose regulars.
+  - **The edge:** a quick, cheap simulation of their own customers, checked against their own numbers, that says which customers would leave. Each answer ends with a small real-world trial.
+  - **Starting point:** counter-service food and drink (cafés, bakeries, sandwich and bubble-tea shops).
+  - **Tracks:** Peri becomes the primary track. The CoStar submission is undecided (`[open]`), and the building work stays in the repo.
+  - **Why the change:** the building demo had no user who strictly needed it. A restaurant that sees a long line just adds a register, and the research found no clear case of a building rebuilt because of how people chose to move. Independent owners have a real gap: no consultant budget, one location (so no A/B test), and regulars who notice every change.
+  - **New engine work this needs:** repeat visits with memory, menu items, and opening hours.
+  - **The use case:** specified in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md) (v0.1).
 - **v0.23 · Nov 14, 2026.** Objects inside the building. Worlds gain `objects`: solid things inside the building (stairs, fixtures, counters, stacked material), each an outline in map units. The engine adds every outline to the walls, so the no-walking-through-walls guarantee covers them, and no place may sit inside one. `swarm fitout --mesh <file.obj | auto>` finds them in the Matterport mesh between 0.3 m and 1.5 m above the floor. It leaves out what the floor plan already has (walls, columns, voids), door leaves in doorways (doors open), and patches under 0.03 m² (scan noise). On building 6FNMVoyPrL1, Floor 1, it finds 26 objects (18.7 m² in all): the two staircases, restroom fixtures, a U-shaped counter in the north unit and smaller fixtures. The Stairs B gate moved 2.1 m to the foot of the stairs, because the mesh shows the staircase where it stood. The scope display draws objects as hatched shapes. Also fixed: the mesh downloader (`fetchMeshObj`, used by `--mesh auto` and `swarm import-mesh`) took the first OBJ listed, which for this model is one chunk of a split mesh (1,925 vertices); it now prefers a whole-model OBJ (`out_res_50k.obj`). Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §13f.
 - **v0.22 · Nov 14, 2026.** One review engine. **Decision (team):** Ryan's advisor (v0.21) is the review engine; Justin's post-run analysis (`analysis/insights.js`) is the quick read shown when a run has no advice yet. In the scope display, Suggestions are requested only when someone clicks Suggestions (opening a run never calls Claude), target the run on screen (engine runs by run id, mock cases by case), and show the advisor's tested advice first, then the quick read, labeled untested. Justin's accessibility and robustness fixes are kept; the display keeps its visual style and its laptop-and-projector layout; the unwired notebook is left out. Details in [docs/INSIGHTS.md](docs/INSIGHTS.md).
 - **v0.21 · Nov 14, 2026.** The advisor, and the first Jev results on the real building (numbered v0.18 on the `engine` branch; renumbered on merge because `main` already had v0.18–v0.20).
