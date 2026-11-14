@@ -11,15 +11,23 @@ import { buildJevRequest, parseAnswers } from '../providers/jev.js';
 
 export const ROOM_LIMITS = { sign: 160, text: 300, ahead: 40, people: 24, price: 500 };
 // Any added sentence nudges Jev's answers (docs/PROTOTYPE.md §16 findings), so a sign is always compared
-// with this one, never with no sign.
-export const NEUTRAL_SIGN = 'Sign on the door: Restrooms are at the back, past the counter. Please keep the doorway clear.';
-// Changes smaller than this count as no change: asking Jev the same question twice differs by about 2 points
-// on average and occasionally by more (measured Nov 14 on 840 decisions).
+// with this plain one, never with no sign.
+export const NEUTRAL_SIGN_TEXT = 'Restrooms are at the back, past the counter. Please keep the doorway clear.';
+// The person is told whose door the sign is on. Left unsaid, Jev has to guess which shop it belongs to.
+export const signSentence = (shopName, words) => `Sign on the door of ${shopName}: ${words}`;
+// Asking Jev the same question twice differs by about 2 points on average, by 5 or more one time in eight,
+// and by 14 at most (measured Nov 14 on 840 decisions). So there are two bars. ROOM_NOISE is for the average
+// over the cast, where the differences largely cancel. ROOM_NOISE_PERSON is for one person, and sits above the
+// largest difference seen when nothing changed.
 export const ROOM_NOISE = 0.05;
+export const ROOM_NOISE_PERSON = 0.15;
 
-const clampInt = (v, lo, hi, def) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
-const clampNum = (v, lo, hi, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
+const absent = v => v == null || v === '';
+const clampInt = (v, lo, hi, def) => { const n = absent(v) ? NaN : Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
+const clampNum = (v, lo, hi, def) => { const n = absent(v) ? NaN : Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
 const text = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+// The words on the sign only: a typed "Sign on the door:" is dropped, because roomRequest adds its own.
+const signWords = v => text(text(v, 4 * ROOM_LIMITS.sign).replace(/^sign on the door[^:]{0,80}:\s*/i, ''), ROOM_LIMITS.sign);
 
 const services = spec => spec.nodes.filter(n => n.kind === 'service');
 
@@ -35,7 +43,7 @@ export function roomView(rawSpec) {
     places: places.map(n => ({ id: n.id, name: n.name, about: n.about, price: n.price, servers: n.servers, serviceTime: n.serviceTime })),
     cast: spec.minds.map(m => ({ id: m.id, name: m.name, age: m.age, group: groupName(m.archetype), bio: m.bio, personality: m.personality, goal: m.goal, social: m.social })),
     defaults: defaultScenario(spec),
-    limits: ROOM_LIMITS, neutralSign: NEUTRAL_SIGN, noise: ROOM_NOISE
+    limits: ROOM_LIMITS, neutralSign: signSentence(places[0].name, NEUTRAL_SIGN_TEXT), noise: ROOM_NOISE, noisePerson: ROOM_NOISE_PERSON
   };
 }
 
@@ -45,7 +53,7 @@ export function defaultScenario(spec, shop = null) {
   const home = places.find(n => n.id === shop) || places[0];
   const ahead = {};
   for (const n of places) ahead[n.id] = Math.min(ROOM_LIMITS.ahead, n.servers * 2);
-  return { shop: home.id, ahead, price: home.price, priorPrice: null, sign: '', minute: 60 };
+  return { shop: home.id, ahead, price: Math.min(ROOM_LIMITS.price, home.price), priorPrice: null, sign: '', minute: Math.min(60, spec.duration) };
 }
 
 // Clamp and complete a scenario from the page. Unknown places are ignored; missing values take the defaults.
@@ -60,7 +68,7 @@ export function normalizeScenario(spec, raw) {
   return {
     shop: base.shop, ahead, price,
     priorPrice: prior != null && priceWords(prior) !== priceWords(price) ? prior : null,
-    sign: text(r.sign, ROOM_LIMITS.sign),
+    sign: signWords(r.sign),
     minute: clampInt(r.minute, 0, spec.duration, base.minute)
   };
 }
@@ -76,6 +84,7 @@ function personWith(mind, edit) {
 // built by the engine's own observation code.
 export function roomRequest(spec, mind, scenario, tag = 'now') {
   const places = services(spec);
+  const home = places.find(n => n.id === scenario.shop) || places[0];
   const gate = spec.nodes.find(n => n.kind !== 'service') || { x: 50, y: 50 };
   const group = spec.archetypes.find(a => a.id === mind.archetype);
   const observation = visitObservation({
@@ -92,7 +101,7 @@ export function roomRequest(spec, mind, scenario, tag = 'now') {
         est: ahead > 0 ? (ahead + 1) * n.serviceTime / n.servers : 0, ahead, walkedAway30: 0
       };
     }),
-    offers: scenario.sign ? [scenario.sign] : undefined
+    offers: scenario.sign ? [signSentence(home.name, scenario.sign)] : undefined
   });
   if (scenario.priorPrice != null) {
     const p = observation.places.find(x => x.option === scenario.shop);
@@ -115,10 +124,11 @@ const probsOf = (decision, keys) => {
   return out;
 };
 
-// Ask every (or the chosen) cast member three things at most:
+// Ask every (or the chosen) cast member four things at most:
 //   before: the comparison scenario, with the person as written in the world;
 //   now: the scenario on the page, with the page's edits to that person;
-//   neutral: as `now` but with the neutral sign, only when `now` has a sign.
+//   neutral: as `now` but with the plain sign, only when `now` has a sign;
+//   written: as `now` but with the person as written, only for a rewritten person.
 // `provider` is any decision provider (Jev with option order fixed, or recordProvider below).
 export async function askRoom({ spec: rawSpec, scenario, compareTo = null, edits = {}, only = null, provider }) {
   const spec = normalizeSpec(rawSpec);
@@ -130,11 +140,13 @@ export async function askRoom({ spec: rawSpec, scenario, compareTo = null, edits
   const keys = [...services(spec).map(n => n.id), 'leave'];
 
   const jobs = [];
+  const rewritten = (m, e) => e.bio !== m.bio || e.personality !== m.personality || e.goal !== m.goal;
   for (const m of minds) {
     const edited = personWith(m, edits?.[m.id]);
     jobs.push({ m, arm: 'before', req: roomRequest(spec, m, before, 'before') });
     jobs.push({ m, arm: 'now', req: roomRequest(spec, edited, now, 'now') });
-    if (now.sign) jobs.push({ m, arm: 'neutral', req: roomRequest(spec, edited, { ...now, sign: NEUTRAL_SIGN }, 'neutral') });
+    if (now.sign) jobs.push({ m, arm: 'neutral', req: roomRequest(spec, edited, { ...now, sign: NEUTRAL_SIGN_TEXT }, 'neutral') });
+    if (rewritten(m, edited)) jobs.push({ m, arm: 'written', req: roomRequest(spec, m, now, 'written') });
   }
   const decisions = await provider.decideMany(jobs.map(j => j.req), { spec });
   if (!Array.isArray(decisions) || decisions.length !== jobs.length) throw new Error('The provider did not answer every question.');
@@ -150,8 +162,9 @@ export async function askRoom({ spec: rawSpec, scenario, compareTo = null, edits
     return {
       id: m.id, name: m.name, age: m.age, group: groupName(m.archetype),
       bio: edited.bio, personality: edited.personality, goal: edited.goal,
-      edited: edited.bio !== m.bio || edited.personality !== m.personality || edited.goal !== m.goal,
+      edited: rewritten(m, edited),
       before: probsOf(arm('before')?.d, keys), now: probsOf(nowJob.d, keys), neutral: arm('neutral') ? probsOf(arm('neutral').d, keys) : null,
+      written: arm('written') ? probsOf(arm('written').d, keys) : null,
       told: { time: obs.time, now: obs.now, places: obs.places.map(p => ({ id: p.option, name: p.name, cost: p.cost, line: p.line, people: p.people_ahead })), sign: obs.offers?.[0] || '' },
       source: sources.every(s => s === 'jev' || s === 'jev-cache' || s === 'recorded')
         ? (sources.some(s => s === 'jev') ? 'live' : 'recorded')
@@ -159,12 +172,16 @@ export async function askRoom({ spec: rawSpec, scenario, compareTo = null, edits
     };
   });
 
-  const answered = people.filter(p => p.before && p.now);
+  // A person with any answer missing is left out of every average, so the three shares are over the same people.
+  const answered = people.filter(p => p.before && p.now && (!now.sign || p.neutral));
   const mean = f => (answered.length ? answered.reduce((s, p) => s + f(p), 0) / answered.length : null);
+  const homeName = services(spec).find(n => n.id === now.shop).name;
   return {
-    shop: now.shop, scenario: now, compareTo: before, neutralSign: now.sign ? NEUTRAL_SIGN : null, noise: ROOM_NOISE,
-    share: { before: mean(p => p.before[now.shop]), now: mean(p => p.now[now.shop]), neutral: now.sign ? mean(p => (p.neutral ? p.neutral[now.shop] : p.now[now.shop])) : null },
-    asked: jobs.length, failed: people.filter(p => p.source === 'failed').length, people
+    shop: now.shop, scenario: now, compareTo: before, neutralSign: now.sign ? signSentence(homeName, NEUTRAL_SIGN_TEXT) : null,
+    noise: ROOM_NOISE, noisePerson: ROOM_NOISE_PERSON,
+    share: { before: mean(p => p.before[now.shop]), now: mean(p => p.now[now.shop]), neutral: now.sign ? mean(p => p.neutral[now.shop]) : null },
+    asked: jobs.length, askedLive: decisions.filter(d => d?.provider === 'jev').length,
+    failed: people.filter(p => p.source === 'failed').length, people
   };
 }
 

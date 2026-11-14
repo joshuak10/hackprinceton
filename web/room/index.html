@@ -7,7 +7,6 @@
 <meta name="description" content="Change a price, a line or a sign and see how each simulated customer reacts.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650;12..96,750&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 <script type="module" src="app.js"></script>
@@ -32,8 +31,11 @@
 
       <form id="form" autocomplete="off">
         <fieldset>
-          <legend>The line when they arrive</legend>
-          <div id="lines"></div>
+          <legend id="signLegend">A sign on the door</legend>
+          <label class="visually-hidden" for="sign">Sign text</label>
+          <textarea id="sign" rows="2" maxlength="160" placeholder="Type any sign and press Enter. For example: No laptops before 9 am."></textarea>
+          <div class="chips" id="chips"></div>
+          <p class="hint">A sign is compared with a plain sign about restrooms, because any sign at all nudges the answers.</p>
         </fieldset>
 
         <fieldset>
@@ -44,18 +46,13 @@
             <button class="btn small" type="button" id="priceUp" aria-label="Raise the price by one dollar">+</button>
             <label class="check"><input type="checkbox" id="remember"> <span id="rememberText">They know it used to be different</span></label>
           </div>
-          <p class="hint" id="priceHint">Whole dollars only: the engine rounds prices in what a customer is told.</p>
+          <p class="hint">Whole dollars only. Jev reacts to a price mostly for people whose description mentions money, so read other price moves with care.</p>
         </fieldset>
 
         <fieldset>
-          <legend>A sign on the door</legend>
-          <label class="visually-hidden" for="sign">Sign text</label>
-          <textarea id="sign" rows="2" maxlength="160" placeholder="Type any sign. For example: A second register is open this morning."></textarea>
-          <div class="chips" id="chips"></div>
-          <p class="hint">A sign is always compared with a neutral sign about restrooms, because any sign at all nudges the answers.</p>
+          <legend>The line when they arrive</legend>
+          <div id="lines"></div>
         </fieldset>
-
-        <p class="fine">These are simulated people answering one moment through Jev, a decision model. They are not a forecast and have not been checked against real customers. Changes under 5 points are within what asking the same question twice can give, and count as no change.</p>
 
         <div class="ask-bar">
           <div class="actions">
@@ -68,16 +65,19 @@
     </section>
 
     <section class="room" aria-label="How each person answers">
-      <div class="summary" id="summary" aria-live="polite">
-        <p class="big" id="sumLine">Ask the room to see where each person goes.</p>
-        <p class="sub" id="sumSub"></p>
+      <div class="summary" id="summary">
+        <p class="asked" id="asked" role="status"></p>
+        <p class="big" id="sumLine" aria-live="polite">Ask the room to see where each person goes.</p>
+        <p class="sub" id="sumSub" aria-live="polite"></p>
+        <p class="honest" id="honest"></p>
       </div>
-      <div class="bar-key" aria-hidden="true">
-        <span><i class="k now"></i> chooses the shop now</span>
-        <span><i class="k tick"></i> before</span>
-        <span><i class="k up"></i> more likely</span>
-        <span><i class="k down"></i> less likely</span>
-        <span class="sort"><button class="btn ghost small" type="button" id="sortBtn">Sort by change</button></span>
+      <div class="bar-key">
+        <span aria-hidden="true"><i class="k now"></i> chooses the shop now</span>
+        <span aria-hidden="true"><i class="k tick"></i> <span id="tickKey">before</span></span>
+        <span aria-hidden="true"><i class="k up"></i> more likely</span>
+        <span aria-hidden="true"><i class="k down"></i> less likely</span>
+        <span aria-hidden="true"><i class="k small"></i> <span id="smallKey">too small to tell</span></span>
+        <span class="sort"><button class="btn ghost small" type="button" id="sortBtn">Sort by group</button></span>
       </div>
       <ol class="people" id="people"></ol>
     </section>

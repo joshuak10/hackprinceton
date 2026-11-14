@@ -49,12 +49,13 @@ async function lib(path) {
   }
 }
 
-export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd() } = {}) {
+// `roomFetch` stands in for the network on the Ask-the-room route, so its live path can be tested without Jev.
+export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch } = {}) {
   const base = resolve(root);
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
     loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null,
-    roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomBusy: false
+    roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomChain: Promise.resolve(), roomWaiting: 0, roomFetch
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
   const server = http.createServer((req, res) => {
@@ -401,7 +402,29 @@ async function saveRoomRecord(ctx) {
   ctx.roomSaved = record.size;
 }
 
-const roomWorldName = value => (value == null || value === '' ? ROOM_WORLD : safeName(String(value), 'world name'));
+const roomWorldName = value => {
+  if (value == null || value === '') return ROOM_WORLD;
+  if (typeof value !== 'string') throw new HttpError(400, 'The world name must be text.');
+  return safeName(value, 'world name');
+};
+
+// One ask at a time, so a second browser cannot multiply the questions sent to Jev. A few more wait their turn
+// (answers on record come back in milliseconds); beyond that the caller is told to try again.
+const ROOM_WAITING_MAX = 4;
+async function roomTurn(ctx, run) {
+  if (ctx.roomWaiting >= ROOM_WAITING_MAX) throw new HttpError(429, 'The room is still answering earlier questions. Try again in a moment.');
+  ctx.roomWaiting++;
+  const earlier = ctx.roomChain;
+  let release;
+  ctx.roomChain = new Promise(done => { release = done; });
+  try {
+    await earlier;
+    return await run();
+  } finally {
+    ctx.roomWaiting--;
+    release();
+  }
+}
 
 async function getRoom(ctx, req, res) {
   const file = roomWorldName(new URL(req.url, 'http://localhost').searchParams.get('world'));
@@ -412,7 +435,9 @@ async function getRoom(ctx, req, res) {
   send(res, 200, { world: file, ...view, live: hasKey('TYPESAFE_API_KEY'), recorded: (await roomRecord(ctx)).size });
 }
 
-// Each ask is at most 3 questions per cast member (before, now, and now with the neutral sign), one ask at a time.
+// Each ask is at most 4 questions per cast member: before, now, now with the plain sign, and now with the
+// person as written. The live provider gives up quickly (4 seconds, 2 attempts), so a stalled network costs
+// the page seconds and not minutes; the page keeps its last answers when Jev answers nobody.
 async function postRoomAsk(ctx, req, res) {
   const body = await readJsonBody(req);
   const file = roomWorldName(body.world);
@@ -420,13 +445,14 @@ async function postRoomAsk(ctx, req, res) {
   const { askRoom, recordProvider } = await lib('../run/room.js');
   const record = await roomRecord(ctx);
   const live = hasKey('TYPESAFE_API_KEY') && body.offline !== true;
-  if (ctx.roomBusy) throw new HttpError(429, 'The room is still answering the last question. Try again in a moment.');
-  ctx.roomBusy = true;
-  try {
+  const out = await roomTurn(ctx, async () => {
     let provider = recordProvider(record);
     if (live) {
       const { makeProvider } = await lib('../providers/index.js');
-      provider = makeProvider('jev', { shuffle: false, cache: record, concurrency: 16, maxRequests: 120 });
+      provider = makeProvider('jev', {
+        shuffle: false, cache: record, concurrency: 32, maxRequests: 120,
+        timeoutMs: 4000, retry: { attempts: 2, maxRetryAfterMs: 1000 }, fetch: ctx.roomFetch
+      });
     }
     let result;
     try {
@@ -438,11 +464,11 @@ async function postRoomAsk(ctx, req, res) {
     } catch (err) {
       throw new HttpError(/rejected the API key/.test(err?.message || '') ? 502 : 400, err?.message || 'The room could not be asked.');
     }
-    if (live) await saveRoomRecord(ctx);
-    send(res, 200, { world: file, ...result, live, recorded: record.size });
-  } finally {
-    ctx.roomBusy = false;
-  }
+    // Answers already received are worth more than the file: a failed save is logged, not returned as an error.
+    if (live) await saveRoomRecord(ctx).catch(err => console.error(`[room] could not save the record: ${err.message}`));
+    return { ...result, error: (live && result.failed && provider.stats().firstError) || null };
+  });
+  send(res, 200, { world: file, ...out, live, recorded: record.size });
 }
 
 async function getAgent(ctx, req, res, { id, agentId }) {
