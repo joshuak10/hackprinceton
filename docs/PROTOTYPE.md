@@ -702,3 +702,87 @@ CLI: `swarm fitout <fitout.json> [--plan-raw data/<id>.json | --model <id>] [--o
 - Known gap in `engine/walls.js`: a path can pass a wall end closer than `clearance`. It never touches the wall, so the hard rule holds; it only affects how tightly dots hug corners.
 - **Door gaps (integration, Nov 14).** Builders pull each door's ends in from the jambs (by up to a quarter of the clearance) so a door never touches a wall, and nav may round a jamb closer than that (the known gap above). On the real building, walks between the food hall and the market rounded the pier between the two front doors inside that pull-in, and the market main entrance counted 97 of about 430 crossings. The Sim now counts each door on its gap (§14d, "Door traffic"): the drawn segment, with each end that stops short of a wall (within max(0.3, clearance) units) carried on to that wall plus 0.02. Paths never touch walls, so the part along a jamb is never crossed. A door end already on a wall, or with no wall in reach, is used as drawn; `frames.doors` and the viewer still show the drawn segment. Worlds without walls or doors are unchanged.
 - **Real-building check (Nov 14).** `6FNMVoyPrL1` Floor 1 with `buildings/6FNMVoyPrL1/fitout-floor1-lunch.json`: the independent no-through-wall check (own segment intersection, frames every 0.01 min) found 0 crossings and nobody inside the sealed 32.6 m² void in the food hall. Door counts on the gaps match an independent count from those frames door for door.
+
+---
+
+## 15. The advisor: from "where is the problem" to "what to do about it" (Nov 14)
+
+**Decision (user):** finding a bottleneck is not enough. The last step of every run is an advisor: a general-purpose Claude agent that reads everything the run produced, answers the user's question, proposes changes, **tests them in the simulator on the same crowd**, and tells the user what to try next. The user can then push back and iterate.
+
+The advisor never just suggests. Every recommendation carries the measured effect of that change on the same seeds.
+
+```
+question + world ─► swarm run ─► recorded run(s)
+                                     │
+        ┌────────────────────────────┘
+        ▼
+   brief (KPIs, bottlenecks, doorways, who had the worst time, who spent the most,
+          what people said, torn decisions, assumptions, levers available)
+        │
+        ▼
+   advisor (Claude) ──► test_change(patch) ──► swarm compare on the same seeds ──┐
+        ▲                                                                        │
+        └────────────────────────── measured effect ◄────────────────────────────┘
+        │
+        ▼
+   advice: the answer, ranked changes with measured effects, cautions, what to try next
+```
+
+### 15a. Segment outcomes (who, not only where)
+
+Questions like "which people overspend the most?" need results by kind of person.
+
+- Each agent records `spent` (the price it paid at each place that served it, after any offer) and `visits` (the place ids, in order). Both go into `agents.json`.
+- `metrics().segments = { byGroup: [...], byCast: [...] }`. Each entry: `{ id, name, group, count, avgWait, avgSpent, avgVisits, walkAwaysPerPerson, shareNeverServed, avgFrustration, topPlaces: [{ id, name, visits }] }`. In route mode: `{ id, name, group, count, avgTrip, avgDelay, avgFrustration }`.
+- A segment is a kind of simulated person (a group, or everyone who copies one cast member). It is never a real individual. Reports say so.
+- `swarm report` adds two tables: who had the worst time, and who spent the most.
+
+### 15b. Targeted offers (a new kind of change to test)
+
+A way to simulate reaching one kind of person with a message or a deal.
+
+World field `offers`, optional, ≤ 50:
+```js
+{ id, text,                          // what the person is told, ≤ 160 chars: "Eastgate Urgent Care: seen in 20 minutes, half the ER price"
+  to: { groups: [archetypeId], cast: [castId] },   // who receives it; an empty `to` means everyone
+  place: nodeId | null,              // the place it is about
+  priceOff: 0..1,                    // optional discount at that place for these people
+  from, until }                      // optional window, in minutes from the start
+```
+- A person who matches, inside the window, sees `offers: [text, …]` in their observation, so Jev can react to it. Their cost at that place is the discounted price, both in what they see and in what they spend. The rules provider uses the discounted price.
+- The offer is information plus an optional price change. It does not force anyone anywhere.
+- Patch op: `{ kind: 'offer', offer: { … } }` adds an offer, so `swarm compare` can test one. `validateWorld` checks references.
+- `metrics().offers = [{ id, reached, wentToPlace }]`: how many people received it, and how many of them then went to its place.
+
+### 15c. The advisor
+
+`run/advisor.js`:
+```js
+buildBrief({ world, runs })          // → { markdown, data }: everything above, compact, with the levers that can be changed and their current values
+advise({ world, question, seeds = [7, 8, 9], provider = 'rules', confirmWith = null, maxExperiments = 6,
+         model = 'claude-fable-5-2', apiKey, client, onStep })
+  // → { answer, findings, recommendations, cautions, nextSteps, experiments, transcript }
+```
+- **Loop.** Claude gets the brief and four tools:
+  - `test_change({ label, why, patch })` runs the patched world on the same seeds and returns before, after and the difference, with the spread across seeds.
+  - `look_at_person({ runId, agentId })` returns one agent's decisions and trace.
+  - `list_people({ segment, sortBy })` finds agents to look at.
+  - `finish({ … })` ends the loop.
+- **Bounded.** At most `maxExperiments` tests. Each test must say why it is being tried.
+- **Two-stage testing.** Experiments run on `provider` (rules by default: instant and free). With `confirmWith: 'jev'`, the top recommendations are re-run with Jev before `finish`, and the advice reports both results. If they disagree, it says so.
+- **Recommendation shape:** `{ label, patch, effect: { kpi: { before, after, change, spread } }, testedWith, holdsAcrossSeeds, costNote, confidence: 'high' | 'medium' | 'low', why }`.
+- **Rules the advisor is given:**
+  - Answer the user's question first, in plain words.
+  - Report a change as helping only if its effect is larger than the spread across seeds.
+  - Rankings under stated assumptions, not forecasts. Name the assumptions the answer depends on.
+  - Segments are kinds of simulated people, never real individuals.
+  - Say what it could not test.
+- Output is saved as `advice.md` and `advice.json` beside the runs.
+
+CLI: `swarm advise <world> [--question "…"] [--seeds 3] [--provider rules|jev] [--confirm-with jev] [--max-experiments 6] [--model claude-fable-5-2]`. It needs `ANTHROPIC_API_KEY`. Without one it explains the Claude Code path.
+
+**Claude Code path (no API key):** `.claude/commands/advise.md`, a slash command. Given a world or a run, Claude Code itself is the advisor: it reads `swarm report`, writes patch files, runs `swarm compare` on the same seeds, and writes `advice.md` by the same rules.
+
+**Iterating.** `advise` accepts `--follow-up "…"` with `--from <advice.json>`: the user's reply plus the earlier experiments go back to the advisor, which tests further and updates the advice.
+
+Server and viewer: `GET /api/runs/:id/advice` returns the saved advice, and the viewer shows it in an "Advice" panel beside a "Who" panel for the segment tables.

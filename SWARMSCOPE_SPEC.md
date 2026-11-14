@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.17 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.18 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -407,6 +407,15 @@ Pitch lines:
 ---
 
 ## 14. Change log
+
+- **v0.18 · Nov 14, 2026.** The advisor, and the first Jev results on the real building.
+  - **Decision (user):** telling someone where the bottleneck is isn't enough; the system has to help them fix it. Every run ends with an advisor: a general-purpose Claude agent that reads what the run produced, answers the question, proposes changes, tests each one in the simulator on the same crowd, and says what to try next. The user can reply and iterate. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §15.
+  - Results are also reported by kind of person (group and cast member): wait, money spent, walk-aways, frustration. This is what lets a question like "which people overspend the most?" be answered. A segment is a kind of simulated person, never a real individual.
+  - New kind of change to test: a **targeted offer**, a message or discount shown to one kind of person. Jev's agents see it and may act on it.
+  - This brings forward the "explain and test" step and part of the optimizer (section 8). The greedy search by gain per cost is still to come; the advisor chooses what to test.
+  - `[confirmed]` Floor 1 of the target building ran with Jev at weekday lunch on five seeds, with no agent crossing a wall and no fallback to rules. Under the proposed fit-out the worst bottleneck was a single-register counter in 3 of 5 runs, where rules pointed at a different counter in every run.
+  - `[confirmed]` Cast size matters: with three cast members in a group, one member's errand became 47 people's errand and produced a false bottleneck. The cast was raised to 25, with rare errands weighted low. This answers the open question in section 5 about cast size: a group needs enough varied cast members that no single one dominates.
+  - `[open]` A live Jev rerun of the same seed does not repeat exactly (65 walk-aways, then 52). Recorded runs replay exactly. Report results across seeds, not from one run.
 
 - **v0.17 · Nov 14, 2026.** First real data for model `6FNMVoyPrL1`, and the scenario for it.
   - `[confirmed]` The Matterport keys work. The model has 2 floors, 23 rooms, 334 boundary edges (all typed `wall`), 23 openings (all typed `opening`, none `doorway`) and 86 scan points. Room labels are empty and classifications are only "Void" or "Other". The importer gives Floor 1: 134 wall segments, 10 doors (5 exterior); Floor 2: 80 wall segments, 7 doors (3 marked exterior).
