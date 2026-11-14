@@ -421,7 +421,7 @@ A display built for the two CoStar simulations (building congestion and the reta
 
 **RunBundle.** The display loads `{ meta, spec, geometry, frames, metrics, agents, remarks, decisions }`. Mock runs (`web/scope/mock/*.json`, `web/scope/data/*.json`) are written in this shape by `scripts/mock_runs.js`. For a recorded run, `geometry` comes from `spec.geometry` and `decisions` from the endpoint below.
 
-**Engine runs** (`web/scope/lib/engine.js`). The engine keeps walls, doors and scale in `frames.walls`, `frames.doors` and `spec.geo`, and drops unknown spec fields, so the display builds the geometry from those: one floor, walls as drawn, doors as openings (exterior or interior), the view fitted to the walls and places, and a floor fill flooded from the service points with exterior doors closed (no fill if the walls leak). Gates become entries. The cast's `bio`, `goal` and `social` are read as `about`, `wants` and `listens_to`. A run with no decision records (the inline rules provider) gets its walk-aways from agent traces ("Saw N people in line at X … and walked away", "Gave up on X after M min in line").
+**Engine runs** (`web/scope/lib/engine.js`). The engine keeps walls, doors and scale in `frames.walls`, `frames.doors` and `spec.geo`, and drops unknown spec fields, so the display builds the geometry from those: one floor, walls as drawn, doors as openings (exterior or interior), the view fitted to the walls and places, and a floor fill flooded from the service points with exterior doors closed (no fill if the walls leak). Gates become entries. Objects (`spec.objects`, §13f) are drawn as hatched shapes with a thin outline, not as thick walls: their edges are matched in `frames.walls` at the frames' 0.01 precision and the shapes are rasterized into the floor's `obstacles` grid. The cast's `bio`, `goal` and `social` are read as `about`, `wants` and `listens_to`. A run with no decision records (the inline rules provider) gets its walk-aways from agent traces ("Saw N people in line at X … and walked away", "Gave up on X after M min in line").
 
 **Suggestions.** The Suggestions button requests nothing until clicked. For an engine run it reads `GET /api/runs/:id/advice` (the advisor, §15c) and falls back to `POST /api/insights` (the quick read, docs/INSIGHTS.md) when the run has no advice; mock cases use the quick read. Opening another run resets it.
 
@@ -539,6 +539,7 @@ arriveObservation(ctx)  // ctx = { spec, t, person, trip: { fromName, toName }, 
 |---|---|
 | `walls` | Optional array, ≤ 4000 segments. Each is `{ x1, y1, x2, y2 }` in map units (0–100, the same space as nodes); `[x1, y1, x2, y2]` is also accepted as input. A doorway or opening is a gap: the wall is given as the pieces on either side. Optional per-wall `source`: `"matterport-vector"`, `"mesh-slice"` or `"drawn"`. |
 | `geo` | Optional `{ metersPerUnit, clearance, floor, source }`. `clearance` (map units, 0.02–1, default 0.2) is how far paths stay from wall ends. Builders set it to at most a quarter of the narrowest door. The rest is informational in v0.2: `travelSpeed` stays in map units per minute, and builders derive it from `metersPerUnit`. |
+| `objects` | Optional array, ≤ 400. Solid things inside the building: `{ id, name, kind, source, polygon, areaM2?, sizeM?, about? }`, with `polygon` 3–64 points as `[x, y]` or `{ x, y }` in map units (it closes by itself). The engine adds every outline edge to `walls`, so walls plus outline edges count toward the 4000 limit. See §13f. |
 | `edges[].via` | Route mode, optional array of ≤ 12 `{ x, y }` waypoints. The edge's shape is the polyline from → via… → to. |
 | `provenance` | Optional object (≤ 300 keys) mapping a field path to `data`, `vision`, `assumed` or `owner-reported`. Kept as-is. |
 
@@ -547,6 +548,7 @@ Rules checked by `validateWorld` (all are errors unless noted):
 - Route mode: no edge polyline touches a wall. The message names the edge and the wall index.
 - Visit mode: every service node is reachable on foot from at least one entry, and at least one exit is reachable from every service node.
 - More than 4000 walls is an error. Zero-length walls are dropped and out-of-range coordinates are clamped, each with a warning.
+- No node may sit inside an object; the message names the object. An object outline with fewer than 3 points or no area is dropped with a warning. Messages about an object edge name the object (`objects[i] ("name")`), not a wall index.
 
 ### 13b. `engine/walls.js`
 
@@ -612,6 +614,29 @@ meshToWalls(objText, { up, floorHeight, sliceHeights = [1.0, 1.5], minLength = 0
 - A segment is kept only if it appears at every slice height, which drops most furniture. Collinear pieces are merged and pieces shorter than `minLength` are dropped. Tall furniture can survive as a false wall, which blocks rather than leaks, so the result is labeled `mesh-slice` and should be checked by a person.
 
 CLI: `swarm import-matterport <modelId> [--floor N] [--mode route|visit] [--out worlds/<slug>.json] [--save-raw data/<id>.json]`, `swarm import-matterport --from-raw <file.json> …` (no API call) and `swarm import-mesh <file.obj> [--out …]`.
+
+### 13f. Objects inside the building (from the mesh)
+
+The vector floor plan traces walls, columns and other holes in rooms. The mesh also shows everything else that stands in the way at walking height: stairs, fixtures, counters, stacked material, equipment. Those become the world's `objects` (§13a).
+
+`builder/objects.js` (pure, no Node imports):
+```js
+meshObjects(mesh, plan, { zMin = 0.3, zMax = 1.5, cell = 0.1, nearWall = 0.5, doorClear = 0.8, minArea = 0.03,
+                          simplify = 0.08, maxPoints = 48, up, floorHeight, floorIndex })
+  // mesh: OBJ text, bytes or parseObj output; plan: extractFloorplan output (meters)
+  // → { objects: [{ id: 'obj1', name: 'Object 1 (3.6 x 2.4 m)', kind: 'object', source: 'mesh-slice',
+  //                 polygon: [{ x, y }], areaM2, sizeM, room }],     // largest first, meters, counterclockwise
+  //     floorHeight, levels, up, dropped: { specks, areaM2 }, meshCells, warnings }
+floorLevels(mesh, { up, inside })   // → [{ height, areaM2 }] lowest first: clusters of upward-facing surface
+```
+- **Floor height.** Upward-facing horizontal surface under the plan's rooms, binned by height. Only bins with real floor in them are joined (within 0.4 m), so small surfaces at every height cannot chain two floors together. A cluster counts as a floor if it holds at least a quarter of the largest. The plan floor's `sequence` picks the level, lowest first; `floorHeight` overrides it. On 6FNMVoyPrL1 this gives −3.05 m and 2.75 m, matching the scan positions (−3.06 m and 2.71 m).
+- **The cut.** Each triangle's part between 0.3 m and 1.5 m above the floor is marked on a 0.1 m grid, from above: edges for upright surfaces, fill for flat ones such as tabletops and stair treads.
+- **Dropped:** cells outside every room or inside a void (Matterport's non-area regions) or a hole (already walls); cells within 0.5 m of a floor-plan wall (the wall's own surface, trim, glazing); cells within 0.8 m of a doorway, across its width, because a closed door or a door leaf shows in the scan but people pass there; patches under 0.03 m² (scan noise).
+- **Outlines.** Each 8-connected patch of cells is traced along cell edges (holes inside a patch are filled), then simplified (Douglas–Peucker, 0.08 m, loosened until it has at most 48 points). Ids are by size, then position, so the same mesh gives the same ids.
+- **In the engine.** `normalizeSpec` adds each outline edge to `walls` with the object's `source`, and keeps `spec.objects` for display and reports. A given wall that is already an object edge is dropped first, so a normalized spec normalizes to the same walls again. Paths, reachability, the run-time crossing check and recorded frames all see the objects as walls.
+- **Names.** The mesh does not say what an object is, so objects are named by size. Write a better `name` and `kind` in the world when you know (e.g. `Stair to Floor 2`, `stairs`).
+
+`swarm fitout <fitout.json> … --mesh <file.obj | auto> [--floor-height H]` runs `meshObjects` on the plan before `applyFitout`. `auto` downloads the model's OBJ with the same keys as `--model` (`fetchMeshObj` prefers a whole-model OBJ over a file named `*chunk*`, which is only one piece of a split mesh). The command lists the objects it found.
 
 ---
 
@@ -735,7 +760,8 @@ applyFitout(plan, fitout, { margin = 8 })
   // { world, report: { gates, places, walls, doors, metersPerUnit, warnings } }
 ```
 - The wider margin leaves room to walk outside along the building between exterior doors.
-- Every gate and place is converted to map units and checked: at least 0.3 m from every wall, and reachable on foot from at least one gate. A failed check is an error that names the item.
+- Every gate and place is converted to map units and checked: at least 0.3 m from every wall and every object, and reachable on foot from at least one gate. A failed check is an error that names the item (and the object, when one is too close).
+- With `plan.objects` (from `--mesh`, §13f), the objects are converted with the same transform, count as walls in every check, and are written to the world's `objects` with `provenance.objects: "data"`.
 - The world gets `walls`, `geo`, `doors` (gap segments from the plan's doors, named by what they join) and `provenance`, and passes `validateWorld`.
 - Real-building worlds contain the floor plan, so the CLI writes them under `data/worlds/` by default.
 

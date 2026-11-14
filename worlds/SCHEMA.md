@@ -41,6 +41,7 @@ Not modeled yet: resources held for a long time while doing other things (a park
 | `archetypes` | array, 1–6 | one group `"Everyone"` | Behavioral groups with shares. Extra entries are dropped. |
 | `minds` | array, ≤ 40 | one generic persona per archetype | **The cast**: concrete people (section 7). Write 10–20. |
 | `walls` | array, ≤ 4000 segments | none | Interior and exterior walls nobody can walk through (section 14). |
+| `objects` | array, ≤ 400 outlines | none | Solid things inside the building (stairs, fixtures, counters), each `{ id, name, kind, source, polygon }` with 3–64 `[x, y]` points. The engine adds every outline to the walls, so nobody walks through an object and no node may sit inside one (section 14). |
 | `geo` | object | none | Scale and path clearance for a floor plan (section 14). |
 | `doors` | array, ≤ 500 | none | Doorway segments where foot traffic is counted (section 14). |
 | `provenance` | object, ≤ 300 keys | none | Where each number came from: `data`, `vision`, `assumed` or `owner-reported` (section 14). |
@@ -328,6 +329,12 @@ Everything is in map units on the same 100 × 100 map as the nodes. Walls, doors
 - A doorway is a gap: give the wall as the pieces on either side of it.
 - Touching counts as crossing, so a path may not even graze a wall end.
 - Out-of-range coordinates are clamped and zero-length walls are dropped, each with a warning. More than 4000 walls is an error.
+
+**`objects`**: up to 400 solid things inside the building, each `{ "id", "name", "kind", "source", "polygon" }`, with optional `areaM2`, `sizeM` and `about`.
+- `polygon` is the outline, 3 to 64 points as `[x, y]` or `{ "x", "y" }`; it closes by itself.
+- The engine adds every outline edge to the walls, so the same rules apply: nobody walks through an object, and walls plus outline edges may not exceed 4000.
+- A node inside an object is an error that names the object. Keep places at least 0.3 m from objects so people can stand at them.
+- `swarm fitout --mesh <file.obj | auto>` fills this from the Matterport mesh (stairs, fixtures, counters, stacked material between 0.3 m and 1.5 m above the floor). The mesh does not say what each object is, so they are named by size; rename them when you know.
 
 **`geo`**: scale and clearance of the plan.
 

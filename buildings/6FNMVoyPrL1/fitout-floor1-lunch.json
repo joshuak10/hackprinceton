@@ -73,8 +73,8 @@
       "id": "stairs_b",
       "name": "Stairs B, to the offices upstairs",
       "at": {
-        "x": -4.95,
-        "y": -1.24
+        "x": -3.05,
+        "y": -2.14
       },
       "weight": 2
     }
@@ -796,6 +796,11 @@
       "key": "order of visits",
       "value": "not enforced",
       "why": "Nothing yet makes people buy food before sitting at the tables. Known limit."
+    },
+    {
+      "key": "Stairs B gate position",
+      "value": "(-3.05, -2.14) m",
+      "why": "Moved 2.1 m from (-4.95, -1.24), which sat in a notch of the staircase that the Matterport mesh shows there (swarm fitout --mesh). The gate is now at the foot of the stairs, at least 0.4 m from the staircase and the walls."
     },
     {
       "key": "cast",

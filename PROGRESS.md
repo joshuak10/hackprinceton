@@ -124,8 +124,9 @@ The real building (needs the Matterport keys in `.env.local`):
 ```sh
 # 1. Build the world from the fit-out and the real walls (fetches the Matterport data; output is gitignored).
 #    To keep the raw model data too: node bin/swarm.js import-matterport 6FNMVoyPrL1 --save-raw data/6FNMVoyPrL1.json
+#    --mesh auto also downloads the 3D mesh and adds the solid objects in it (stairs, fixtures, counters) as walls.
 node bin/swarm.js fitout buildings/6FNMVoyPrL1/fitout-floor1-lunch.json \
-  --model 6FNMVoyPrL1 --out data/worlds/floor1-lunch.json
+  --model 6FNMVoyPrL1 --mesh auto --out data/worlds/floor1-lunch.json
 # 2. Run it. Frames are recorded every 3 s by default (--frame-seconds 2 to 5 to change it):
 node bin/swarm.js run data/worlds/floor1-lunch.json --provider jev      # or --provider rules
 # 3. Watch it: open http://127.0.0.1:4173/scope/ and pick "Building congestion"
@@ -152,6 +153,7 @@ None of this is in the repo. Each teammate needs their own copy.
 
 - **Simulated people are unvalidated.** Results are rankings under stated assumptions, not forecasts.
 - **One floor per world.** Stairs stand in for the other floor.
+- **Objects come from the mesh and are named by size.** `--mesh` finds 26 on Floor 1 (the two staircases, restroom fixtures, a U-shaped counter in the north unit, small fixtures). An empty shell's mesh can also hold things that would be cleared before a fit-out; check the list the command prints.
 - **Doors count people but do not slow them down.**
 - **Every place and headcount in the fit-out is a proposal.**
 - **TypeSafe's speed and price are from one measurement** on the hackathon network.

@@ -57,9 +57,10 @@ Usage: swarm <command> [options]
                                     plan and a CoStar profile (§14e); prints rooms, tenants, doors,
                                     warnings and every assumption used
   fitout <fitout.json> [--plan-raw data/<id>.json | --model <id>] [--floor N] [--margin 8]
-         [--out data/worlds/<slug>.json]
+         [--out data/worlds/<slug>.json] [--mesh <file.obj> | --mesh auto] [--floor-height H]
                                     Place a proposed fit-out (gates and places in meters) inside a
-                                    real Matterport floor plan; writes a walled, doored world (§14f)
+                                    real Matterport floor plan; writes a walled, doored world (§14f).
+                                    --mesh adds the solid objects in the 3D mesh at walking height (§13f)
   import-matterport <modelId> [--floor N] [--mode route|visit] [--out worlds/<slug>.json] [--save-raw data/<id>.json]
   import-matterport --from-raw <file.json> [...]
                                     Starter world with walls from a Matterport model (no API call
@@ -137,7 +138,7 @@ const COMMANDS = {
     min: 0, max: 0, run: cmdBuildingLazy,
     flags: ['model', 'plan-raw', 'profile', 'scenario', 'floor', 'overrides', 'out', 'save-raw']
   },
-  fitout: { min: 1, max: 1, flags: ['plan-raw', 'model', 'floor', 'margin', 'out'], run: cmdFitoutLazy },
+  fitout: { min: 1, max: 1, flags: ['plan-raw', 'model', 'floor', 'margin', 'out', 'mesh', 'floor-height'], run: cmdFitoutLazy },
   'import-matterport': {
     min: 0, max: 1, run: (a, f) => cmdImportLazy('cmdImportMatterport', a, f),
     flags: ['floor', 'mode', 'out', 'save-raw', 'from-raw']

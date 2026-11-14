@@ -13,7 +13,8 @@ const PROVENANCE_LABELS = ['data', 'vision', 'assumed', 'owner-reported'];
 const DEFAULT_TITLE = 'Untitled world';
 const DEFAULT_QUESTION = 'Where are the bottlenecks?';
 const DEFAULT_LEAVE = 'Leave and go home';
-const MAX = { nodes: 60, edges: 150, archetypes: 6, minds: 40, tags: 12, walls: 4000, doors: 500, via: 12, provenance: 300, offers: 50 };
+const MAX = { nodes: 60, edges: 150, archetypes: 6, minds: 40, tags: 12, walls: 4000, doors: 500, via: 12, provenance: 300, offers: 50, objects: 400, objectPoints: 64 };
+const OBJECT_SOURCES = ['mesh-slice', 'matterport-vector', 'drawn'];
 const OFFER_TEXT = 160;      // characters of an offer's text
 const DEFAULT_CLEARANCE = 0.2;
 const SPEED = { def: 4, min: 0.2, max: 600 }; // travelSpeed, map units per minute (§14d raised the maximum from 60)
@@ -23,7 +24,7 @@ const DOOR_NEAR_WALL = 0.5;  // a door with no wall this close to either end is 
 
 const KNOWN = {
   top: ['$schema', 'title', 'question', 'context', 'leaveLabel', 'mode', 'duration', 'clockStart', 'travelSpeed', 'walkSpeed',
-    'arrivals', 'nodes', 'edges', 'archetypes', 'minds', 'walls', 'geo', 'doors', 'provenance', 'offers'],
+    'arrivals', 'nodes', 'edges', 'archetypes', 'minds', 'walls', 'objects', 'geo', 'doors', 'provenance', 'offers'],
   arrivals: ['total', 'start', 'end', 'shape'],
   node: ['id', 'name', 'kind', 'x', 'y', 'servers', 'serviceTime', 'serviceDist', 'appeal', 'price', 'tags', 'about', 'weight'],
   edge: ['from', 'to', 'name', 'length', 'capacity', 'twoWay', 'costModel', 'via'],
@@ -33,6 +34,7 @@ const KNOWN = {
   mind: ['id', 'name', 'age', 'archetype', 'bio', 'personality', 'goal', 'social', 'informed', 'weight', 'entry', 'origin', 'destination'],
   geo: ['metersPerUnit', 'clearance', 'floor', 'source'],
   door: ['id', 'name', 'x1', 'y1', 'x2', 'y2', 'exterior'],
+  object: ['id', 'name', 'kind', 'source', 'polygon', 'areaM2', 'sizeM', 'about'],
   point: ['x', 'y'],
   offer: ['id', 'text', 'to', 'place', 'priceOff', 'from', 'until'],
   offerTo: ['groups', 'cast']
@@ -218,7 +220,7 @@ function build(raw, rep) {
       shape: choice(rep, 'arrivals.shape', ar.shape, SHAPES, 'peak')
     },
     nodes: [], edges: [], archetypes: [], minds: [],
-    walls: [], geo: null, doors: [], provenance: null, offers: []
+    walls: [], objects: [], geo: null, doors: [], provenance: null, offers: []
   };
 
   // ----- nodes -----
@@ -467,8 +469,9 @@ function build(raw, rep) {
   });
 
   checkReach(spec, rep, nodePath, archPath);
-  const { wallIndex, doorPaths } = buildingFields(raw, spec, rep);
-  const wallName = k => `walls[${wallIndex[k] ?? k}]`;
+  const { wallLabels, doorPaths } = buildingFields(raw, spec, rep);
+  const wallName = k => wallLabels[k] ?? `walls[${k}]`;
+  checkObjects(spec, rep, nodePath);
   checkWalls(spec, rep, { nodePath, edgePaths, wallName });
   checkDoors(spec, rep, { doorPaths, wallName });
   return spec;
@@ -560,8 +563,29 @@ function buildingFields(raw, spec, rep) {
   }
   const { walls, warnings } = normalizeWalls(rawWalls);
   for (const w of warnings) rep.note(w);
-  spec.walls = walls;
   const wallIndex = inputIndexes(rawWalls, walls);
+
+  // Objects (§13f): solid things inside the building. Each outline is added to the walls, so every path, check and
+  // frame treats it as walls. A given wall that is already an object edge is dropped first, so a spec that has been
+  // normalized (and so already lists the edges) normalizes to the same walls again.
+  spec.objects = normalizeObjects(rep, raw.objects);
+  const edgeKey = (x1, y1, x2, y2) => (x1 < x2 || (x1 === x2 && y1 <= y2) ? `${x1},${y1},${x2},${y2}` : `${x2},${y2},${x1},${y1}`);
+  const objectEdges = spec.objects.flatMap((o, i) => o.polygon.map((p, k) => {
+    const q = o.polygon[(k + 1) % o.polygon.length];
+    return { x1: p.x, y1: p.y, x2: q.x, y2: q.y, source: o.source, label: `objects[${i}] ("${o.name}")` };
+  })).filter(e => Math.hypot(e.x2 - e.x1, e.y2 - e.y1) > 1e-9);
+  const taken = new Set(objectEdges.map(e => edgeKey(e.x1, e.y1, e.x2, e.y2)));
+  spec.walls = [];
+  const wallLabels = [];
+  walls.forEach((w, k) => {
+    if (taken.has(edgeKey(w.x1, w.y1, w.x2, w.y2))) return;
+    spec.walls.push(w);
+    wallLabels.push(`walls[${wallIndex[k] ?? k}]`);
+  });
+  for (const { label, ...e } of objectEdges) { spec.walls.push(e); wallLabels.push(label); }
+  if (spec.walls.length > MAX.walls) {
+    rep.fail('objects', `The walls and object outlines add up to ${spec.walls.length} segments, above the maximum ${MAX.walls}; simplify the objects or leave some out.`);
+  }
 
   if (!missing(raw.geo)) {
     const g = raw.geo;
@@ -625,7 +649,61 @@ function buildingFields(raw, spec, rep) {
       if (Object.keys(kept).length) spec.provenance = kept;
     }
   }
-  return { wallIndex, doorPaths };
+  return { wallLabels, doorPaths };
+}
+
+// Objects: { id, name, kind, source, polygon: [{ x, y }] | [[x, y]], areaM2?, sizeM?, about? } with 3 to 64 points
+// inside the 0-100 map. A polygon with no area is dropped with a warning.
+function normalizeObjects(rep, raw) {
+  const out = [], ids = new Set();
+  list(rep, 'objects', raw, MAX.objects).forEach((o, i) => {
+    const p = `objects[${i}]`;
+    if (!isObj(o)) { rep.warn(p, 'not an object; ignored'); return; }
+    unknownFields(rep, p, o, KNOWN.object);
+    const pts = [];
+    list(rep, `${p}.polygon`, o.polygon, MAX.objectPoints).forEach((pt, j) => {
+      const [x, y] = Array.isArray(pt) ? pt : isObj(pt) ? [pt.x, pt.y] : [];
+      if (!isNum(x) || !isNum(y)) { rep.warn(`${p}.polygon[${j}]`, `${show(pt)} is not a point; dropped`); return; }
+      const q = { x: number(rep, `${p}.polygon[${j}].x`, x, 50, 0, 100), y: number(rep, `${p}.polygon[${j}].y`, y, 50, 0, 100) };
+      const last = pts[pts.length - 1];
+      if (!last || last.x !== q.x || last.y !== q.y) pts.push(q);
+    });
+    if (pts.length > 1 && pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y) pts.pop();
+    let area = 0;
+    for (let k = 0; k < pts.length; k++) { const a = pts[k], b = pts[(k + 1) % pts.length]; area += a.x * b.y - b.x * a.y; }
+    if (pts.length < 3 || Math.abs(area) < 1e-9) { rep.warn(p, 'needs an outline of at least 3 points around some area; object dropped'); return; }
+    const id = uniqueId(rep, p, o, i, ids);
+    let source = 'drawn';
+    if (!missing(o.source)) {
+      if (OBJECT_SOURCES.includes(o.source)) source = o.source;
+      else rep.warn(`${p}.source`, `${show(o.source)} is not one of ${OBJECT_SOURCES.join(', ')}; using "drawn"`);
+    }
+    const obj = { id, name: text(rep, `${p}.name`, o.name, 60) || id, kind: text(rep, `${p}.kind`, o.kind, 30) || 'object', source, polygon: pts };
+    if (!missing(o.areaM2)) obj.areaM2 = number(rep, `${p}.areaM2`, o.areaM2, 0, 0, 1e6);
+    if (Array.isArray(o.sizeM) && o.sizeM.length === 2 && o.sizeM.every(isNum)) obj.sizeM = o.sizeM.map(toNum);
+    const about = text(rep, `${p}.about`, o.about, 200);
+    if (about) obj.about = about;
+    out.push(obj);
+  });
+  return out;
+}
+
+function inPolygon(pts, x, y) {
+  let c = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i], b = pts[j];
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c;
+  }
+  return c;
+}
+
+// A node inside an object could never be reached; say which object it is in.
+function checkObjects(spec, rep, nodePath) {
+  if (!spec.objects.length) return;
+  for (const n of spec.nodes) {
+    const o = spec.objects.find(ob => inPolygon(ob.polygon, n.x, n.y));
+    if (o) rep.fail(nodePath.get(n.id) ?? `nodes.${n.id}`, `"${n.name}" at (${fmt(n.x)}, ${fmt(n.y)}) is inside object "${o.name}" (${o.id}); move it out of the object or remove the object`);
+  }
 }
 
 // §13a: nobody may be placed on, or routed through, a wall, and every place must be reachable on foot.
@@ -859,6 +937,15 @@ export function cleanSpec(spec) {
         const o = { x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 };
         if (w.source) o.source = w.source;
         return o;
+      })
+    } : {}),
+    ...(spec.objects?.length ? {
+      objects: spec.objects.map(o => {
+        const out = { id: o.id, name: o.name, kind: o.kind, source: o.source, polygon: o.polygon.map(p => [p.x, p.y]) };
+        if (o.areaM2 !== undefined) out.areaM2 = o.areaM2;
+        if (o.sizeM) out.sizeM = o.sizeM.slice();
+        if (o.about) out.about = o.about;
+        return out;
       })
     } : {}),
     ...(spec.geo ? {

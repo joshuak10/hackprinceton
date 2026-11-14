@@ -1070,7 +1070,10 @@ export async function fetchMeshObj({
   const meshes = Array.isArray(model.assets?.meshes) ? model.assets.meshes : [];
   const isObj = m => /obj/i.test(m?.format || '') || /\.obj$/i.test(m?.filename || '');
   const candidates = meshes.filter(isObj);
-  const mesh = candidates.find(m => m.status === 'available' && m.url);
+  // A file named *chunk* is one piece of a split mesh (e.g. "lod3_room0_chunk….obj", listed as the 500k OBJ): only
+  // part of the building. Take a whole-model OBJ (e.g. "out_res_50k.obj") when one is available.
+  const usable = candidates.filter(m => m.status === 'available' && m.url);
+  const mesh = usable.find(m => !/chunk/i.test(m.filename || '')) ?? usable[0];
   if (!mesh) {
     const listed = meshes.map(m => `${m?.format ?? '?'}/${m?.resolution ?? '?'} (${m?.status ?? 'unknown'})`).join(', ');
     if (candidates.length) {

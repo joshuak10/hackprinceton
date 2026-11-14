@@ -49,6 +49,12 @@
       "description": "Optional floor-plan walls nobody can walk through, in map units (0-100, the same space as nodes). A doorway is a gap: give the wall as the pieces on either side. Touching a wall counts as crossing it. More than 4000 is an error; with walls, every node must be at least 0.05 from every wall, route edges may not touch a wall, and every visit service must be reachable on foot from a gate or entry and reach a gate or exit.",
       "items": { "$ref": "#/$defs/wall" }
     },
+    "objects": {
+      "type": "array",
+      "maxItems": 400,
+      "description": "Optional solid objects inside the building (stairs, fixtures, counters, stacked material), in map units. The engine adds each outline to the walls, so nobody walks through an object, and no node may sit inside one. Walls plus object outline segments may not exceed 4000. swarm fitout --mesh fills this from the Matterport mesh.",
+      "items": { "$ref": "#/$defs/object" }
+    },
     "geo": {
       "type": "object",
       "additionalProperties": false,
@@ -205,6 +211,30 @@
           "description": "Short form: [x1, y1, x2, y2]."
         }
       ]
+    },
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["polygon"],
+      "properties": {
+        "id": { "type": "string", "description": "Unique id; defaults to the name, slugged." },
+        "name": { "type": "string", "maxLength": 60, "description": "What people would call it, e.g. Stair to Floor 2." },
+        "kind": { "type": "string", "maxLength": 30, "default": "object", "description": "A short type, e.g. object, stairs, counter, column." },
+        "source": { "enum": ["mesh-slice", "matterport-vector", "drawn"], "default": "drawn", "description": "Where the outline came from." },
+        "polygon": {
+          "type": "array", "minItems": 3, "maxItems": 64,
+          "description": "The outline, as [x, y] pairs or { x, y } points, 0-100. It closes by itself.",
+          "items": {
+            "anyOf": [
+              { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number", "minimum": 0, "maximum": 100 } },
+              { "$ref": "#/$defs/point" }
+            ]
+          }
+        },
+        "areaM2": { "type": "number", "minimum": 0, "description": "Informational: footprint in square meters." },
+        "sizeM": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" }, "description": "Informational: width and depth in meters." },
+        "about": { "type": "string", "maxLength": 200, "description": "Optional note, e.g. what the scan shows there." }
+      }
     },
     "door": {
       "type": "object",

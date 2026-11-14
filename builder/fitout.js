@@ -216,6 +216,22 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
   const planWalls = arr(plan.walls);
   if (!walls.length) warn('the floor plan has no walls; people will walk in straight lines');
 
+  // ----- solid objects (builder/objects.js, meters): their outlines are walls for every check below -----
+  const objects = [];
+  arr(plan.objects).forEach((ob, k) => {
+    const pts = arr(ob?.polygon).filter(p => fin(p?.x) && fin(p?.y));
+    if (pts.length < 3) { warn(`object ${ob?.id ?? k + 1}: fewer than 3 outline points; left out`); return; }
+    const polygon = pts.map(toMap).map(p => ({ x: r4(clamp(p.x, 0, 100)), y: r4(clamp(p.y, 0, 100)) }));
+    objects.push({ id: String(ob.id ?? `obj${k + 1}`), name: cut(ob.name ?? `Object ${k + 1}`, 60), kind: cut(ob.kind ?? 'object', 30),
+      source: ob.source ?? 'mesh-slice', polygon, ...(fin(ob.areaM2) ? { areaM2: Number(ob.areaM2) } : {}),
+      ...(Array.isArray(ob.sizeM) ? { sizeM: ob.sizeM.slice(0, 2) } : {}) });
+  });
+  const objectEdges = objects.flatMap(ob => ob.polygon.map((p, i) => {
+    const q = ob.polygon[(i + 1) % ob.polygon.length];
+    return { x1: p.x, y1: p.y, x2: q.x, y2: q.y, object: ob };
+  })).filter(e => Math.hypot(e.x2 - e.x1, e.y2 - e.y1) > 1e-6);
+  const solid = [...walls, ...objectEdges];
+
   const modelId = plan.modelId ?? null;
   if (fitout.model && modelId && String(fitout.model) !== String(modelId)) {
     warn(`the fit-out is for model ${fitout.model}, but the floor plan is from model ${modelId}`);
@@ -234,7 +250,7 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
     if (quarter < MIN_CLEARANCE) warn(`the narrowest door (${m2(Math.min(...widths))} m) is under 4 x the minimum path clearance of ${MIN_CLEARANCE} map units; using ${MIN_CLEARANCE}`);
     clearance = clamp(Math.floor(quarter * 1e4) / 1e4, MIN_CLEARANCE, MAX_CLEARANCE);
   }
-  const nav = createNav(walls, { clearance });
+  const nav = createNav(solid, { clearance });
 
   // ----- gates and places: read, convert, check -----
   const problems = [];
@@ -257,7 +273,12 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
       problems.push(`${it.what} ${where(it)}: outside the ${MAP_LO}-${MAP_HI} range where the world keeps nodes (it would be moved); move it inward or use a larger margin`);
       return false;
     }
-    const near = nearestWall(walls, it.map);
+    const near = nearestWall(solid, it.map);
+    if (near.index >= walls.length && near.dist < minWallMap - 1e-9) {
+      const ob = solid[near.index].object;
+      problems.push(`${it.what} ${where(it)}: ${m2(near.dist * mpuRaw)} m from ${ob.name} (${ob.id}, from the mesh); every gate and place must be at least ${MIN_WALL_M} m from every wall and object`);
+      return false;
+    }
     if (near.index >= 0 && near.dist < minWallMap - 1e-9) {
       const w = planWalls[near.index] ?? {};
       const wallAt = [w.x1, w.y1, w.x2, w.y2].every(fin) ? ` (the wall from (${m2(w.x1)}, ${m2(w.y1)}) to (${m2(w.x2)}, ${m2(w.y2)}) m)` : '';
@@ -335,7 +356,7 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
   const placeNodes = places.map(p => ({ name: p.name, map: p.map }));
   doors.filter(x => !x.exterior).forEach(d => {
     const [a, b] = d.seg.gap, u = unit(b.x - a.x, b.y - a.y), e = 0.05;
-    const closed = createNav([...walls, { x1: a.x - u.x * e, y1: a.y - u.y * e, x2: b.x + u.x * e, y2: b.y + u.y * e }], { clearance });
+    const closed = createNav([...solid, { x1: a.x - u.x * e, y1: a.y - u.y * e, x2: b.x + u.x * e, y2: b.y + u.y * e }], { clearance });
     const sides = sideProbes(d.seg, walls, mpuRaw, clearance).map(q => {
       if (!q) return null;
       let best = null;
@@ -387,7 +408,7 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
 
   const floorValue = planFloor ? (planFloor.label || (fin(planFloor.sequence) ? Number(planFloor.sequence) : planFloor.id ?? null))
     : fin(fitout.floor) ? Number(fitout.floor) : null;
-  const derived = { walls: 'data', doors: 'data', 'geo.metersPerUnit': 'data', 'geo.clearance': 'data', 'geo.floor': 'data' };
+  const derived = { walls: 'data', doors: 'data', 'geo.metersPerUnit': 'data', 'geo.clearance': 'data', 'geo.floor': 'data', ...(objects.length ? { objects: 'data' } : {}) };
   const provenance = { ...(isObj(fitout.provenance) ? copy(fitout.provenance) : {}), ...derived };
   if (!('travelSpeed' in provenance)) provenance.travelSpeed = typeof provenance.walkMetersPerMinute === 'string' ? provenance.walkMetersPerMinute : 'assumed';
 
@@ -400,6 +421,7 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
     archetypes,
     minds,
     walls: walls.map(w => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, source: 'matterport-vector' })),
+    ...(objects.length ? { objects: objects.map(ob => ({ ...ob, polygon: ob.polygon.map(p => [p.x, p.y]) })) } : {}),
     geo: { metersPerUnit: mpu, clearance, floor: floorValue, source: 'matterport-vector' },
     doors: worldDoors,
     provenance
@@ -407,7 +429,7 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
   // Field order as in the world schema: text, mode and timing first.
   const ordered = {};
   for (const k of ['title', 'question', 'context', 'leaveLabel', 'mode', 'duration', 'clockStart', 'travelSpeed', 'arrivals',
-    'nodes', 'archetypes', 'minds', 'walls', 'geo', 'doors', 'provenance']) if (world[k] !== undefined) ordered[k] = world[k];
+    'nodes', 'archetypes', 'minds', 'walls', 'objects', 'geo', 'doors', 'provenance']) if (world[k] !== undefined) ordered[k] = world[k];
 
   const check = validateWorld(ordered);
   if (!check.ok) throw fitoutError('the built world does not pass validateWorld', check.errors);
@@ -418,6 +440,8 @@ export function applyFitout(plan, fitout, { margin = 8 } = {}) {
     gates: gates.length,
     places: places.length,
     walls: ordered.walls.length,
+    objects: objects.length,
+    objectList: objects.map(ob => ({ id: ob.id, name: ob.name, areaM2: ob.areaM2 ?? null, points: ob.polygon.length })),
     doors: worldDoors.length,
     metersPerUnit: mpu,
     travelSpeed,

@@ -581,6 +581,19 @@ describe('fetchMeshObj (mocked Matterport Model API)', () => {
     assert.equal(meshToWalls(out.obj).walls.length, 18);
   });
 
+  test('takes a whole-model OBJ over one chunk of a split mesh, even when the chunk is listed first', async () => {
+    const { fn, calls } = mockFetch([
+      graphResponse([
+        { id: 'c', format: 'obj', resolution: '500k', status: 'available', filename: 'lod3_room0_chunk1.obj', url: 'https://x.test/chunk' },
+        { id: 'w', format: 'obj', resolution: '50k', status: 'available', filename: 'out_res_50k.obj', url: OBJ_URL }
+      ]),
+      new Response(ROOM_Z, { status: 200 })
+    ]);
+    const out = await fetchMeshObj({ modelId: 'm1', tokenId: TOKEN_ID, tokenSecret: TOKEN_SECRET, fetch: fn });
+    assert.equal(calls[1].url, OBJ_URL);
+    assert.equal(out.asset.filename, 'out_res_50k.obj');
+  });
+
   test('unzips an OBJ delivered inside a zip archive', async () => {
     const zip = makeZip([
       { name: 'model.mtl', data: 'newmtl wall\n' },
