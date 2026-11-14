@@ -160,12 +160,15 @@ export function selectHeard(remarks, viewer, names = {}) {
 
 // ---------- visit ----------
 
-function nowText(m) {
+// `tellPatience` false (the world's waiting.tellPatience, §16) leaves out the engine's verdict on how the
+// line compares with the group's patience number, so the decision model judges that from the person.
+function nowText(m, tellPatience = true) {
   const moment = m || {};
   const place = moment.placeName || 'a place';
   if (moment.kind === 'line') {
     const est = Number(moment.est) || 0;
     if (est < 1) return `Just reached ${place}. There is no line.`;
+    if (!tellPatience) return `Just reached ${place}. The line is ${waitWords(est)}.`;
     return `Just reached ${place}. The line is ${waitWords(est)}: ${patienceWords(est, moment.tolerance)}.`;
   }
   if (moment.kind === 'long') {
@@ -173,6 +176,7 @@ function nowText(m) {
     const more = remaining < 2
       ? 'Almost at the front'
       : capitalize(durationWords(remaining)).replace(/ (minutes|hours)$/, ' more $1') + ' expected';
+    if (!tellPatience) return `Has waited ${durationWords(moment.waited)} in line at ${place}. ${more}.`;
     return `Has waited ${durationWords(moment.waited)} in line at ${place}. ${more}: ` +
       `${patienceWords(remaining, moment.tolerance)}.`;
   }
@@ -217,6 +221,7 @@ export function visitObservation(ctx) {
   const moment = c.moment || {};
   const placesDone = Array.isArray(c.placesDone) ? c.placesDone.filter(Boolean).map(String) : [];
   const timeInLines = Number(c.timeInLines) || 0;
+  const tellPatience = c.spec?.waiting?.tellPatience !== false;
   return compact({
     ...base(c),
     person: personObj(c.person, 'has_live_wait_app'),
@@ -226,8 +231,8 @@ export function visitObservation(ctx) {
       time_in_lines: timeInLines < 2 ? 'hardly any' : durationWords(timeInLines),
       places_done: placesDone
     }),
-    now: nowText(moment),
-    places: (Array.isArray(c.places) ? c.places : []).map(p => placeObj(p || {}, moment.tolerance)),
+    now: nowText(moment, tellPatience),
+    places: (Array.isArray(c.places) ? c.places : []).map(p => placeObj(p || {}, tellPatience ? moment.tolerance : null)),
     offers: offerList(c.offers),
     heard: heardList(c.heard)
   });

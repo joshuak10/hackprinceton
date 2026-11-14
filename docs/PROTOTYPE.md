@@ -107,7 +107,7 @@ Same as the prototype (spec section 6), with these additions. `normalizeSpec` st
 |---|---|---|---|
 | `choose` | visit: arrives (`why:"start"`), finished somewhere (`"next"`), walked away from a line (`"balked"`), gave up waiting (`"gaveup"`) | `next_place` Choice over candidate places + `leave` | `frustration` and `tell_others` + `remark_kind` only when `why !== "start"`, about `aboutPlace` (the place just left) |
 | `line` | visit: reaches a place whose estimated wait > 8 min and > 0.5 × tolerance (otherwise joins without asking) | `join` Noul | `next_place` Choice (used if not joining), `frustration`, `tell_others` + `remark_kind` about this place |
-| `long` | visit: has waited > tolerance and > 10 min, once per line visit | `keep_waiting` Noul | `next_place`, `frustration`, `tell_others` + `remark_kind` about this place |
+| `long` | visit: has waited > tolerance and > 10 min, once per line visit (again every `waiting.askAgainEvery` minutes when the world sets it, §16) | `keep_waiting` Noul | `next_place`, `frustration`, `tell_others` + `remark_kind` about this place |
 | `route` | route: trip start, when there are ≥ 2 route options | `route` Choice over `r0..rN` | none |
 | `arrive` | route: trip end, when trip time > 1.25 × free-flow time | none | `frustration`, `tell_others` + `remark_kind` about `aboutEdge` (the worst stretch: largest extra minutes) |
 
@@ -177,7 +177,7 @@ It applies the sampled outcome with the prototype's apply semantics, minus cohor
 
 - `choose`: go to the place, or leave.
 - `line`: yes means enqueue; no means walk away, then go to the sampled place or leave.
-- `long`: yes means keep waiting, and the line limit is extended by one tolerance. No means give up (if still in line), then go to the sampled place or leave.
+- `long`: yes means keep waiting, and the line limit is extended by one tolerance (with `waiting.askAgainEvery`, a yes instead schedules the next question and sets no limit, §16). No means give up (if still in line), then go to the sampled place or leave.
 - `route`: follow the sampled route's links.
 - `arrive`: nothing to move.
 
@@ -904,3 +904,29 @@ Server and viewer: `GET /api/runs/:id/advice` returns the saved advice, and the 
 - `[open]` Not run against the live Claude API (no key on the build machine). The loop, the runner, compare and the files were exercised with a scripted fake client, and the CLI through the real SDK against a local fake endpoint.
 - `[open]` "Who spent the most" can rank first a cast member copied by only 1 or 2 people per run; read the People column before targeting one.
 - `[open]` The viewer's Who rows do not yet highlight that segment's dots on the map (needs a `highlightAgents` hook in `web/map.js`).
+
+---
+
+## 16. Waiting: what people are told and how often they are asked (Nov 14)
+
+**Why.** By default the engine turns each group's patience number into words and hands them to Jev: "more than they will put up with". Jev reads literally, so that sentence mostly decides the answer, and the person's own situation hardly matters. A direct test on Nov 14 (five emergency-room patients in the identical situation, 450 Jev calls) found the spread between people in "keep waiting" was 15 to 16 points with the sentence and 30 to 37 points without it. The engine also asked "keep waiting?" only once per line and then made the person leave one patience-length later, whatever they had answered.
+
+Both behaviors stay the default. A visit world can switch them off with an optional top-level `waiting` object:
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `waiting.tellPatience` | boolean | `true` | `false` leaves the patience verdict out of what a person is told: the `now` sentence ends after the facts ("The line is long, about 45 min." and "About 10 more minutes expected."), and places carry no `line_vs_patience`. Line length, people ahead, time waited and everything else stay. |
+| `waiting.askAgainEvery` | minutes, 5 to 240 | `0` | `0` asks `keep_waiting` once per line visit, then the person leaves when their wait reaches the time of the question plus their tolerance. A value above 0 asks again that many minutes after each yes, and nobody is made to leave: a person stays until they say no, are served, or the run ends. |
+
+- **When the questions come is unchanged.** `line` is still asked when the estimated wait is over 8 minutes and over half the tolerance, and the first `long` when the wait passes the tolerance and 10 minutes. The group's patience number still decides when to ask; with `tellPatience: false` it no longer tells Jev what to answer.
+- **Rules are unaffected.** The inline rule policy reads no words and asks no questions, so a rules run of the same world and seed is identical with or without `waiting`. Under `rules-external` with `askAgainEvery`, the rule answer at each question is yes until the wait passes 1.3 × tolerance × (0.8 + 0.4 × jitter), then leave.
+- **Recorded runs are safe.** The normalized spec has a `waiting` key only when a value differs from the defaults, so worlds without it normalize, record, clean and hash as before. A Jev run recorded before this change replays on the changed engine with 0 misses and identical spec, metrics, agents, frames and remarks.
+- **Cost.** `askAgainEvery` adds one Jev request per person per interval spent in a line past their patience. `swarm estimate` counts requests from a rules dry run, which leaves lines sooner, so it understates this.
+- **Visit mode only.** A route world with `waiting` gets a warning and ignores it.
+- **A question Jev cannot answer gets the rule answer,** as everywhere else (API failure, request budget). For `keep_waiting` that answer is leave once the wait passes about 1.3 × tolerance, so with `askAgainEvery` a failed request can still send a waiting person away. The decision is recorded as `rules-fallback`.
+- **People still in line when the run ends** count as neither served nor walked away, and their wait is in no per-person or per-group wait number. That was always so; with `askAgainEvery` it is common at a place that cannot clear its line. Compare such runs on each place's wait minutes and on `shareNeverServed`, and make `duration` long enough for lines to clear.
+- **Remarks and the trace.** Each `keep_waiting` question also asks whether the person tells others, so one person in one long wait can post several remarks about the same line. A repeated "kept waiting" entry is written to the person's trace once.
+- **Fit-outs** pass `waiting` through to the built world (`builder/fitout.js`).
+- Validation: a non-boolean `tellPatience` becomes `true`; `askAgainEvery` between 0 and 5 becomes 5 and above 240 becomes 240; each with a warning.
+- `[open]` `feeling` is still handed to Jev as the engine's word for the person's last frustration score. In the same test, frustration answers separated by person only when it was left out.
+- `[open]` There is no "speak up" action: a message such as "tell the nurse now and you go first" can only be answered by staying in line or leaving it.

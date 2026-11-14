@@ -83,6 +83,15 @@
       "maxItems": 50,
       "description": "Optional targeted offers: a message, and optionally a discount at one service place, for some kinds of people during a window. A person in the audience sees up to 3 offer texts in what they decide from, and pays the discounted price at that place (in what they are shown, in the rules policy and in what they spend). An offer informs; it never forces anyone anywhere. Results: metrics().offers gives, per offer, how many people it reached and how many of them then went to its place; each visit agent's spent and visits, and metrics().segments, show outcomes by kind of simulated person. A what-if patch can add one with { \"kind\": \"offer\", \"offer\": { ... } }.",
       "items": { "$ref": "#/$defs/offer" }
+    },
+    "waiting": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional, visit mode: how people are asked about lines. Leaving it out keeps the defaults. Rules runs are unaffected; it changes what the decision model is told and how often it is asked.",
+      "properties": {
+        "tellPatience": { "type": "boolean", "default": true, "description": "true: each person is told in words how a line compares with their group's patience number ('more than they will put up with'). false: that verdict is left out and the decision model judges it from the person; line length, people ahead and time waited are still shown." },
+        "askAgainEvery": { "type": "number", "minimum": 0, "maximum": 240, "default": 0, "description": "Minutes between 'keep waiting?' questions for one person in one line. 0 asks once, then the person leaves one patience-length later. Above 0 (at least 5), a person who says yes is asked again that many minutes later and is never made to leave." }
+      }
     }
   },
   "$defs": {
