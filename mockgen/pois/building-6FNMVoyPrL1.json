@@ -1,0 +1,148 @@
+{
+  "_note": "Hand-placed points of interest for Matterport model 6FNMVoyPrL1 (Office/Retail - 45,726SF), in map units of the extracted geometry. Room labels in the scan are unreliable, so every point here is an assumption (provenance 'assumed'). Entries snap to the nearest exterior opening on their floor. Keys are floor sequence numbers.",
+  "0": [
+    {
+      "id": "cafe_front",
+      "name": "Café storefront",
+      "kind": "entry",
+      "x": 95,
+      "y": 14
+    },
+    {
+      "id": "market_front",
+      "name": "Market front doors",
+      "kind": "entry",
+      "x": 95,
+      "y": 35
+    },
+    {
+      "id": "market_side",
+      "name": "Market south doors",
+      "kind": "entry",
+      "x": 95,
+      "y": 47
+    },
+    {
+      "id": "west_door",
+      "name": "West side door",
+      "kind": "entry",
+      "x": 5,
+      "y": 33
+    },
+    {
+      "id": "cafe_counter",
+      "name": "Café counter",
+      "kind": "service",
+      "x": 70,
+      "y": 22.5,
+      "servers": 3,
+      "serviceTime": 1.1,
+      "queueDir": [
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "market_checkout",
+      "name": "Market checkout",
+      "kind": "service",
+      "x": 79,
+      "y": 44,
+      "servers": 3,
+      "serviceTime": 1.35,
+      "queueDir": [
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "restroom",
+      "name": "Restrooms",
+      "kind": "service",
+      "x": 18.5,
+      "y": 41.5,
+      "servers": 2,
+      "serviceTime": 3,
+      "queueDir": [
+        1,
+        0
+      ],
+      "serveAt": [
+        10.5,
+        37
+      ]
+    },
+    {
+      "id": "cafe_seating",
+      "name": "Café seating",
+      "kind": "area",
+      "box": [
+        15,
+        5,
+        44,
+        15.5
+      ]
+    },
+    {
+      "id": "market_aisles",
+      "name": "Market aisles",
+      "kind": "area",
+      "box": [
+        22,
+        30,
+        74,
+        52
+      ]
+    }
+  ],
+  "1": [
+    {
+      "id": "stair_door",
+      "name": "West stair door",
+      "kind": "entry",
+      "x": 12,
+      "y": 48
+    },
+    {
+      "id": "reception",
+      "name": "Office reception",
+      "kind": "service",
+      "x": 19,
+      "y": 44.5,
+      "servers": 1,
+      "serviceTime": 1.1,
+      "queueDir": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "offices",
+      "name": "Offices",
+      "kind": "area",
+      "box": [
+        16,
+        5,
+        92,
+        54
+      ]
+    }
+  ],
+  "links": [
+    {
+      "from": "stair_door",
+      "to": "cafe_front",
+      "seconds": 70
+    },
+    {
+      "from": "stair_door",
+      "to": "market_front",
+      "seconds": 65
+    },
+    {
+      "from": "stair_door",
+      "to": "west_door",
+      "seconds": 35
+    }
+  ]
+}

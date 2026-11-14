@@ -30,6 +30,10 @@ run/report.js         reportMarkdown(runDir), agentLog(runDir, agentId)
 bin/swarm.js          CLI
 server/server.js      startServer({ port, root }) local HTTP API + static viewer
 web/index.html, web/app.js, web/style.css   viewer
+web/scope/            scope display for the two CoStar cases (§9b): index.html, style.css, app.js, lib/*.js, mock/ (synthetic runs, committed), data/ (gitignored, built from hackathon data)
+geometry/*.js         shared plain JS (no DOM, no Node built-ins): matterport.js (Model API → floor plan), obj-slice.js (mesh → obstacle grid), walkgrid.js (walkable grid, distance fields)
+mockgen/*.js          mock run generators for the two cases (building, parking), same RunBundle shape as recorded runs
+scripts/extract_building.js, scripts/mock_runs.js, scripts/serve_web.js   geometry extraction, mock runs, dev static server
 compile/compile.js    compileWorld(description, opts) via Claude API (optional)
 worlds/*.json         example worlds; worlds/SCHEMA.md and worlds/schema.json describe the format
 mcp/server.js         MCP server over stdio
@@ -327,6 +331,7 @@ For an inline provider (`external: false`), `runSwarm` just steps to the end wit
 ```
 - `x10`/`y10` = `Math.round(x * 10)` in map units 0–100. Route agents are interpolated along their current link.
 - State codes `s`: 0 walk, 1 queue, 2 serve, 3 think, 4 leave, 5 drive. Done agents are omitted.
+- **Extensions for spatial worlds (§9b), all optional:** `frames.stride` is the length of each agent record in `a` (default 4; 5 for multi-floor worlds, where the record is `[id, x10, y10, s, floor]`). `list[].h` is the array of occupied stall indices for held parking. Interior and lot worlds capture frames at least every 5 s of simulated time (`frameEvery` ≤ 1/12 min), because dots interpolated over longer gaps cut through walls.
 
 `sim.metrics()` keeps the prototype's shape, and adds:
 - `remarks: { total, byKind }`
@@ -395,6 +400,40 @@ Reject path traversal in `:file` and `:id` (only `[A-Za-z0-9._-]`). JSON bodies 
 - Light and dark themes via CSS variables. Styling follows the prototype's look: IBM Plex Sans/Mono and Bricolage Grotesque from Google Fonts, teal accent. Works at 1280 px and down to 390 px.
 
 ---
+
+## 9b. Scope display (`web/scope/`)
+
+A display built for the two CoStar simulations (building congestion and the retail parking lot). It sits next to the generic viewer and reads the same run files, plus the additions below.
+
+**RunBundle.** The display loads `{ meta, spec, geometry, frames, metrics, agents, remarks, decisions }`. Mock runs (`web/scope/mock/*.json`, `web/scope/data/*.json`) are written in this shape by `scripts/mock_runs.js`. For a recorded run, `geometry` comes from `spec.geometry` and `decisions` from the endpoint below.
+
+**Geometry** (`spec.geometry`, written by the world builder or `scripts/extract_building.js`). Coordinates are map units: the longer side of the plan spans 0–100, so the distance words in §5 still apply. `metersPerUnit` gives real scale.
+```js
+{ kind: 'interior' | 'lot', source: { provider: 'matterport' | 'synthetic', modelId? }, metersPerUnit,
+  floors: [{ id, label, sequence, bounds: [x0, y0, x1, y1], transform: { scale, ox, oy } /* map → Matterport metres */,
+    rooms: [{ id, kind, poly: [[x, y], ...], holes: [[[x, y], ...]], area }],
+    walls: [[x1, y1, x2, y2, thickness]],
+    openings: [{ id, x, y, angle, width, type, exterior, rooms }],
+    obstacles: { cell, w, h, origin: [x, y], rle } | null,   // mesh sliced at walking height; agents cannot enter
+    pois: [{ id, name, kind: 'entry' | 'exit' | 'service' | 'stairs', x, y, provenance }] }],
+  lot: { stalls: [{ id, x, y, w, h, angle }], aisles, driveways, storefront, crosswalks, image: null } | undefined,
+  sweeps: [{ id, floor, x, y }] | undefined,                  // Matterport scan points, for the 3D tour
+  provenance: { [field]: 'data' | 'vision' | 'assumed' | 'owner-reported' } }
+```
+
+**Server additions needed for recorded runs:**
+- `GET /api/runs/:id/decisions` → `decisions.jsonl` as a JSON array. The display derives incidents from it.
+- `GET /api/runs/:id/incidents` (optional) → `incidents.json` if the recorder writes one. When present, the display uses it instead of deriving incidents.
+- The CSP on HTML pages must allow the Matterport tour for `web/scope/`: `frame-src https://my.matterport.com; script-src 'self' https://static.matterport.com`.
+
+**Incidents** `{ id, t, cat: 'decision' | 'congestion' | 'complaint', kind, x, y, floor, placeId, agentId, severity, text }`, derived in `web/scope/lib/incidents.js`:
+- Decisions: a `line` answered no ("walked away from the line"), a `long` answered no ("gave up waiting"), leaving after either ("left without being served"), and in the lot giving up the search ("drove off without parking").
+- Complaints: remarks of kind `long_line`, `bad_service` and `heavy_traffic`.
+- Congestion, from frames: more people within 1.5 m of an opening than 2.5 × its width in metres; more than 2 people/m² in a room; more than 6 cars queued at a driveway. A condition must hold for 2 frames, and each episode is one incident.
+
+**Keys.** The Matterport SDK key is the one key the browser sees. It is a public key locked to the registered domain by design, written to the gitignored `web/scope/data/config.json`. No other key reaches the browser.
+
+**Screens.** Laptop and projector (1280 px and up), dark theme by default. This overrides the 390 px target in §9 for this display only.
 
 ## 10. Compile, schema, slash command, MCP
 

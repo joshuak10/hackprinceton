@@ -1,0 +1,18 @@
+{
+  "cases": {
+    "building": {
+      "label": "Building congestion",
+      "question": "Where do people get stuck moving through this building at lunchtime, and which change helps most?",
+      "file": "mock/building-synthetic.json",
+      "place": "Synthetic office and retail building",
+      "source": "synthetic"
+    },
+    "parking": {
+      "label": "Retail parking lot",
+      "question": "Where does this center lose shoppers on a busy Saturday, and what is the cheapest fix?",
+      "file": "mock/parking-synthetic.json",
+      "place": "Synthetic retail center",
+      "source": "synthetic"
+    }
+  }
+}

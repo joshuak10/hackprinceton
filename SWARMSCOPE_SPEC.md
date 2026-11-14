@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.14 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.15 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -119,6 +119,7 @@ Claude Code  ─┘        propose: levers, bounds, cost         optimize(spec, 
 | Jev decision provider | Builds each agent's state and typed questions, keeps requests in flight, samples answers, caches probabilities by state, falls back to rules only if the API is down | `[planned]` (committed) |
 | Run recorder | Saves every decision so a run replays with no API calls | `[planned]` |
 | Viewer | Map, rankings, charts; add each agent's Jev probabilities on hover and a time scrubber that replays the simulation over time | `[built]` map and charts; `[planned]` probability view and time replay |
+| Scope display | Case-specific display for the two CoStar simulations at `web/scope/`: real floor plan or lot, incident heat that builds over time, a slider with an incident histogram and key moments, a prompt matched to the two cases, an agent inspector, and the Matterport 3D tour on click. Runs on mock data until linked to recorded runs (contract: [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b) | `[planned]` |
 | Optimizer | Searches fixes under a budget (section 8) | `[planned]` |
 | MCP server | `validate_world`, `run_swarm`, `compare`, `optimize`, `agent_log`, `open_viewer` | `[planned]` |
 | Eval suite | Validation tests and spec-compile accuracy (section 7) | `[planned]` |
@@ -319,6 +320,8 @@ Two models were queried: a 1BR apartment and a 15,000 SF retail space.
 - `[open]` **Room labels are empty and classifications only work for homes.** The label set is residential. The retail model's rooms came back as "Other" or "Void", two large retail floors were tagged "staircase", and ceiling height was missing. What each space is (store, checkout, seating) must come from vision or from CoStar tenant data.
 - `[open]` **The library is mostly apartments.** Of 14,944 models, only three look like retail: a 15,000 SF retail space, a street-level retail space, and a 45,726 SF office/retail space. Search matches fields beyond the name, so keyword counts overstate retail.
 - `[planned]` **Key rooms by model ID plus room ID.** Room IDs repeat across models.
+- `[planned]` **Building-congestion model: Office/Retail - 45,726SF (`6FNMVoyPrL1`).** Two floors, about 2,227 m², two large rooms per floor with holes for columns and obstacles, and 19 openings that are all typed `opening` (none `doorway`). Entrances are inferred from openings in exterior walls. Room labels are unreliable, so service points (checkout, reception, stairs) are placed by hand and tagged `assumed`.
+- `[planned]` **The mesh is a wall.** CoStar's indoor (Matterport) data includes a 3D mesh for each model (OBJ, 50k and 500k triangles, from `assets.meshes`). The room outlines miss shelves, counters and furniture; the mesh has them. **Jev agents must never walk through the mesh.** The backend treats any mesh surface between about 0.3 m and 1.5 m above the floor as impassable. The shared `geometry/obj-slice.js` module slices the mesh at walking height into an obstacle grid, and `geometry/walkgrid.js` routes agents around it.
 
 ### Candidate worlds
 
@@ -392,6 +395,16 @@ Pitch lines:
 ---
 
 ## 14. Change log
+
+- **v0.15 · Nov 14, 2026.** Planned the scope display for the two CoStar simulations (`web/scope/`, contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b), next to the generic viewer in `web/`. Decisions:
+  - The two cases are separate worlds, each with its own map and run.
+  - Incidents are decision outcomes (walked away, gave up, left without being served, drove off without parking), physical congestion (doorways, rooms, lot entrances) and complaints. The viewer derives them from run files and uses `incidents.json` instead when a run has one.
+  - Building congestion uses Matterport model `6FNMVoyPrL1`. Real geometry stays local in gitignored `data/` folders; a synthetic plan is committed so a fresh clone works.
+  - Mesh surfaces at walking height are walls that agents cannot walk through (section 10b).
+  - A shared plain-JS `geometry/` module turns Matterport outlines, openings and the mesh into a walkable grid, for the mock now and the world builder later.
+  - Interior and lot worlds record frames at least every 5 s of simulated time, so replayed dots don't cut through walls.
+  - The parking-lot world is synthetic until a property is chosen and Vexcel access is set up.
+  - The display targets laptops and a projector (1280 px and up), dark by default.
 
 - **v0.14 · Nov 14, 2026.** Started the first Jev-per-agent prototype (v0.2) and wrote its build contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md). Decisions:
   - Every agent decision is one Jev request (`jev-latest`) that packs all its questions: the primary question plus speculative follow-ups (where else to go, frustration, whether to tell others, remark kind).
