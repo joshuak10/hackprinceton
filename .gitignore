@@ -16,3 +16,6 @@ data/
 
 # Node
 node_modules/
+
+# Patch files written by /advise (may describe a real building)
+/patches/

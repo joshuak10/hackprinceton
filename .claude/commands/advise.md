@@ -76,13 +76,17 @@ For each experiment, first say in one line what you are testing and why. Then wr
 node bin/swarm.js compare <world> --patch patches/<world-slug>/<n>-<short-name>.json --provider rules --seeds 3 --seed 7
 ```
 
-Record before ± sd, after ± sd and the change for each KPI, and whether the #1 bottleneck moved. A line saying no patch operation applied means nothing was tested: fix the ids or fields and run it again; it does not count as an experiment. To check whether a change holds on every seed, compare the per-seed rows of
+Record before ± sd, after ± sd and the change for each KPI, and whether the #1 bottleneck moved. A line saying no patch operation applied means nothing was tested: fix the ids or fields and run it again; it does not count as an experiment.
 
-```
-node bin/swarm.js run <world> --patch patches/<world-slug>/<n>-<short-name>.json --provider rules --seeds 3 --seed 7 --no-record
-```
+`compare` also prints, under the bottleneck table:
 
-with the baseline rows. For an offer, also read the offer's `reached` and `wentToPlace` and the targeted segment's numbers from a recorded patched run (`run --patch ... --seeds 3`, then `report`).
+- **Offers added by the patch** (offer patches only): who it was for, how many people it reached and how many of them went to its place (mean per run), and arrivals at that place before → after.
+- **Who, before → after**: each group (and each cast member an offer named) with avg spent, avg wait, walk-aways per person and never served. A `*` marks a change larger than the spread across seeds.
+- **Where the offer's audience went**: visits per run at their busiest places and the offer's place, before → after.
+
+Use these for questions about kinds of people: an offer that reaches many people but moves nobody did nothing, whatever it cost. With `--json`, the same numbers are under `effects` (`kpis`, `segments`, `offers`), each with `before`, `after`, `change`, `spread`, `bySeed` and `holdsAcrossSeeds`; `bySeed` tells you whether a change holds on every seed.
+
+Rule-based people react to an offer only through its discount, weighted by how much their group cares about price; the message text matters only with Jev. A group whose price weight is 0 ignores a discount under rules, so say so rather than reporting that the offer failed.
 
 Stop at 6 experiments.
 

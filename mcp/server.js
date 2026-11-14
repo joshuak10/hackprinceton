@@ -12,6 +12,7 @@ import { validateWorld, specHash } from '../engine/spec.js';
 import { makeProvider } from '../providers/index.js';
 import { runSwarm, runSeeds, compareRuns, headlineKpis } from '../run/runner.js';
 import { createRecorder, listRuns } from '../run/recorder.js';
+import { changeEffects, effectLines } from '../run/effects.js';
 import {
   reportMarkdown, agentLog, kpiLine, formatKpi, countsText, KPI_LABELS,
   fmtInt, fmtNum, fmtPct, fmtMin, providerStatsLine, fallbackWarning
@@ -381,7 +382,11 @@ async function compareTool(args, extra) {
       const a = after.get(p.id) ?? 0;
       return [p.name, fmtInt(p.meanScore), fmtInt(a), formatDelta('score', a - p.meanScore, p.meanScore)];
     })));
-    lines.push('', `Provider: ${providerStatsLine(providerStats, { decisions: mergeDecisions(res.before.decisions, res.after.decisions) })}`);
+    const effects = changeEffects({
+      mode: spec.mode, before: res.runs.before.map(r => r.metrics), after: res.runs.after.map(r => r.metrics), offers: res.offers
+    });
+    lines.push(...effectLines({ spec, effects, table }));
+    lines.push('', `Provider:${providerStatsLine(providerStats, { decisions: mergeDecisions(res.before.decisions, res.after.decisions) })}`);
     for (const [side, summary] of [['before', res.before], ['after', res.after]]) {
       const warning = fallbackWarning({ decisions: summary.decisions });
       if (warning) lines.push(`${side}: ${warning}`);

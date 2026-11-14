@@ -10,6 +10,7 @@ import { validateWorld, applyPatch, specHash } from '../engine/spec.js';
 import { makeProvider } from '../providers/index.js';
 import { runSwarm, runSeeds, compareRuns, headlineKpis } from '../run/runner.js';
 import { createRecorder, listRuns } from '../run/recorder.js';
+import { changeEffects, effectLines } from '../run/effects.js';
 import {
   reportMarkdown, agentLog, agentRecord, formatKpi, kpiLine, countsText, KPI_LABELS,
   fmtInt, fmtNum, fmtPct, fmtMin, providerStatsLine, fallbackRate, fallbackWarning
@@ -511,8 +512,12 @@ async function cmdCompare([ref], flags) {
     spec, patch, seeds, provider, recorderFor, simOpts: simOptsFrom(flags), onProgress: progress.onProgress, signal
   }));
   const providerStats = provider.stats();
+  const { runs, ...summary } = res;
+  const effects = changeEffects({
+    mode: spec.mode, before: runs.before.map(r => r.metrics), after: runs.after.map(r => r.metrics), offers: res.offers
+  });
   if (flags.json) {
-    printJson({ ...res, seeds, provider: providerName, providerStats });
+    printJson({ ...summary, effects, seeds, provider: providerName, providerStats });
     return 0;
   }
   print(`${spec.title} · compare · ${providerName} · seeds ${seeds[0]}..${seeds.at(-1)}`);
@@ -532,6 +537,7 @@ async function cmdCompare([ref], flags) {
     const a = after.get(p.id) ?? 0;
     return [p.name, fmtInt(p.meanScore), fmtInt(a), formatDelta('score', a - p.meanScore, p.meanScore)];
   })));
+  for (const line of effectLines({ spec, effects, table })) print(line);
   print();
   print(`Provider: ${providerStatsLine(providerStats, { decisions: mergeDecisions(res.before.decisions, res.after.decisions) })}`);
   for (const [side, summary] of [['before', res.before], ['after', res.after]]) {
