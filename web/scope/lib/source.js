@@ -7,7 +7,12 @@ async function getJson(url, { timeoutMs = 0 } = {}) {
   const timer = timeoutMs ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
     const res = await fetch(url, { signal: ctrl.signal, cache: 'no-cache' });
-    if (!res.ok) throw Object.assign(new Error(`${url} answered ${res.status}`), { status: res.status });
+    if (!res.ok) {
+      // Drop the unread error body, so the request ends and the network can go idle (an optional file that
+      // is missing, such as a run's incidents, answers 404 with a body nobody reads).
+      await res.body?.cancel().catch(() => {});
+      throw Object.assign(new Error(`${url} answered ${res.status}`), { status: res.status });
+    }
     return await res.json();
   } finally {
     if (timer) clearTimeout(timer);
@@ -28,7 +33,8 @@ export async function loadCases() {
   const mock = await getJson('mock/index.json').catch(() => ({ cases: {} }));
   const data = await getJson('data/index.json').catch(() => ({ cases: {} }));
   const cases = {};
-  for (const id of ['building', 'parking']) {
+  // The display shows the building only. The parking mock still exists (mockgen/), but is not offered here.
+  for (const id of ['building']) {
     const c = data.cases?.[id] || mock.cases?.[id];
     if (c) cases[id] = { id, ...c };
   }
@@ -56,9 +62,10 @@ export async function apiHealth() {
   }
 }
 
-// Recorded building runs (visit mode with walls), newest first, Jev runs before rules runs at the same time.
-export async function apiBuildingRuns({ max = 12 } = {}) {
-  const metas = await getJson('/api/runs').catch(() => []);
+// Recorded building runs (visit mode with walls), newest first, as { runs: [{ meta, spec }], metas }.
+// `metas` is every finished run's meta.json, including each run's test link (meta.link, §9b).
+export async function apiBuildingRuns({ max = 18 } = {}) {
+  const metas = await getJson('/api/runs');
   const candidates = metas.filter(m => m.status === 'done' && m.mode === 'visit')
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, max * 2);
   const out = [];
@@ -67,7 +74,13 @@ export async function apiBuildingRuns({ max = 12 } = {}) {
     if (spec && Array.isArray(spec.walls) && spec.walls.length) out.push({ meta, spec });
     if (out.length >= max) break;
   }
-  return out;
+  return { runs: out, metas };
+}
+
+const metricsCache = new Map();
+export function apiRunMetrics(runId) {
+  if (!metricsCache.has(runId)) metricsCache.set(runId, getJson(`/api/runs/${encodeURIComponent(runId)}/metrics`).catch(err => { metricsCache.delete(runId); throw err; }));
+  return metricsCache.get(runId);
 }
 
 export async function apiLoadRun(runId, { modelId = null } = {}) {
@@ -80,16 +93,17 @@ export async function apiLoadRun(runId, { modelId = null } = {}) {
 }
 
 // Start a run of a world spec on the server and wait for it. Returns the new run id.
-export async function apiStartRun({ spec, provider = 'rules', seed = 7, onStatus, signal }) {
+// `link` marks the run as one side of a test of one change; the server checks it and stores it in meta.json.
+export async function apiStartRun({ spec, provider = 'rules', seed = 7, link = null, onStatus, signal }) {
   const res = await fetch('/api/runs', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ spec, provider, seed }), signal
+    body: JSON.stringify({ spec, provider, seed, ...(link ? { link } : {}) }), signal
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `Starting the run failed (${res.status}).`);
   const id = body.runId;
   for (;;) {
-    if (signal?.aborted) throw new Error('Cancelled.');
+    if (signal?.aborted) throw Object.assign(new Error('Cancelled.'), { name: 'AbortError' });
     const st = await getJson(`/api/runs/${encodeURIComponent(id)}/status`);
     onStatus?.(st);
     if (st.state === 'done') return id;

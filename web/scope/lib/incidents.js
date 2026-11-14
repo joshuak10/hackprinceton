@@ -46,19 +46,19 @@ function decisionIncidents(bundle, F, nodes, agents, nameOf, isLot) {
     const ap = d.applied || {};
     if (ap.yes !== false || (d.kind !== 'line' && d.kind !== 'long')) continue;
     const place = d.placeId;
-    let kind, text, group;
+    let kind, text, group, short;
     if (isLot && place === 'entry_drive') { kind = 'drove_past'; text = 'Drove past without turning in'; group = 'Drivers skipping the lot'; }
     else if (isLot && place === 'search') { kind = 'drove_off'; text = 'Drove off without finding a space'; group = 'Drivers giving up on parking'; }
     else if (isLot && place === 'checkout') { kind = 'left_without_buying'; text = 'Left the store without buying'; group = 'Shoppers leaving without buying'; }
-    else if (d.why === 'door') { kind = 'turned_away'; text = `Saw the line at ${nameOf(place)} and left`; group = `Turned away at ${nameOf(place)}`; }
-    else if (d.kind === 'line') { kind = 'walked_away'; text = `Walked away from the line at ${nameOf(place)}`; group = `Walk-aways at ${nameOf(place)}`; }
-    else { kind = 'gave_up'; text = `Gave up waiting at ${nameOf(place)}`; group = `Walk-aways at ${nameOf(place)}`; }
+    else if (d.why === 'door') { kind = 'turned_away'; text = `Saw the line at ${nameOf(place)} and left`; group = `Turned away at ${nameOf(place)}`; short = `Saw the line at ${nameOf(place)} and left`; }
+    else if (d.kind === 'line') { kind = 'walked_away'; text = `Walked away from the line at ${nameOf(place)}`; group = `Walk-aways at ${nameOf(place)}`; short = `Walked away at ${nameOf(place)}`; }
+    else { kind = 'gave_up'; text = `Gave up waiting at ${nameOf(place)}`; group = `Walk-aways at ${nameOf(place)}`; short = `Gave up waiting at ${nameOf(place)}`; }
     const pos = agentPos(F, d.agentId, d.t);
     const node = nodes.get(place);
     const at = pos && !(isLot && place === 'checkout') ? pos : (node ? { x: node.x, y: isLot && place === 'checkout' ? 14.2 : node.y, floor: node.floor || 0 } : null);
     if (!at) continue;
     const person = agents.get(d.agentId)?.personaName;
-    out.push({ t: d.t, cat: 'decision', kind, group, text, who: person, x: at.x, y: at.y, floor: at.floor || 0, placeId: place, agentId: d.agentId, decisionId: d.id, severity: d.kind === 'long' ? 1.4 : 1 });
+    out.push({ t: d.t, cat: 'decision', kind, group, short: short || text, text, who: person, x: at.x, y: at.y, floor: at.floor || 0, placeId: place, agentId: d.agentId, decisionId: d.id, severity: d.kind === 'long' ? 1.4 : 1 });
   }
   return out;
 }
@@ -77,6 +77,7 @@ function complaintIncidents(bundle, F, nodes, nameOf, isLot) {
     const jitter = ((i * 7919) % 11 - 5) * 0.35;
     out.push({
       t: r.t, cat: 'complaint', kind: r.kind, group: `Complaints about ${isLot && r.placeId === 'search' ? 'parking' : nameOf(r.placeId)}`,
+      short: `Warned others about ${what}`,
       text: `${r.personName || r.personaName || 'Someone'} warned others about ${what}`, who: r.personName,
       x: base.x + (pos ? 0 : jitter), y: base.y + (pos ? 0 : jitter * 0.6), floor: (pos?.floor ?? node?.floor) || 0, placeId: r.placeId, agentId: r.agentId, severity: 0.8
     });
@@ -217,6 +218,24 @@ export function minuteBins(incidents, duration) {
   return bins;
 }
 
+// The feed with repeats merged: every incident of the same kind at the same place, up to time t, is one row.
+// Newest first. → [{ key, cat, text, count, latest }]; a row with one incident keeps that incident's own text.
+// `incidents` must be in time order (deriveRun sorts them).
+export function groupFeed(incidents, t, filters = null, limit = 40) {
+  const groups = new Map();
+  for (const it of incidents || []) {
+    if (it.t > t) break;
+    if (filters && !filters[it.cat]) continue;
+    const label = it.short || it.group || it.text;
+    const key = `${it.cat}|${label}`;
+    const g = groups.get(key);
+    if (g) { g.count++; g.latest = it; }
+    else groups.set(key, { key, cat: it.cat, label, count: 1, latest: it });
+  }
+  return [...groups.values()].sort((a, b) => b.latest.t - a.latest.t).slice(0, limit)
+    .map(g => ({ key: g.key, cat: g.cat, text: g.count > 1 ? g.label : g.latest.text, count: g.count, latest: g.latest }));
+}
+
 export function keyMoments(incidents, bins, clockStart, max = 4) {
   const tot = bins.map(b => b.total);
   const smooth = tot.map((_, i) => (tot[i - 1] || 0) * 0.25 + tot[i] * 0.5 + (tot[i + 1] || 0) * 0.25);
@@ -304,6 +323,8 @@ function frustrationSeries(bundle) {
     per.get(d.agentId).push([d.t, f]);
   }
   return {
+    // False for runs with no frustration data (the rule model records none).
+    has: per.size > 0,
     at(id, t) {
       const arr = per.get(id);
       if (!arr) return null;

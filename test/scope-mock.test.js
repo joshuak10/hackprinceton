@@ -7,7 +7,6 @@ import { runBuilding } from '../mockgen/building.js';
 import { runParking } from '../mockgen/parking.js';
 import { prepareFrames, agentsAt, heldAt, frameIndex } from '../web/scope/lib/frames.js';
 import { deriveRun, keyMoments, minuteBins } from '../web/scope/lib/incidents.js';
-import { matchCase } from '../web/scope/lib/prompt.js';
 
 const hash = o => createHash('sha256').update(JSON.stringify(o)).digest('hex');
 const short = { duration: 30, mix: { office: 40, cafe: 50, shopper: 40, visitor: 4, courier: 4 } };
@@ -75,12 +74,6 @@ test('parking mock holds stalls and reports them as a hex bitmask', () => {
   const f = run.frames.list[frameIndex(F, 30)];
   assert.equal(occupied, g.lot.stalls.length - f.c.free);
   assert.ok(occupied >= 34, 'staff stalls are always held');
-});
-
-test('prompt matching sends questions to the right case and refuses unrelated ones', () => {
-  assert.equal(matchCase('Where do people get stuck in this building at lunch?').id, 'building');
-  assert.equal(matchCase('Why do shoppers circle the parking lot on Saturday?').id, 'parking');
-  assert.equal(matchCase('How many bananas fit in a minivan?'), null);
 });
 
 test('bottlenecks: "so far" only grows, "right now" rises and falls and uses the engine wait formula', () => {
