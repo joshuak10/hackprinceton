@@ -20,6 +20,9 @@ import { createNav, polylineCrossesWall, polylineLength, pointAlong } from './wa
 
 const STATE_CODE = { walk: 0, queue: 1, serve: 2, think: 3, leave: 4, drive: 5 };
 const HEARD_WINDOW = 90;      // sim minutes of remarks an observation can draw on (observe filters further)
+// Walled worlds record a frame every 3 s by default (docs/PROTOTYPE.md §7, §9b): dots drawn between
+// frames 30 s apart cut through walls. The simulation tick stays the same; see step().
+const WALLED_FRAME_EVERY = 3 / 60;
 const SEE_RADIUS = 30;        // map units within which a line is visible without the app
 const DEFAULT_LEAVE = 'Leave and go home';
 
@@ -35,6 +38,7 @@ const ROUTE_REMARKS = name => [
 
 const edgeKey = e => `${e.from}>${e.to}`;
 const round2 = x => Math.round(x * 100) / 100;
+const round4 = x => Math.round(x * 1e4) / 1e4;
 const positive = (v, d) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : d; };
 const nonNegative = (v, d) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : d; };
 const DOOR_WINDOW = 5;        // minutes for a door's peak traffic
@@ -128,7 +132,8 @@ export class Sim {
     this.external = Boolean(opts.external);
     this.dt = positive(opts.dt, route ? 0.25 : 0.5);
     this.batchWindow = nonNegative(opts.batchWindow, route ? 0.5 : 1);
-    this.frameEvery = positive(opts.frameEvery, Math.max(0.5, this.spec.duration / 360));
+    const walled = Array.isArray(this.spec.walls) && this.spec.walls.length > 0;
+    this.frameEvery = positive(opts.frameEvery, walled ? WALLED_FRAME_EVERY : Math.max(0.5, this.spec.duration / 360));
     this.maxTrace = Math.max(1, Math.round(positive(opts.maxTrace, 60)));
     this.opts = { seed, external: this.external, dt: this.dt, batchWindow: this.batchWindow, frameEvery: this.frameEvery };
 
@@ -511,6 +516,14 @@ export class Sim {
     for (const e of due) { const d = this.doorList[e.door]; d.crossings++; d.times.push(e.t); }
   }
 
+  // Cumulative crossings per door at time t. A frame between ticks also counts the scheduled crossings
+  // already reached by then, so door counts match the dots.
+  doorCountsAt(t) {
+    const out = this.doorList.map(d => d.crossings);
+    for (const e of this.doorPending) if (e.t <= t + 1e-9) out[e.door]++;
+    return out;
+  }
+
   // Rule-policy pick: softmax over utilities with sharpness `rationality`, drawn from the agent stream.
   autoPick(a) {
     const w = a.arch.weights, c = [], u = [];
@@ -765,6 +778,7 @@ export class Sim {
       const dist = this.walkDist(x, y, n.x, n.y);
       out.push({
         id: n.id, name: n.name, about: n.about, tags: n.tags, price: n.price, dist, est: this.estWait(n),
+        ahead: n.queue.length,
         visible: a.informed || n === current || dist <= SEE_RADIUS, walkedAway30: this.walkedAway30(n)
       });
     }
@@ -1005,9 +1019,20 @@ export class Sim {
     while (this.si < this.schedule.length && this.schedule[this.si] <= this.t) { this.spawn(this.si); this.si++; }
     if (this.mode === 'visit') this.stepVisit(); else this.stepRoute();
     this.flushDoors();
-    if (this.t + 1e-9 >= this.nextFrame) {
-      this.captureFrame();
-      while (this.nextFrame <= this.t + 1e-9) this.nextFrame += this.frameEvery;
+    if (this.frameEvery >= this.dt - 1e-9) {
+      if (this.t + 1e-9 >= this.nextFrame) {
+        this.captureFrame();
+        while (this.nextFrame <= this.t + 1e-9) this.nextFrame += this.frameEvery;
+      }
+    } else {
+      // Frames finer than the tick: capture every frame time in [t, t + dt). Walkers are placed along
+      // their wall-free path at that moment; everyone else keeps their state from this tick. The
+      // simulation itself is unchanged, so results don't depend on frameEvery.
+      const end = Math.min(this.t + this.dt, this.spec.duration);
+      while (this.nextFrame < end - 1e-9) {
+        if (this.nextFrame + 1e-9 >= this.t) this.captureFrame(this.nextFrame);
+        this.nextFrame += this.frameEvery;
+      }
     }
     this.tick++;
     this.t = this.tick * this.dt;
@@ -1062,8 +1087,8 @@ export class Sim {
     return options.find(chained) || (seen([qx, qy]) ? [qx, qy] : options.find(seen)) || [qx, qy];
   }
 
-  captureFrame() {
-    const t = this.t, list = [];
+  captureFrame(at = this.t) {
+    const t = at, list = [];
     const put = (a, x, y, s) => {
       const q = this.frameXY(x, y, a.lastFrameXY);
       if (this.nav) a.lastFrameXY = q;
@@ -1121,10 +1146,10 @@ export class Sim {
       }
     }
     this.frames.list.push({
-      t: round2(t), a: list,
+      t: round4(t), a: list,
       q: this.mode === 'visit' ? this.services.map(n => n.queue.length) : null,
       load: this.mode === 'route' ? this.edges.map(e => Math.round(this.edgeRatio(e) * 100)) : null,
-      d: this.doorList.length ? this.doorList.map(d => d.crossings) : null,
+      d: this.doorList.length ? this.doorCountsAt(t) : null,
       c: {
         active: this.agents.length - this.finished,
         served: this.servedTotal,

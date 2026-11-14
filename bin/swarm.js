@@ -38,6 +38,7 @@ Usage: swarm <command> [options]
       --concurrency N               Parallel Jev requests (default 32)
       --max-requests N              Jev request budget for the whole command (default 20000)
       --batch-window M              Sim minutes decision requests are held before release
+      --frame-seconds S             Seconds between recorded frames (default 3 with walls, else ~duration/360)
       --patch FILE                  Apply a what-if patch (JSON array of {kind, id, field, value})
       --from RUN                    Replay a recorded run's decisions, no API calls (world optional)
       --out DIR                     Runs folder (default runs)
@@ -93,11 +94,11 @@ const COMMANDS = {
   estimate: { min: 1, max: 1, flags: ['seed', 'batch-window', 'json'], run: cmdEstimate },
   run: {
     min: 0, max: 1, run: cmdRun,
-    flags: ['provider', 'seed', 'seeds', ...JEV_FLAGS, 'batch-window', 'patch', 'from', 'out', 'no-record', 'json']
+    flags: ['provider', 'seed', 'seeds', ...JEV_FLAGS, 'batch-window', 'frame-seconds', 'patch', 'from', 'out', 'no-record', 'json']
   },
   compare: {
     min: 1, max: 1, run: cmdCompare,
-    flags: ['patch', 'provider', 'seed', 'seeds', ...JEV_FLAGS, 'batch-window', 'out', 'record', 'no-record', 'json']
+    flags: ['patch', 'provider', 'seed', 'seeds', ...JEV_FLAGS, 'batch-window', 'frame-seconds', 'out', 'record', 'no-record', 'json']
   },
   report: { min: 1, max: 1, flags: ['out', 'json'], run: cmdReport },
   agent: { min: 2, max: 2, flags: ['out', 'json'], run: cmdAgent },
@@ -147,10 +148,18 @@ function intFlag(flags, name, fallback, min = 0) {
 }
 
 function simOptsFrom(flags) {
-  if (flags['batch-window'] === undefined) return {};
-  const m = Number(flags['batch-window']);
-  if (!Number.isFinite(m) || m < 0) throw new CliError('--batch-window must be a number of sim minutes, 0 or more');
-  return { batchWindow: m };
+  const out = {};
+  if (flags['batch-window'] !== undefined) {
+    const m = Number(flags['batch-window']);
+    if (!Number.isFinite(m) || m < 0) throw new CliError('--batch-window must be a number of sim minutes, 0 or more');
+    out.batchWindow = m;
+  }
+  if (flags['frame-seconds'] !== undefined) {
+    const s = Number(flags['frame-seconds']);
+    if (!Number.isFinite(s) || s < 1 || s > 600) throw new CliError('--frame-seconds must be a number of seconds from 1 to 600');
+    out.frameEvery = s / 60;
+  }
+  return out;
 }
 
 const seedRange = (seed, n) => Array.from({ length: n }, (_, i) => seed + i);

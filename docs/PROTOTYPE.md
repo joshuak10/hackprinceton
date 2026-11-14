@@ -216,6 +216,7 @@ Visit observation:
   places: [ { option: 'st_brigid', name, known_for: about, offers: 'er, trauma', cost: 'free',
               distance: 'a short walk',
               line: 'long, about 45 min' | "unknown (can't see it from here)",
+              people_ahead: '12 people in line' | 'nobody in line' | undefined,   // only when the line is visible
               line_vs_patience: 'more than they will put up with' | undefined,
               recently: 'several people just walked away' | undefined } ],
              // only valid candidates (unvisited, matching needs), plus the current place for line/long
@@ -316,7 +317,7 @@ For an inline provider (`external: false`), `runSwarm` just steps to the end wit
 
 `loadRun(dir)` reads them back. `listRuns(root)` returns metas, newest first.
 
-**Frames** (`sim.frames`, captured every `frameEvery` sim minutes; default `max(0.5, duration / 360)`):
+**Frames** (`sim.frames`, captured every `frameEvery` sim minutes; default 3 s (`0.05`) in a world with walls, otherwise `max(0.5, duration / 360)`; CLI `--frame-seconds S`). When `frameEvery` is shorter than the tick, frames are also captured between ticks: walkers are placed along their wall-free path at that moment, everyone else keeps their state from the tick, and door counts include the crossings already reached. The simulation itself does not depend on `frameEvery`. Reason: a display that draws dots in straight lines between frames 30 s apart sends them through walls; at 3 s none of the straight steps crosses a wall (checked on the real building).
 ```js
 {
   mode: 'visit' | 'route',
@@ -377,6 +378,8 @@ POST /api/runs         { world?: file, spec?: object, seed?, provider: 'rules'|'
 GET  /api/runs                        → listRuns
 GET  /api/runs/:id/status             → { state: 'running'|'done'|'error', t, duration, decisions, providerStats, error }
 GET  /api/runs/:id/meta|spec|metrics|frames|agents|remarks
+GET  /api/runs/:id/decisions           → decisions.jsonl as one JSON array (for the scope display)
+GET  /api/runs/:id/incidents           → incidents.json if the run has one, else 404
 GET  /api/runs/:id/agents/:agentId    → { agent, decisions: [...] }   (decisions filtered from decisions.jsonl)
 POST /api/compile      { description } → validated spec, or 501 { error } when ANTHROPIC_API_KEY is missing
 GET  /api/health                      → { ok, jev: hasTypesafeKey, claude: hasAnthropicKey }

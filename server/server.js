@@ -17,14 +17,18 @@ const BODY_LIMIT = 2 * 1024 * 1024;
 // Names in :file and :id. Stricter than the contract's [A-Za-z0-9._-] only in refusing a leading dot.
 const NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}$/;
 const MODEL_RE = /^[A-Za-z0-9._-]{1,64}$/;
-const RUN_FILES = new Set(['meta', 'spec', 'metrics', 'frames', 'agents', 'remarks']);
+const RUN_FILES = new Set(['meta', 'spec', 'metrics', 'frames', 'agents', 'remarks', 'decisions', 'incidents']);
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon'
 };
-const CSP = "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; " +
-  "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+// Matterport is allowed for the scope display's 3D tour (docs/PROTOTYPE.md §9b): the tour iframe and the
+// Embed SDK bootstrap script.
+const CSP = "default-src 'self'; script-src 'self' https://api.matterport.com https://static.matterport.com; " +
+  "style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; " +
+  "img-src 'self' data:; connect-src 'self' https://*.matterport.com; frame-src https://my.matterport.com; " +
+  "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 class HttpError extends Error {
   constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra; }
@@ -313,6 +317,11 @@ async function getRuns(ctx, req, res) {
 
 async function getRunFile(ctx, req, res, { id, file }) {
   if (!RUN_FILES.has(file)) throw new HttpError(404, `Runs have no ${file} file.`);
+  if (file === 'decisions') {
+    // decisions.jsonl as one JSON array, for the scope display's incident view (§9b).
+    send(res, 200, await allDecisions(join(runDir(ctx, id), 'decisions.jsonl')));
+    return;
+  }
   if (!(await sendFile(req, res, join(runDir(ctx, id), file + '.json'), TYPES['.json']))) {
     throw new HttpError(404, ctx.jobs.get(id)?.state === 'running' ? `Run ${id} is still running.` : `Run ${id} has no ${file}.json.`);
   }
@@ -325,6 +334,18 @@ async function getAgent(ctx, req, res, { id, agentId }) {
   const agent = Array.isArray(agents) ? agents.find(a => a.id === n) : null;
   if (!agent) throw new HttpError(404, `Run ${id} has no agent ${n}.`);
   send(res, 200, { agent, decisions: await agentDecisions(join(runDir(ctx, id), 'decisions.jsonl'), n) });
+}
+
+async function allDecisions(file) {
+  const stream = createReadStream(file);
+  const opened = new Promise((done, fail) => { stream.once('open', done); stream.once('error', fail); });
+  try { await opened; } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  }
+  const out = [];
+  for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) if (line.trim()) out.push(JSON.parse(line));
+  return out;
 }
 
 // Streams decisions.jsonl, which can be tens of MB for a large Jev run.

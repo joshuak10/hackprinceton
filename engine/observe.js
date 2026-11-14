@@ -171,6 +171,11 @@ function nowText(m) {
   }
 }
 
+function peopleWords(n) {
+  const k = Math.max(0, Math.round(Number(n) || 0));
+  return k === 0 ? 'nobody in line' : k === 1 ? '1 person in line' : `${k} people in line`;
+}
+
 function placeObj(p, tolerance) {
   const visible = Boolean(p.visible);
   const est = Math.max(0, Number(p.est) || 0);
@@ -184,6 +189,8 @@ function placeObj(p, tolerance) {
     cost: priceWords(p.price),
     distance: distanceWords(p.dist),
     line: visible ? waitWords(est) : UNSEEN_LINE,
+    // People judge a line by the head count they can see (SWARMSCOPE_SPEC.md v0.15/v0.18).
+    people_ahead: visible && Number.isFinite(Number(p.ahead)) ? peopleWords(p.ahead) : undefined,
     line_vs_patience: visible && hasTol && est >= 1 ? patienceWords(est, tolerance) : undefined,
     recently: visible ? walkedAwayWords(p.walkedAway30) : undefined
   });

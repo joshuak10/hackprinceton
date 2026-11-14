@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.17 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.18 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -407,6 +407,11 @@ Pitch lines:
 ---
 
 ## 14. Change log
+
+- **v0.18 · Nov 14, 2026.** The engine meets the scope display's contract (docs/PROTOTYPE.md §7, §9):
+  - Worlds with walls record a frame every 3 s by default (`--frame-seconds` to change it). Frames between ticks place walkers along their wall-free path, so a dot drawn in a straight line between frames never crosses a wall. The simulation is unchanged: on the real building, the rules run gives identical results with 30 s or 3 s frames, and its 342 through-wall straight steps between frames drop to 0.
+  - People judge a line by the head count they can see: each visible place in an observation now says `people_ahead` ("12 people in line").
+  - The server returns `decisions` and an optional `incidents` file per run, and its pages allow the Matterport 3D tour (frame and SDK script from matterport.com).
 
 - **v0.17 · Nov 14, 2026.** First real data for model `6FNMVoyPrL1`, and the scenario for it.
   - `[confirmed]` The Matterport keys work. The model has 2 floors, 23 rooms, 334 boundary edges (all typed `wall`), 23 openings (all typed `opening`, none `doorway`) and 86 scan points. Room labels are empty and classifications are only "Void" or "Other". The importer gives Floor 1: 134 wall segments, 10 doors (5 exterior); Floor 2: 80 wall segments, 7 doors (3 marked exterior).
