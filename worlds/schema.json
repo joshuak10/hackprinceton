@@ -90,7 +90,8 @@
       "description": "Optional, visit mode: how people are asked about lines. Leaving it out keeps the defaults. Rules runs are unaffected; it changes what the decision model is told and how often it is asked.",
       "properties": {
         "tellPatience": { "type": "boolean", "default": true, "description": "true: each person is told in words how a line compares with their group's patience number ('more than they will put up with'). false: that verdict is left out and the decision model judges it from the person; line length, people ahead and time waited are still shown." },
-        "askAgainEvery": { "type": "number", "minimum": 0, "maximum": 240, "default": 0, "description": "Minutes between 'keep waiting?' questions for one person in one line. 0 asks once, then the person leaves one patience-length later. Above 0 (at least 5), a person who says yes is asked again that many minutes later and is never made to leave." }
+        "askAgainEvery": { "type": "number", "minimum": 0, "maximum": 240, "default": 0, "description": "Minutes between 'keep waiting?' questions for one person in one line. 0 asks once, then the person leaves one patience-length later. Above 0 (at least 5), a person who says yes is asked again that many minutes later and is never made to leave." },
+        "lineShows": { "type": "string", "enum": ["wait", "people"], "default": "wait", "description": "What a person without a live wait app is told about a line. 'wait': the engine's wait estimate in minutes, which depends on the staff serving (use it where waits are posted, such as rides). 'people': the number of people in line and the staff serving, with no minutes and no patience verdict. A person with a live wait app still sees minutes. When the question is asked, and the rule answer, still follow the engine's wait estimate. Use 'people' for counter service, where customers see the line, not a posted wait." }
       }
     }
   },

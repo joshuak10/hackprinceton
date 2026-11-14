@@ -841,7 +841,7 @@ export class Sim {
       const price = n === current && a.quote?.id === n.id ? a.quote.price : this.priceFor(a, n);
       out.push({
         id: n.id, name: n.name, about: n.about, tags: n.tags, price, listPrice: n.price, dist, est: this.estWait(n),
-        ahead: n.queue.length,
+        ahead: n.queue.length, staff: n.servers,
         visible: a.informed || n === current || dist <= SEE_RADIUS, walkedAway30: this.walkedAway30(n)
       });
     }
@@ -913,7 +913,7 @@ export class Sim {
       asks: { choice: 'next_place', yesNo: 'join', frustration: true, tellOthers: true },
       options: this.placeOptions(this.candidates(a)),
       remarkKinds: VISIT_REMARKS(n.name),
-      observation: this.visitObs(a, { kind: 'line', placeName: n.name, est }, n),
+      observation: this.visitObs(a, { kind: 'line', placeName: n.name, est, ahead: n.queue.length, staff: n.servers }, n),
       auto: { action }
     });
   }
@@ -929,7 +929,7 @@ export class Sim {
       asks: { choice: 'next_place', yesNo: 'keep_waiting', frustration: true, tellOthers: true },
       options: this.placeOptions(this.candidates(a)),
       remarkKinds: VISIT_REMARKS(n.name),
-      observation: this.visitObs(a, { kind: 'long', placeName: n.name, est: remaining, waited, remaining }, n),
+      observation: this.visitObs(a, { kind: 'long', placeName: n.name, est: remaining, waited, remaining, ahead, staff: n.servers }, n),
       auto: { action }
     });
   }

@@ -162,9 +162,24 @@ export function selectHeard(remarks, viewer, names = {}) {
 
 // `tellPatience` false (the world's waiting.tellPatience, §16) leaves out the engine's verdict on how the
 // line compares with the group's patience number, so the decision model judges that from the person.
-function nowText(m, tellPatience = true) {
+// `seesPeople` (waiting.lineShows 'people', §16b, for a person without a live wait app) replaces the wait in
+// minutes with what anyone at the counter can see: the people in line and the staff serving. There is no
+// patience verdict then, because that verdict compares a wait in minutes.
+function nowText(m, tellPatience = true, seesPeople = false) {
   const moment = m || {};
   const place = moment.placeName || 'a place';
+  if (seesPeople && moment.kind === 'line') {
+    const ahead = Math.max(0, Math.round(Number(moment.ahead) || 0));
+    const staff = staffWords(moment.staff);
+    if (ahead === 0) return `Just reached ${place}. There is no line${staff ? `; ${staff}` : ''}.`;
+    return `Just reached ${place}. ${capitalize(peopleWords(ahead))}${staff ? `, ${staff}` : ''}.`;
+  }
+  if (seesPeople && moment.kind === 'long') {
+    const ahead = Math.max(0, Math.round(Number(moment.ahead) || 0));
+    const staff = staffWords(moment.staff);
+    const more = ahead === 0 ? 'Next to be served' : `${ahead === 1 ? '1 person' : `${ahead} people`} still ahead`;
+    return `Has waited ${durationWords(moment.waited)} in line at ${place}. ${more}${staff ? `, ${staff}` : ''}.`;
+  }
   if (moment.kind === 'line') {
     const est = Number(moment.est) || 0;
     if (est < 1) return `Just reached ${place}. There is no line.`;
@@ -194,8 +209,28 @@ function peopleWords(n) {
   return k === 0 ? 'nobody in line' : k === 1 ? '1 person in line' : `${k} people in line`;
 }
 
-function placeObj(p, tolerance) {
+// "2 staff serving"; undefined when the count is unknown.
+function staffWords(n) {
+  const k = Math.round(Number(n));
+  return Number.isFinite(k) && k > 0 ? `${k} staff serving` : undefined;
+}
+
+function placeObj(p, tolerance, seesPeople = false) {
   const visible = Boolean(p.visible);
+  if (seesPeople && visible) {
+    // waiting.lineShows 'people' (§16b): the head count and the staff serving, no wait in minutes.
+    return compact({
+      option: String(p.id),
+      name: p.name || String(p.id),
+      known_for: p.about,
+      offers: (Array.isArray(p.tags) ? p.tags.filter(Boolean) : []).join(', '),
+      cost: costWords(p.price, p.listPrice),
+      distance: distanceWords(p.dist),
+      people_ahead: peopleWords(p.ahead),
+      staff: staffWords(p.staff),
+      recently: walkedAwayWords(p.walkedAway30)
+    });
+  }
   const est = Math.max(0, Number(p.est) || 0);
   const tags = Array.isArray(p.tags) ? p.tags.filter(Boolean) : [];
   const hasTol = Number(tolerance) > 0;
@@ -222,6 +257,8 @@ export function visitObservation(ctx) {
   const placesDone = Array.isArray(c.placesDone) ? c.placesDone.filter(Boolean).map(String) : [];
   const timeInLines = Number(c.timeInLines) || 0;
   const tellPatience = c.spec?.waiting?.tellPatience !== false;
+  // A person with a live wait app still sees minutes: the app shows them.
+  const seesPeople = c.spec?.waiting?.lineShows === 'people' && !c.person?.informed;
   return compact({
     ...base(c),
     person: personObj(c.person, 'has_live_wait_app'),
@@ -231,8 +268,8 @@ export function visitObservation(ctx) {
       time_in_lines: timeInLines < 2 ? 'hardly any' : durationWords(timeInLines),
       places_done: placesDone
     }),
-    now: nowText(moment, tellPatience),
-    places: (Array.isArray(c.places) ? c.places : []).map(p => placeObj(p || {}, tellPatience ? moment.tolerance : null)),
+    now: nowText(moment, tellPatience, seesPeople),
+    places: (Array.isArray(c.places) ? c.places : []).map(p => placeObj(p || {}, tellPatience ? moment.tolerance : null, seesPeople)),
     offers: offerList(c.offers),
     heard: heardList(c.heard)
   });

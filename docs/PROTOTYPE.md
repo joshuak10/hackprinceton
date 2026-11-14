@@ -936,6 +936,33 @@ Both behaviors stay the default. A visit world can switch them off with an optio
 - `[open]` `feeling` is still handed to Jev as the engine's word for the person's last frustration score. In the same test, frustration answers separated by person only when it was left out.
 - `[open]` There is no "speak up" action: a message such as "tell the nurse now and you go first" can only be answered by staying in line or leaving it.
 
+### 16b. What a customer sees of a line: `waiting.lineShows` (Nov 14)
+
+**Why.** A customer at a counter sees how many people are in line and how many staff are serving. They do not see a wait in minutes. Lu, Musalem, Olivares & Schilkrut ("Measuring the Effect of Queues on Customer Purchases", Management Science 59(8), 2013) measured a supermarket deli for seven months and found that whether a customer buys depends on the number of people in line, not on how many staff are serving. The engine used to tell every person a wait estimate in words ("short, about 7 min"). That estimate is (people ahead + 1) × serviceTime ÷ staff, so it tells Jev how many staff are serving, and Jev's answers followed it.
+
+**The probe.** `validation/jev-line-probe.js` asks Jev the join-the-line question for 8 people from the building's cast at Bridge Coffee, with 0 to 15 people ahead and 1 to 3 staff serving: 1,112 requests, about $0.04. Each version is built by `visitObservation` (results under `data/validation/`, not committed). Run on Nov 14 with jev-1.14.0:
+
+| What the person is told | Join probability, 1 → 3 staff at the same line length (average change) | Same wait, longer line (6 min: 2 ahead with 1 staff, 5 with 2, 8 with 3) |
+|---|---|---|
+| Wait in minutes and the patience verdict (the default) | +0.30 | 0.62 / 0.59 / 0.62 |
+| Wait in minutes, no verdict (`tellPatience: false`) | +0.12 | 0.45 / 0.44 / 0.44 |
+| People in line and staff serving (`lineShows: "people"`) | +0.03 | 0.39 / 0.32 / 0.28 |
+
+With minutes, Jev reacts to the wait and hardly at all to the line length. With the head count, it reacts to the line length and hardly at all to the staff. That is the deli's finding. Repeat asks of one question differ by about 2 points on average (§17), so +0.03 is close to noise.
+
+**The setting.** `waiting.lineShows`, `"wait"` (default) or `"people"`. With `"people"`, a person without a live wait app is told:
+- at the join question: "Just reached Bridge Coffee. 6 people in line, 2 staff serving." ("There is no line; 2 staff serving." when nobody is ahead);
+- at the keep-waiting question: "Has waited about 15 minutes in line at Bridge Coffee. 3 people still ahead, 2 staff serving." ("Next to be served" when nobody is ahead);
+- for every place they can see, in every visit observation: `people_ahead` and `staff` in place of `line` and `line_vs_patience`. Places they cannot see still read "unknown (can't see it from here)".
+
+There is no patience verdict in this mode, because the verdict compares a wait in minutes. A person with a live wait app (`informed`) is told exactly what `"wait"` mode tells them: the app shows minutes.
+
+- **Only the words change.** When the questions come (the join question when the estimated wait is over 8 minutes and over half the tolerance), the rule answers and the inline rule policy all still use the engine's wait estimate. A rules run is identical in both modes, and so are the times and order of Jev's questions (tested).
+- **Recorded runs are safe.** `"wait"` adds nothing to the normalized spec, so worlds without the field hash and replay as before. Ask the room (§17) builds its own arrival observation from its own world (`alder-pine-cafe.json`, unchanged), so its recorded answers still match.
+- **Where it is on.** `buildings/6FNMVoyPrL1/fitout-floor1-lunch.json` (the building's food hall and market) sets `"people"`. Worlds with posted waits, such as the theme park, keep `"wait"`. The café and sushi worlds are unchanged.
+- `[open]` **The rule model still credits extra staff with a faster line.** Its walk-away rule compares the wait estimate with patience, so in a rules run, +1 staff helps both by shortening the line and by lowering the estimate each arriving person compares. Basing the rule on the head count needs each counter's usual staffing, which the engine does not know once a test has changed the staff. A first try, one service time per person whatever the staff, raised the building's rules baseline from 193 to 351 walk-aways (seed 1) and was dropped. The display's "+1 staff" test runs with rules, so it may overstate the gain until this is settled.
+- `[open]` **Jev turns away from lines more than the deli's customers did.** With the head count, Jev's join probability falls from about 0.42 with 1 person ahead to about 0.22 with 15. In the deli, 15 or more in line cut purchases by about a tenth (30% to 27%). The probe asks only people who reached the counter and are deciding, so the two numbers are not directly comparable, but the gap is large. With nobody ahead, Jev joins only about a third of the time, which the engine never asks (the question needs a wait over 8 minutes). A count of real customers at a counter (`validation/livestream/`) is the planned check.
+
 ---
 
 ## 17. Ask the room: one moment, every customer, live (Nov 14)
