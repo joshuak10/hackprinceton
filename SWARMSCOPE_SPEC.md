@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.24 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.25 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Direction (Nov 14, v0.24):** the product now targets **independent local businesses**, starting with counter-service food and drink. Owners can test a change on a simulated copy of their own customers before trying it on real ones. The use case is specified in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md). Everything below still describes the engine and the earlier building work, and [docs/PROTOTYPE.md](docs/PROTOTYPE.md) still governs the code.
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
@@ -417,6 +417,7 @@ Pitch lines:
 
 ## 14. Change log
 
+- **v0.25 · Nov 14, 2026.** Suggestions in the scope display: one hard-coded suggestion for now. **Decision (Josh):** the Suggestions button shows a single fixed suggestion, "add one more server at the run's worst bottleneck" (the place with the highest bottleneck score). It is a rule, not AI, and is labelled that way. "Run this suggestion" starts a new run of the same world and seed with that one change, using rules, or Jev when the baseline was a Jev run and Jev is live. After the run, a "Showing" dropdown switches the display between the baseline and the suggestion run, keeping the time on the slider, and the dialog shows both runs' headline numbers side by side. The display no longer calls the advisor's advice or the quick read (v0.22); both still exist on the server and the command line. Which runs are suggestion runs is remembered in the browser only. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b.
 - **v0.24 · Nov 14, 2026.** New direction: independent local businesses. **Decision (team):** the product targets local, independent businesses that cannot afford consultants for financial or operational decisions. These owners often avoid changes (prices, menu, hours, staffing, layout) because one mistake can lose regulars.
   - **The edge:** a quick, cheap simulation of their own customers, checked against their own numbers, that says which customers would leave. Each answer ends with a small real-world trial.
   - **Starting point:** counter-service food and drink (cafés, bakeries, sandwich and bubble-tea shops).

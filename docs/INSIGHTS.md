@@ -1,5 +1,7 @@
 # Suggestions after a run
 
+> **Nov 14 (spec v0.25):** the display currently shows one hard-coded suggestion with a baseline-versus-suggestion dropdown, and does not call the advisor or the quick read described below. See docs/PROTOTYPE.md §9b. The rest of this page describes the server side, which is unchanged.
+
 The display's **Suggestions** button (top bar) explains what to change for the run on screen. Nothing is requested until someone clicks it. It then shows, in order of preference:
 
 1. **Tested advice from the advisor** (Ryan's `run/advisor.js`, docs/PROTOTYPE.md §15c). `node bin/swarm.js advise <world>` runs a baseline on several seeds, has Claude propose changes, tests each change on the same seeds, and writes `advice.json` and `advice.md` into the baseline runs. The display reads it with `GET /api/runs/:id/advice`. Every number in a recommendation comes from an experiment the code ran. Needs `ANTHROPIC_API_KEY`, or run `/advise` in Claude Code.

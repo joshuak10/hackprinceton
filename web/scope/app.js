@@ -9,7 +9,7 @@ import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector,
 import { matchCase, showConfirm, showChoices, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
 import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun } from './lib/source.js';
-import { createFeedback, feedbackTarget } from './lib/feedback.js';
+import { createFeedback, hardCodedSuggestion, applySuggestion, compareRows } from './lib/feedback.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -59,7 +59,7 @@ const T = createTimeline({
   onSpeed: s => setSpeed(s)
 });
 const tour = createTour({ root: $('tour'), body: $('tourBody'), title: $('tourTitle'), closeBtn: $('tourClose'), onClose: () => { st.dirty = true; } });
-const feedback = createFeedback();
+const feedback = createFeedback({ onRun: runSuggestion, onPick: showRun });
 
 new ResizeObserver(() => {
   R.resize();
@@ -115,8 +115,7 @@ function setBundle(bundle, caseInfo) {
     : prov === 'jev' || prov === 'replay' ? 'Every decision in this run came from Jev (replays make no new requests).'
       : 'Decisions came from the engine\'s rule policy, not Jev.';
   renderRunPicker();
-  // Suggestions belong to this run and are only requested when someone clicks Suggestions.
-  feedback.reset(feedbackTarget(bundle, caseInfo), st.question);
+  refreshSuggestion(bundle, caseInfo);
 
   tour.hide();
   tour.configure({ modelId: geo.source?.provider === 'matterport' ? geo.source.modelId : null, key: st.config.matterportSdkKey });
@@ -148,6 +147,75 @@ function providerWords(meta) {
   return 'Rules, not Jev';
 }
 
+// ---------- the hard-coded suggestion and its run ----------
+// Which runs are suggestion runs: { [runId]: { base, suggestion } }, kept in this browser.
+const suggestionRuns = (() => { try { return JSON.parse(store.get('scope-suggestions') || '{}') || {}; } catch { return {}; } })();
+const runLabel = r => {
+  const when = r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  return `${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}`;
+};
+
+// What the Suggestions button offers for the run on screen, and the comparison once its suggestion run exists.
+function refreshSuggestion(bundle, c) {
+  const runId = bundle.meta?.runId;
+  const onServer = !!(c?.runs?.length && runId && c.runs.some(r => r.meta.runId === runId));
+  if (!onServer) {
+    const s = hardCodedSuggestion(bundle.spec, bundle.metrics)
+      || { label: 'Add one more server at the busiest counter', why: 'The busiest counter is where most people wait or walk away.', change: 'One more server at the busiest counter' };
+    feedback.reset({ suggestion: s, canRun: false, cannotRunWhy: 'This is a mock run, so it cannot be re-run. Start the engine (node bin/swarm.js serve) and open a recorded run to test the suggestion.' });
+    return;
+  }
+  const mine = suggestionRuns[runId];
+  const has = id => c.runs.some(r => r.meta.runId === id);
+  const baseId = mine && has(mine.base) ? mine.base : runId;
+  const sugId = mine ? runId : c.runs.map(r => r.meta.runId).find(id => suggestionRuns[id]?.base === runId);
+  const suggestion = (sugId && suggestionRuns[sugId]?.suggestion) || hardCodedSuggestion(bundle.spec, bundle.metrics);
+  if (!suggestion) { feedback.reset(null); return; }
+  const base = c.runs.find(r => r.meta.runId === baseId);
+  const jev = ['jev', 'replay'].includes(base.meta.providerStats?.provider || base.meta.provider) && st.live?.jev;
+  const ctx = {
+    suggestion, canRun: !!st.live && !mine,
+    cannotRunWhy: mine ? 'This is the suggestion run. Open the baseline to run the suggestion again.' : 'The engine is not reachable, so a new run cannot start.',
+    runNote: jev ? 'Starts a live Jev run: every decision is one Jev request to TypeSafe.' : 'Starts a rules run on the engine: no Jev requests, and it takes a few seconds.',
+    compare: null
+  };
+  feedback.reset(ctx);
+  if (!sugId || sugId === baseId) return;
+  // Both runs' numbers, then the dropdown. Skipped if another run is on screen by then.
+  Promise.all([loadEngineRun(baseId), loadEngineRun(sugId)]).then(([b, a]) => {
+    if (st.bundle !== bundle) return;
+    const sug = c.runs.find(r => r.meta.runId === sugId);
+    const cross = providerWords(base.meta) !== providerWords(sug.meta);
+    feedback.reset({
+      ...ctx, canRun: false,
+      compare: {
+        selected: runId, rows: compareRows(b.metrics, a.metrics, suggestion),
+        options: [{ runId: baseId, label: `Baseline (${runLabel(base)})` }, { runId: sugId, label: `With the suggestion (${runLabel(sug)})` }],
+        note: cross ? `The baseline's decisions came from ${providerWords(base.meta)} and the suggestion run's from ${providerWords(sug.meta)}, so part of the difference is the decision-maker, not the change.` : ''
+      }
+    });
+  }).catch(() => {});
+}
+
+function runSuggestion() {
+  const c = st.caseInfo, base = c && selectedRun(c);
+  if (!base || st.loading) return;
+  const suggestion = hardCodedSuggestion(base.spec, st.bundle.metrics);
+  if (!suggestion) return;
+  const jev = ['jev', 'replay'].includes(base.meta.providerStats?.provider || base.meta.provider) && st.live?.jev;
+  openCase(c.id, { question: st.question, newRun: jev ? 'jev' : 'rules', suggestion, autoplay: false });
+}
+
+// Switch between the baseline and the suggestion run, keeping the time on the slider.
+async function showRun(runId) {
+  const c = st.caseInfo;
+  if (!c || st.loading || runId === st.bundle?.meta?.runId) return;
+  const t = st.t;
+  c.selected = runId;
+  await openCase(c.id, { question: st.question, autoplay: false });
+  if (st.bundle?.meta?.runId === runId) seek(Math.min(t, st.run.duration));
+}
+
 const selectedRun = c => c.runs?.find(r => r.meta.runId === c.selected) || c.runs?.[0] || null;
 
 // Engine runs are loaded once and reused (thumbnails, reopening).
@@ -171,7 +239,7 @@ function renderRunPicker() {
     const when = r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
     o.value = r.meta.runId;
     const n = r.meta.decisions || 0;
-    o.textContent = `${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}${n ? ` (${n.toLocaleString('en-US')} decisions)` : ''}`;
+    o.textContent = `${suggestionRuns[r.meta.runId] ? 'Suggestion: ' : ''}${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}${n ? ` (${n.toLocaleString('en-US')} decisions)` : ''}`;
     o.selected = r.meta.runId === (selectedRun(c)?.meta.runId);
     return o;
   }));
@@ -184,16 +252,21 @@ $('runSel').addEventListener('change', e => {
 });
 
 // A new run on the engine server from the selected run's world (same spec and seed).
-async function runOnServer(c, provider) {
+async function runOnServer(c, provider, suggestion = null) {
   const base = selectedRun(c);
-  const p = showProgress($('progress'), [{ label: 'Starting the run on the engine' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }],
+  const spec = suggestion ? applySuggestion(base.spec, suggestion) : base.spec;
+  const p = showProgress($('progress'), [{ label: suggestion ? `Starting a run with the suggestion: ${suggestion.change}` : 'Starting the run on the engine' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }],
     provider === 'jev' ? 'Live Jev run: every decision is one Jev request to TypeSafe.' : 'Rules run: the engine\'s rule policy decides; no Jev requests.');
   p.set(0);
   const runId = await apiStartRun({
-    spec: base.spec, provider, seed: base.meta.seed ?? 7,
+    spec, provider, seed: base.meta.seed ?? 7,
     onStatus: s => p.set(1, `Running the swarm: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated${s.decisions ? `, ${s.decisions} decisions` : ''}`)
   });
   p.set(2);
+  if (suggestion) {
+    suggestionRuns[runId] = { base: base.meta.runId, suggestion };
+    store.set('scope-suggestions', JSON.stringify(suggestionRuns));
+  }
   c.runs = await apiBuildingRuns();
   c.selected = runId;
   const bundle = await loadEngineRun(runId);
@@ -201,7 +274,7 @@ async function runOnServer(c, provider) {
   return bundle;
 }
 
-async function openCase(id, { question = '', progress = false, autoplay = true, newRun = null } = {}) {
+async function openCase(id, { question = '', progress = false, autoplay = true, newRun = null, suggestion = null } = {}) {
   const c = st.cases[id];
   if (!c || st.loading) return;
   st.loading = true;
@@ -215,7 +288,7 @@ async function openCase(id, { question = '', progress = false, autoplay = true, 
   try {
     let bundle;
     if (newRun) {
-      bundle = await runOnServer(c, newRun);
+      bundle = await runOnServer(c, newRun, suggestion);
     } else if (c.runs?.length) {
       const r = selectedRun(c);
       const p = progress ? showProgress($('progress'), [{ label: `Loading the recorded run (${providerWords(r.meta)})` }, { label: 'Opening the replay' }], 'Recorded by the engine. Replaying makes no Jev requests.') : null;
