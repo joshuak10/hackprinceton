@@ -815,9 +815,11 @@ function renderWho() {
         h('button', { type: 'button', onclick: () => sortWho(key) }, label + (sorted ? (state.whoSort.desc ? ' ↓' : ' ↑') : '')));
     }));
   const rows = whoRows();
+  // A segment's `group` is the archetype id; show the group's name.
+  const groupName = id => (state.run.spec.archetypes ?? []).find(a => a.id === id)?.name ?? id;
   const body = rows.length
     ? rows.map(r => h('tr', {},
-      h('td', {}, r.name ?? r.id, state.whoView === 'byCast' && r.group ? h('span', { class: 'grp' }, r.group) : null),
+      h('td', {}, r.name ?? r.id, state.whoView === 'byCast' && r.group ? h('span', { class: 'grp' }, groupName(r.group)) : null),
       ...cols.map(([key, , f]) => h('td', {}, f(r[key])))))
     : [h('tr', {}, h('td', { colspan: cols.length + 1 }, 'No people in this view.'))];
   ui.whoTable.replaceChildren(h('thead', {}, head), h('tbody', {}, body));
@@ -851,17 +853,49 @@ async function loadAdvice(id) {
   } catch { /* no advice for this run: the panel says how to get it */ }
 }
 
+// Effect keys are a headline KPI, `group:<id>.<field>`, `cast:<id>.<field>` or `place:<id>.arrivals` (§15c).
+const EFFECT_LABELS = {
+  abandonRate: 'Abandon rate', avgWait: 'Avg wait', served: 'Served', abandoned: 'Walk-aways', avgTrip: 'Avg trip', avgDelay: 'Avg delay',
+  arrived: 'Arrived', walkAwaysPerPerson: 'walk-aways each', shareNeverServed: 'never served', avgSpent: 'avg spent', avgVisits: 'avg visits',
+  avgFrustration: 'frustration', arrivals: 'arrivals'
+};
+const money = v => (isNum(v) ? `$${fmt(v, 2)}` : '–');
+const EFFECT_FORMAT = { abandonRate: pct, shareNeverServed: pct, avgWait: mins, avgTrip: mins, avgDelay: mins, avgSpent: money };
+
+function effectLabel(key) {
+  const m = /^(group|cast|place):(.+)\.(\w+)$/.exec(key);
+  if (!m) return EFFECT_LABELS[key] ?? key;
+  const spec = state.run?.spec;
+  const list = m[1] === 'group' ? spec?.archetypes : m[1] === 'cast' ? spec?.minds : spec?.nodes;
+  return `${list?.find(x => x.id === m[2])?.name ?? m[2]} · ${EFFECT_LABELS[m[3]] ?? m[3]}`;
+}
+
 function effectTable(effect) {
   const rel = e => Math.abs(Number(e.change) / (Number(e.before) || 1)) || 0;
   const entries = Object.entries(effect && typeof effect === 'object' ? effect : {}).filter(([, e]) => e && typeof e === 'object')
     .sort((a, b) => rel(b[1]) - rel(a[1])).slice(0, 4);
   if (!entries.length) return null;
+  const field = key => String(key).split('.').pop();
+  const value = (key, v) => (EFFECT_FORMAT[field(key)] ?? num)(v);
+  // A rate's change reads in points; other changes keep the measure's own unit.
+  const change = (key, v) => (!isNum(v) ? '–' : (v > 0 ? '+' : v < 0 ? '−' : '') +
+    (['abandonRate', 'shareNeverServed'].includes(field(key)) ? `${fmt(Math.abs(v) * 100, 1)} pts` : value(key, Math.abs(v))));
   return h('table', { class: 'effect' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Measure'), h('th', {}, 'Before'), h('th', {}, 'After'), h('th', {}, 'Change'))),
     h('tbody', {}, entries.map(([kpi, e]) => h('tr', {},
-      h('td', {}, kpi), h('td', {}, num(e.before)), h('td', {}, num(e.after)),
-      h('td', { title: isNum(e.spread) ? `Spread across seeds: ${num(e.spread)}` : null },
-        signed(e.change), isNum(e.spread) ? ` ±${num(e.spread)}` : '')))));
+      h('td', {}, effectLabel(kpi)), h('td', {}, value(kpi, e.before)), h('td', {}, value(kpi, e.after)),
+      h('td', { title: isNum(e.spread) ? 'Spread across seeds: the larger seed-to-seed standard deviation' : null },
+        change(kpi, e.change), isNum(e.spread) ? ` (spread ${change(kpi, e.spread).replace(/^\+/, '')})` : '')))));
+}
+
+// The measured reach of any offer the recommendation's experiment added.
+function offerNotes(advice, r) {
+  const exp = (Array.isArray(advice.experiments) ? advice.experiments : []).find(e => e?.n === r?.experiment);
+  const placeName = id => (state.run?.spec?.nodes ?? []).find(n => n.id === id)?.name ?? id;
+  return (exp?.offers ?? []).filter(o => isNum(o?.reached)).map(o => h('p', { class: 'muted small' },
+    `Offer ${o.id}: reached ${num(o.reached)} people per run` +
+    (o.place ? `; ${num(o.wentToPlace)} of them went to ${placeName(o.place)}` : '') +
+    (isNum(o.placeArrivals?.before) ? `; arrivals there ${num(o.placeArrivals.before)} → ${num(o.placeArrivals.after)}` : '') + '.'));
 }
 
 function holdsText(v) {
@@ -870,7 +904,7 @@ function holdsText(v) {
   return v == null || v === '' ? null : `Across seeds: ${textOf(v)}`;
 }
 
-function recCard(r, i) {
+function recCard(advice, r, i) {
   const conf = ['high', 'medium', 'low'].includes(r?.confidence) ? r.confidence : null;
   const tested = r?.testedWith;
   const testedText = Array.isArray(tested) ? tested.join(', ') : textOf(tested);
@@ -879,6 +913,7 @@ function recCard(r, i) {
       conf ? h('span', { class: `tag ${conf}` }, `${conf} confidence`) : null),
     r?.why ? h('p', { class: 'why' }, textOf(r.why)) : null,
     effectTable(r?.effect),
+    ...offerNotes(advice, r),
     h('p', { class: 'muted small' },
       [testedText ? `Tested with ${testedText}` : null, holdsText(r?.holdsAcrossSeeds), textOf(r?.costNote) || null].filter(Boolean).join(' · ')));
 }
@@ -896,12 +931,18 @@ function renderAdvice() {
     ? h('div', { class: 'stack' }, h('h3', {}, title), h('ul', { class: 'advice-list' }, items.map(t => h('li', {}, t))))
     : null;
   const recs = Array.isArray(a.recommendations) ? a.recommendations : [];
-  const findings = asList(a.findings), cautions = asList(a.cautions), next = asList(a.nextSteps);
+  const findings = asList(a.findings), next = asList(a.nextSteps);
+  // Untested items are cautions with this prefix (run/advisor.js COULD_NOT_TEST).
+  const NOT_TESTED = 'Could not test: ';
+  const allCautions = asList(a.cautions);
+  const cautions = allCautions.filter(c => !c.startsWith(NOT_TESTED));
+  const untested = allCautions.filter(c => c.startsWith(NOT_TESTED)).map(c => c.slice(NOT_TESTED.length));
   box.replaceChildren(
     a.answer ? h('p', { class: 'answer' }, textOf(a.answer)) : null,
-    recs.length ? h('div', { class: 'recs' }, recs.map(recCard)) : null,
-    findings.length || cautions.length || next.length
-      ? h('div', { class: 'advice-cols' }, list('What we found', findings), list('Cautions', cautions), list('Try next', next)) : null,
+    recs.length ? h('div', { class: 'recs' }, recs.map((r, i) => recCard(a, r, i))) : null,
+    findings.length || cautions.length || untested.length || next.length
+      ? h('div', { class: 'advice-cols' }, list('What we found', findings), list('Cautions', cautions),
+        list('What could not be tested', untested), list('Try next', next)) : null,
     h('p', { class: 'muted small' }, 'Advice ranks changes under the stated assumptions. It is not a forecast, and groups are simulated people, not real individuals.'));
 }
 

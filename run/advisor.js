@@ -13,6 +13,7 @@ import { normalizeSpec, validateWorld, cleanSpec, applyPatch, PATCH_FIELDS, spec
 import { clockText } from '../engine/util.js';
 import { makeProvider } from '../providers/index.js';
 import { runSeeds, compareRuns, rankedPlaces, KPI_NAMES } from './runner.js';
+import { BETTER, HEADLINE, meanSd, changeEffects, placeVisits } from './effects.js';
 import { readDecisions } from './recorder.js';
 import {
   primaryProbs, TORN_GAP, SEGMENT_NOTE, segmentScore, fallbackRate, fallbackWarning,
@@ -36,16 +37,6 @@ export const NO_KEY_MESSAGE =
   '`node bin/swarm.js report`, tests each change with `node bin/swarm.js compare` on the same seeds, and writes ' +
   'advice.md by the same rules (.claude/commands/advise.md).';
 
-// +1: higher is better, -1: lower is better, 0: neither (spawned follows arrivals, spending depends on the question).
-const BETTER = {
-  abandonRate: -1, avgWait: -1, served: 1, abandoned: -1, spawned: 0, avgTrip: -1, avgDelay: -1, arrived: 1,
-  walkAwaysPerPerson: -1, shareNeverServed: -1, avgFrustration: -1, avgSpent: 0, avgVisits: 0, arrivals: 0, reached: 0, wentToPlace: 0
-};
-const HEADLINE = { visit: ['abandonRate', 'avgWait'], route: ['avgTrip', 'avgDelay'] };
-const SEGMENT_FIELDS = {
-  visit: ['avgWait', 'walkAwaysPerPerson', 'shareNeverServed', 'avgSpent', 'avgVisits', 'avgFrustration'],
-  route: ['avgTrip', 'avgDelay', 'avgFrustration']
-};
 const CONFIDENCE = ['low', 'medium', 'high'];
 
 // ---------- small helpers ----------
@@ -57,14 +48,6 @@ const clip = (s, n) => {
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 };
 const sum = list => list.reduce((s, v) => s + v, 0);
-
-function meanSd(values) {
-  const n = values.length;
-  if (!n) return { mean: null, sd: null };
-  const mean = sum(values) / n;
-  const sd = n > 1 ? Math.sqrt(sum(values.map(v => (v - mean) ** 2)) / (n - 1)) : 0;
-  return { mean, sd };
-}
 
 // Rounds every number in a JSON-safe value, so tool results stay short.
 function rounded(value, digits = 3) {
@@ -172,8 +155,9 @@ function doorsOf(views) {
     .sort((a, b) => b.crossings - a.crossings).slice(0, 8);
 }
 
-// Averages each segment's numbers over the runs that have it; topPlaces visits are averaged over all runs.
-function meanSegments(lists) {
+// Averages each segment's numbers over the runs that have it. Place visits (visitsByPlace, or topPlaces in older
+// runs) are averaged over all runs before the top 3 are picked.
+function meanSegments(lists, nameOf) {
   const runs = lists.filter(Array.isArray);
   if (!runs.length) return null;
   const by = new Map();
@@ -182,10 +166,11 @@ function meanSegments(lists) {
       if (!by.has(s.id)) by.set(s.id, { id: s.id, name: s.name, group: s.group, values: {}, places: new Map() });
       const e = by.get(s.id);
       for (const [k, v] of Object.entries(s)) if (isNum(v)) (e.values[k] ??= []).push(v);
-      for (const p of s.topPlaces ?? []) {
-        const q = e.places.get(p.id) ?? { id: p.id, name: p.name, visits: 0 };
-        q.visits += p.visits ?? 0;
-        e.places.set(p.id, q);
+      const names = new Map((s.topPlaces ?? []).map(p => [p.id, p.name]));
+      for (const [id, k] of Object.entries(placeVisits(s))) {
+        const q = e.places.get(id) ?? { id, name: names.get(id) ?? nameOf(id), visits: 0 };
+        q.visits += k ?? 0;
+        e.places.set(id, q);
       }
     }
   }
@@ -198,9 +183,9 @@ function meanSegments(lists) {
   });
 }
 
-function segmentsOf(views, mode) {
-  const byGroup = meanSegments(views.map(v => v.metrics.segments?.byGroup));
-  const byCast = meanSegments(views.map(v => v.metrics.segments?.byCast));
+function segmentsOf(views, mode, nameOf) {
+  const byGroup = meanSegments(views.map(v => v.metrics.segments?.byGroup), nameOf);
+  const byCast = meanSegments(views.map(v => v.metrics.segments?.byCast), nameOf);
   if (!byGroup && !byCast) return null;
   const pool = byCast?.length ? byCast : byGroup ?? [];
   const worse = mode === 'route' ? (a, b) => (b.avgDelay ?? 0) - (a.avgDelay ?? 0) : (a, b) => segmentScore(b) - segmentScore(a);
@@ -345,7 +330,7 @@ function briefFromViews(world, allViews, question, provider) {
     kpis: kpiStats(views, mode),
     bottlenecks: bottlenecksOf(views, mode).slice(0, 10),
     doors: doorsOf(views),
-    segments: segmentsOf(views, mode),
+    segments: segmentsOf(views, mode, nameOf),
     remarks: remarksOf(views, nameOf),
     torn: tornOf(views, nameOf),
     quality: qualityOf(views),
@@ -499,102 +484,28 @@ function briefMarkdown(d, nameOf) {
 
 // ---------- measuring a change ----------
 
-// Pairs before and after values seed by seed (common random numbers), skipping seeds where either is missing.
-// spread = the larger seed-to-seed standard deviation of the two sides; a change counts only beyond it.
-function measure(before, after, better = 0) {
-  const pairs = before.map((b, i) => [b, after[i]]).filter(([b, a]) => isNum(b) && isNum(a));
-  if (!pairs.length) return null;
-  const b = meanSd(pairs.map(p => p[0]));
-  const a = meanSd(pairs.map(p => p[1]));
-  const bySeed = pairs.map(([x, y]) => y - x);
-  const change = a.mean - b.mean;
-  const spread = Math.max(b.sd, a.sd);
-  const beyondSpread = Math.abs(change) > spread + 1e-9;
-  const sign = Math.abs(change) > 1e-12 ? Math.sign(change) : 0;
-  const holdsAcrossSeeds = sign !== 0 && bySeed.every(d => Math.sign(d) === sign);
-  const verdict = !beyondSpread ? 'no clear effect' : better === 0 ? (sign > 0 ? 'up' : 'down') : sign === better ? 'better' : 'worse';
-  return { before: b.mean, after: a.mean, change, spread, bySeed, beyondSpread, holdsAcrossSeeds, verdict };
-}
-
-function overallVerdict(kpis, mode) {
-  const verdicts = HEADLINE[mode].map(k => kpis[k]?.verdict);
-  const better = verdicts.includes('better');
-  const worse = verdicts.includes('worse');
-  return better && worse ? 'mixed' : better ? 'helps' : worse ? 'hurts' : 'no clear effect';
-}
-
-// compareRuns keeps only seed-averaged summaries; this stand-in recorder keeps each seed's metrics so the
-// change can be paired seed by seed. It writes nothing.
-const captureRecorder = keep => ({ runId: null, dir: null, decision() {}, finish({ metrics }) { keep(metrics); } });
-
-function offerTargets(patch) {
-  const offers = patch.filter(op => op?.kind === 'offer' && isObj(op.offer)).map(op => op.offer);
-  return {
-    offers,
-    groups: new Set(offers.flatMap(o => o.to?.groups ?? [])),
-    cast: new Set(offers.flatMap(o => o.to?.cast ?? []))
-  };
-}
-
-function segmentChanges(mode, before, after, targets) {
-  const fields = SEGMENT_FIELDS[mode];
-  const side = (list, which, id) => list.map(m => m?.segments?.[which]?.find(s => s.id === id));
-  const changes = (which, ids) => ids.map(id => {
-    const b = side(before, which, id), a = side(after, which, id);
-    const any = b.find(Boolean) ?? a.find(Boolean);
-    const out = { id, name: any?.name ?? id, group: any?.group, fields: {} };
-    for (const f of fields) {
-      const m = measure(b.map(s => s?.[f]), a.map(s => s?.[f]), BETTER[f] ?? 0);
-      if (m) out.fields[f] = m;
-    }
-    return out;
-  }).filter(s => Object.keys(s.fields).length);
-  const groupIds = [...new Set(before.concat(after).flatMap(m => (m?.segments?.byGroup ?? []).map(s => s.id)))];
-  if (!groupIds.length) return null;
-  return { byGroup: changes('byGroup', groupIds), byCast: changes('byCast', [...targets.cast]) };
-}
-
-function offerChanges(before, after, targets) {
-  return targets.offers.map(o => {
-    const results = after.map(m => (m?.offers ?? []).find(x => x.id === o.id));
-    const mean = k => meanSd(results.map(r => r?.[k]).filter(isNum)).mean;
-    const arrivals = list => list.map(m => (m?.nodes ?? []).find(n => n.id === o.place)?.arrivals);
-    return {
-      id: o.id, place: o.place ?? null, reached: mean('reached'), wentToPlace: mean('wentToPlace'),
-      placeArrivals: o.place ? measure(arrivals(before), arrivals(after), 0) : null
-    };
-  });
-}
-
 async function measureChange(ctx, patch, provider) {
-  const kept = { before: new Map(), after: new Map() };
-  const res = await compareRuns({
-    spec: ctx.spec, patch, seeds: ctx.seeds, provider, simOpts: ctx.simOpts,
-    recorderFor: (seed, side) => captureRecorder(m => kept[side].set(seed, m))
+  const res = await compareRuns({ spec: ctx.spec, patch, seeds: ctx.seeds, provider, simOpts: ctx.simOpts });
+  // compareRuns runs the seeds in order on each side, so the per-seed metrics pair up seed by seed.
+  const effects = changeEffects({
+    mode: ctx.mode, before: res.runs.before.map(r => r.metrics), after: res.runs.after.map(r => r.metrics), offers: res.offers
   });
-  const before = ctx.seeds.map(s => kept.before.get(s));
-  const after = ctx.seeds.map(s => kept.after.get(s));
-  const kpis = {};
-  for (const k of KPI_NAMES[ctx.mode]) kpis[k] = measure(before.map(m => m?.[k]), after.map(m => m?.[k]), BETTER[k]);
-  const headline = HEADLINE[ctx.mode].map(k => kpis[k]).filter(Boolean);
-  const moved = headline.filter(m => m.beyondSpread);
   const afterScores = new Map(res.after.places.map(p => [p.id, p.meanScore]));
-  const targets = offerTargets(patch);
   return {
     testedWith: provider.name,
     seeds: [...ctx.seeds],
     baseSpecHash: ctx.baseHash,
     applied: res.applied,
     skipped: res.skipped,
-    kpis,
-    verdict: overallVerdict(kpis, ctx.mode),
-    holdsAcrossSeeds: moved.length > 0 && moved.every(m => m.holdsAcrossSeeds),
+    kpis: effects.kpis,
+    verdict: effects.verdict,
+    holdsAcrossSeeds: effects.holdsAcrossSeeds,
     bottlenecks: {
       before: res.before.places.slice(0, 5).map(p => ({ id: p.id, name: p.name, before: p.meanScore, after: afterScores.get(p.id) ?? 0 })),
       topAfter: res.after.places.slice(0, 3).map(p => ({ id: p.id, name: p.name, score: p.meanScore }))
     },
-    segments: segmentChanges(ctx.mode, before, after, targets),
-    offers: offerChanges(before, after, targets)
+    segments: effects.segments,
+    offers: effects.offers
   };
 }
 
@@ -769,7 +680,10 @@ const TOOLS = [
               label: { type: 'string' },
               why: { type: 'string', description: 'Why it helps, citing the measured effect.' },
               kpi: { type: 'string', description: 'The measure you judge it by: a headline KPI (e.g. "abandonRate"), or "group:<id>.<field>", "cast:<id>.<field>", "place:<id>.arrivals".' },
-              better: { type: 'string', enum: ['lower', 'higher'], description: 'Which direction of that measure is better, when it is not obvious.' },
+              better: {
+                type: 'string', enum: ['lower', 'higher'],
+                description: 'Which direction of that measure is better. Needed for measures with no fixed direction (avgSpent, avgVisits, place arrivals); without it such a change is not counted as helping.'
+              },
               confidence: { type: 'string', enum: CONFIDENCE },
               costNote: { type: 'string', description: 'What the change costs or takes in the real world, if known.' }
             },
@@ -876,7 +790,16 @@ function compactMeasure(m) {
   return { before: m.before, after: m.after, change: m.change, spread: m.spread, bySeed: m.bySeed, verdict: m.verdict };
 }
 
+// A segment's measured fields; for an offer's audience also where they went (visits per run at top places).
+function segmentForModel(s, withPlaces) {
+  return {
+    id: s.id, name: s.name, ...Object.fromEntries(Object.entries(s.fields).map(([f, m]) => [f, compactMeasure(m)])),
+    ...(withPlaces && s.places?.length ? { whereTheyWent: s.places.slice(0, 4) } : {})
+  };
+}
+
 function experimentForModel(e, testsLeft) {
+  const targets = new Set((e.offers ?? []).flatMap(o => [...(o.to?.groups ?? []), ...(o.to?.cast ?? [])]));
   return rounded({
     experiment: e.n,
     label: e.label,
@@ -889,8 +812,8 @@ function experimentForModel(e, testsLeft) {
     holdsAcrossSeeds: e.holdsAcrossSeeds,
     bottlenecks: e.bottlenecks,
     segments: e.segments ? {
-      byGroup: e.segments.byGroup.map(s => ({ id: s.id, name: s.name, ...Object.fromEntries(Object.entries(s.fields).map(([f, m]) => [f, compactMeasure(m)])) })),
-      byCast: e.segments.byCast.length ? e.segments.byCast.map(s => ({ id: s.id, name: s.name, ...Object.fromEntries(Object.entries(s.fields).map(([f, m]) => [f, compactMeasure(m)])) })) : undefined
+      byGroup: e.segments.byGroup.map(s => segmentForModel(s, targets.has(s.id))),
+      byCast: e.segments.byCast.length ? e.segments.byCast.map(s => segmentForModel(s, true)) : undefined
     } : undefined,
     offers: e.offers?.length ? e.offers.map(o => ({ ...o, placeArrivals: compactMeasure(o.placeArrivals) })) : undefined,
     testsLeft,
@@ -1122,7 +1045,9 @@ function recommendationFrom(ctx, r) {
   const primary = lookupMeasure(exp, primaryKey);
   const better = r.better === 'lower' ? -1 : r.better === 'higher' ? 1 : BETTER[fieldOf(primaryKey)] ?? 0;
   const moved = !!primary?.beyondSpread;
-  const helps = moved && (better === 0 || Math.sign(primary.change) === better);
+  // A measure with no fixed direction (spending, visits, arrivals at a place) helps only in the direction the
+  // recommendation names with `better`.
+  const helps = moved && better !== 0 && Math.sign(primary.change) === better;
   // The helpful effect shows up on every seed, not merely a change that keeps one sign.
   const holds = helps && !!primary?.holdsAcrossSeeds;
   const confirmation = ctx.confirmations.get(exp.n) ?? null;
@@ -1133,8 +1058,11 @@ function recommendationFrom(ctx, r) {
   const effect = Object.fromEntries(keys.map(k => [k, lookupMeasure(exp, k)]).filter(([, m]) => m && m.before != null).map(([k, m]) => [k, effectEntry(m)]));
   const cautions = [];
   if (primary && !helps && primary.before != null) {
-    cautions.push(`${r.label || exp.label}: its effect on ${keyLabel(primaryKey)} (${fmtChange(primaryKey, primary.change)}) is not larger than the spread across seeds ` +
-      `(${fmtAmount(primaryKey, primary.spread ?? 0)})${moved ? ' in the better direction' : ''}, so it is not counted as helping.`);
+    cautions.push(moved && better === 0
+      ? `${r.label || exp.label}: ${keyLabel(primaryKey)} moved ${fmtChange(primaryKey, primary.change)} (beyond the ${fmtAmount(primaryKey, primary.spread ?? 0)} spread across seeds), ` +
+        'but no better direction was given for that measure, so it is not counted as helping.'
+      : `${r.label || exp.label}: its effect on ${keyLabel(primaryKey)} (${fmtChange(primaryKey, primary.change)}) is not larger than the spread across seeds ` +
+        `(${fmtAmount(primaryKey, primary.spread ?? 0)})${moved ? ' in the better direction' : ''}, so it is not counted as helping.`);
   }
   const rec = {
     label: isText(r.label) ? r.label.trim() : exp.label,
@@ -1421,6 +1349,20 @@ function effectCell(rec, mode) {
   return keys.filter(k => rec.effect?.[k]).map(k => effectText(k, rec.effect[k])).join('; ') || '–';
 }
 
+// "Offer deal: reached 120 people per run; 40 of them went to Forno Slice; arrivals there 60 → 66 (+6; spread 2, ...)."
+function offerLines(exp) {
+  const names = new Map([
+    ...(exp?.bottlenecks?.before ?? []), ...(exp?.bottlenecks?.topAfter ?? []),
+    ...[...(exp?.segments?.byGroup ?? []), ...(exp?.segments?.byCast ?? [])].flatMap(s => s.places ?? [])
+  ].map(p => [p.id, p.name]));
+  return (exp?.offers ?? []).filter(o => isNum(o.reached)).map(o => {
+    const place = o.place ? names.get(o.place) ?? o.place : null;
+    return `Offer ${o.id}: reached ${fmtNum(o.reached)} people per run` +
+      (place ? `; ${fmtNum(o.wentToPlace)} of them went to ${place}` : '') +
+      (o.placeArrivals ? `; arrivals there ${effectText(`place:${o.place}.arrivals`, o.placeArrivals).slice(`${o.place} · arrivals `.length)}` : '') + '.';
+  });
+}
+
 function modeOf(result) {
   const start = (result.transcript ?? []).find(s => s.kind === 'start');
   if (start?.mode === 'route' || start?.mode === 'visit') return start.mode;
@@ -1460,9 +1402,10 @@ export function adviceMarkdown(result) {
     ));
     out.push('');
     recs.forEach((r, i) => {
-      const patch = (result.experiments ?? []).find(e => e.n === r.experiment)?.applied;
+      const exp = (result.experiments ?? []).find(e => e.n === r.experiment);
       out.push(`${i + 1}. **${r.label}.** ${r.why}`);
-      if (patch?.length) out.push(`   Changes: ${patch.join('; ')}.`);
+      if (exp?.applied?.length) out.push(`   Changes: ${exp.applied.join('; ')}.`);
+      for (const line of offerLines(exp)) out.push(`   ${line}`);
       if (r.costNote) out.push(`   Cost: ${r.costNote}`);
     });
   }

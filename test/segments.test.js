@@ -101,7 +101,7 @@ const ROADS = {
   ]
 };
 
-const VISIT_KEYS = ['id', 'name', 'group', 'count', 'avgWait', 'avgSpent', 'avgVisits', 'walkAwaysPerPerson', 'shareNeverServed', 'avgFrustration', 'topPlaces'];
+const VISIT_KEYS = ['id', 'name', 'group', 'count', 'avgWait', 'avgSpent', 'avgVisits', 'walkAwaysPerPerson', 'shareNeverServed', 'avgFrustration', 'topPlaces', 'visitsByPlace'];
 const ROUTE_KEYS = ['id', 'name', 'group', 'count', 'avgTrip', 'avgDelay', 'avgFrustration'];
 
 // agentsSummary rounds waitTotal and trips to 2 decimals, so an average of the rounded values is within 0.005.
@@ -120,11 +120,12 @@ function handVisitSegment(agents, names) {
   const order = [...names.keys()];
   const topPlaces = [...visits].sort((p, q) => q[1] - p[1] || order.indexOf(p[0]) - order.indexOf(q[0]))
     .slice(0, 3).map(([id, k]) => ({ id, name: names.get(id), visits: k }));
+  const visitsByPlace = Object.fromEntries([...visits].sort((p, q) => order.indexOf(p[0]) - order.indexOf(q[0])));
   return {
     count: agents.length,
     avgWait: mean(agents, a => a.waitTotal), avgSpent: mean(agents, a => a.spent), avgVisits: mean(agents, a => a.visits.length),
     walkAwaysPerPerson: mean(agents, a => a.abandons), shareNeverServed: mean(agents, a => (a.served === 0 ? 1 : 0)),
-    avgFrustration: mean(felt, a => a.frustration), topPlaces
+    avgFrustration: mean(felt, a => a.frustration), topPlaces, visitsByPlace
   };
 }
 
@@ -133,6 +134,8 @@ function assertMatchesHand(entry, agents, names, label) {
   assert.equal(entry.count, hand.count, `${label} count`);
   for (const k of ['avgWait', 'avgSpent', 'avgVisits', 'walkAwaysPerPerson', 'shareNeverServed', 'avgFrustration']) near(entry[k], hand[k], `${label} ${k}`);
   assert.deepEqual(entry.topPlaces, hand.topPlaces, `${label} topPlaces`);
+  // Same keys in node order, so compare the entries as lists.
+  assert.deepEqual(Object.entries(entry.visitsByPlace), Object.entries(hand.visitsByPlace), `${label} visitsByPlace`);
 }
 
 const placeNames = sim => new Map(sim.spec.nodes.filter(n => n.kind === 'service').map(n => [n.id, n.name]));
@@ -217,6 +220,18 @@ describe('metrics().segments in visit mode', () => {
     assert.ok(seg.byGroup.some(e => e.topPlaces.length === 3), 'some group was served at more than 3 places, and only 3 are listed');
   });
 
+  test('visitsByPlace covers every place that served the segment and adds up to its visits', () => {
+    for (const e of [...seg.byGroup, ...seg.byCast]) {
+      const total = Object.values(e.visitsByPlace).reduce((t, k) => t + k, 0);
+      assert.ok(Math.abs(total - e.avgVisits * e.count) < 1e-6, `${e.id}: ${total} visits vs avgVisits × count`);
+      for (const p of e.topPlaces) assert.equal(e.visitsByPlace[p.id], p.visits);
+      const order = [...names.keys()];
+      const ids = Object.keys(e.visitsByPlace);
+      assert.deepEqual(ids, [...ids].sort((a, b) => order.indexOf(a) - order.indexOf(b)), 'node order');
+    }
+    assert.ok(seg.byGroup.some(e => Object.keys(e.visitsByPlace).length > 3), 'a group served at more than 3 places lists them all');
+  });
+
   test('frustration is null when nobody was asked (inline rules never ask)', () => {
     for (const e of [...seg.byGroup, ...seg.byCast]) assert.equal(e.avgFrustration, null);
   });
@@ -236,7 +251,7 @@ describe('segments on a tiny world, by hand', () => {
     assert.ok(commuters > 0 && commuters < 40);
     const exact = (id, name, group, count) => ({
       id, name, group, count, avgWait: 0, avgSpent: 12, avgVisits: 1, walkAwaysPerPerson: 0, shareNeverServed: 0, avgFrustration: null,
-      topPlaces: [{ id: 'kiosk', name: 'Coffee kiosk', visits: count }]
+      topPlaces: [{ id: 'kiosk', name: 'Coffee kiosk', visits: count }], visitsByPlace: { kiosk: count }
     });
     assert.deepEqual(byGroup, [exact('commuters', 'Commuters', 'commuters', commuters), exact('visitors', 'Visitors', 'visitors', 40 - commuters)]);
     assert.deepEqual(byCast, [exact('gus', 'Gus Tarn', 'commuters', commuters), exact('ivy', 'Ivy Lund', 'visitors', 40 - commuters)]);
@@ -251,7 +266,7 @@ describe('segments on a tiny world, by hand', () => {
     const rare = sim.metrics().segments.byCast.find(e => e.id === 'rare');
     assert.deepEqual(rare, {
       id: 'rare', name: 'Rhea Sol', group: 'visitors', count: 0, avgWait: null, avgSpent: null, avgVisits: null,
-      walkAwaysPerPerson: null, shareNeverServed: null, avgFrustration: null, topPlaces: []
+      walkAwaysPerPerson: null, shareNeverServed: null, avgFrustration: null, topPlaces: [], visitsByPlace: {}
     });
   });
 });

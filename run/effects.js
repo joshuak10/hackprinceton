@@ -56,24 +56,23 @@ export function addedOffers(base, patched) {
   return (patched?.offers ?? []).slice((base?.offers ?? []).length);
 }
 
-// Mean visits per run to each place in a segment's top places (metrics keep the top 3 per run).
-function topPlacesMean(list) {
-  const by = new Map();
-  for (const s of list) {
-    for (const p of s?.topPlaces ?? []) {
-      const e = by.get(p.id) ?? { id: p.id, name: p.name, visits: 0 };
-      e.visits += p.visits ?? 0;
-      by.set(p.id, e);
-    }
-  }
-  const n = Math.max(1, list.length);
-  return new Map([...by.values()].map(e => [e.id, { ...e, visits: e.visits / n }]));
+// Visits per place for one segment entry: every place when the run recorded visitsByPlace; older runs kept only
+// the top 3, where a place missing from one run's list is not really 0.
+export const placeVisits = s => s?.visitsByPlace ?? Object.fromEntries((s?.topPlaces ?? []).map(p => [p.id, p.visits]));
+
+// Mean visits per run at each place, over the runs in `entries` (one segment entry per run).
+function placesMean(entries) {
+  const total = new Map();
+  for (const s of entries) for (const [id, k] of Object.entries(placeVisits(s))) total.set(id, (total.get(id) ?? 0) + k);
+  const n = Math.max(1, entries.length);
+  return new Map([...total].map(([id, k]) => [id, k / n]));
 }
 
 // Every group, plus each cast member in `cast`, with each segment field measured before → after, and where the
-// segment went (top places, mean visits per run on each side). `before` and `after` are per-seed metrics.
+// segment went (mean visits per run at each place, before and after). `before` and `after` are per-seed metrics.
 export function segmentChanges(mode, before, after, cast = []) {
   const fields = SEGMENT_FIELDS[mode] ?? [];
+  const names = new Map(before.concat(after).flatMap(m => (m?.nodes ?? []).map(n => [n.id, n.name])));
   const side = (list, which, id) => list.map(m => m?.segments?.[which]?.find(s => s.id === id));
   const changes = (which, ids) => ids.map(id => {
     const b = side(before, which, id), a = side(after, which, id);
@@ -84,9 +83,9 @@ export function segmentChanges(mode, before, after, cast = []) {
       if (m) out.fields[f] = m;
     }
     if (mode !== 'route') {
-      const pb = topPlacesMean(b), pa = topPlacesMean(a);
+      const pb = placesMean(b), pa = placesMean(a);
       out.places = [...new Set([...pb.keys(), ...pa.keys()])]
-        .map(pid => ({ id: pid, name: (pa.get(pid) ?? pb.get(pid)).name, before: pb.get(pid)?.visits ?? 0, after: pa.get(pid)?.visits ?? 0 }))
+        .map(pid => ({ id: pid, name: names.get(pid) ?? pid, before: pb.get(pid) ?? 0, after: pa.get(pid) ?? 0 }))
         .sort((x, y) => Math.max(y.before, y.after) - Math.max(x.before, x.after));
     }
     return out;
@@ -180,10 +179,11 @@ export function effectLines({ spec, effects, table }) {
   if (mode === 'visit' && offers.length) {
     const shown = rows.filter(([, s]) => everyone || targeted.has(s.id));
     if (shown.length) {
-      out.push('', 'Where the offer\'s audience went (visits per run at their top places, before → after):');
+      out.push('', 'Where the offer\'s audience went (visits per run at their busiest places and the offer\'s place, before → after):');
+      const offerPlaces = new Set(offers.map(o => o.place).filter(Boolean));
       for (const [prefix, s] of shown) {
-        const places = (s.places ?? []).slice(0, 4).map(p => `${p.name} ${fmtNum(p.before)} → ${fmtNum(p.after)}`).join(' · ') || '–';
-        out.push(`  ${prefix}${s.name}: ${places}`);
+        const list = (s.places ?? []).filter((p, i) => i < 4 || offerPlaces.has(p.id));
+        out.push(`  ${prefix}${s.name}: ${list.map(p => `${p.name} ${fmtNum(p.before)} → ${fmtNum(p.after)}`).join(' · ') || '–'}`);
       }
     }
   }

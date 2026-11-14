@@ -1261,16 +1261,22 @@ export class Sim {
       }
       const visits = new Map();
       for (const a of ag) for (const pid of a.servedAt) visits.set(pid, (visits.get(pid) || 0) + 1);
-      const topPlaces = [...visits]
-        .map(([pid, k]) => ({ node: this.byId.get(pid), visits: k }))
+      const served = [...visits].map(([pid, k]) => ({ node: this.byId.get(pid), visits: k }));
+      const topPlaces = served
         .sort((p, q) => q.visits - p.visits || p.node.idx - q.node.idx)
         .slice(0, TOP_PLACES)
         .map(({ node, visits: k }) => ({ id: node.id, name: node.name, visits: k }));
+      // Every place that served the segment, in node order: topPlaces alone can't say how a place outside
+      // the top 3 changed between two runs.
+      const visitsByPlace = Object.fromEntries([...visits]
+        .map(([pid, k]) => [this.byId.get(pid), k])
+        .sort((p, q) => p[0].idx - q[0].idx)
+        .map(([node, k]) => [node.id, k]));
       return {
         id, name, group, count: ag.length,
         avgWait: mean(ag, a => a.waitTotal), avgSpent: mean(ag, a => a.spent), avgVisits: mean(ag, a => a.servedAt.length),
         walkAwaysPerPerson: mean(ag, a => a.abandons), shareNeverServed: mean(ag, a => (a.served === 0 ? 1 : 0)),
-        avgFrustration, topPlaces
+        avgFrustration, topPlaces, visitsByPlace
       };
     };
     return {

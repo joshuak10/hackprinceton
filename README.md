@@ -71,6 +71,16 @@ node bin/swarm.js advise food-hall-lunch --follow-up "What about the ramen count
 
 It needs `ANTHROPIC_API_KEY` (default model `claude-fable-5-2`). Experiments use the free rules provider unless you pass `--provider jev`, and at most `--max-experiments` (default 6) run. The advice is saved as `advice.md` and `advice.json` in each baseline run, and the viewer shows it. It can test targeted offers too: a simulated message or discount for one kind of simulated person (a group or a cast member's type, never a real individual). **No API key?** In Claude Code, run `/advise <world or run> [question]` and Claude Code does the same steps with `swarm report` and `swarm compare` ([`.claude/commands/advise.md`](.claude/commands/advise.md)).
 
+`swarm report` lists who had the worst time and who spent the most, by group and by cast member. To test an offer by hand, write a patch and compare it on the same seeds:
+
+```sh
+echo '[{ "kind": "offer", "offer": { "id": "eastgate_minor", "text": "Eastgate Urgent Care: seen in 20 minutes, half price tonight",
+         "to": { "groups": ["minor"] }, "place": "eastgate", "priceOff": 0.5 } }]' > offer.json
+node bin/swarm.js compare er-network --patch offer.json --seeds 3
+```
+
+Besides the KPIs, `compare` prints how many people the offer reached, how many went to its place, each group's spending, waits and walk-aways before → after (`*` marks a change larger than the seed-to-seed spread), and where the offer's audience went. Rule-based people react only to the discount; the message itself matters only with Jev.
+
 ## Simulate a real building
 
 Foot traffic through one real building (for example Matterport model `6FNMVoyPrL1`, "Office/Retail - 45,726SF"), using its walls, its doorways and its CoStar record. Simulated people never pass through a wall. Details are in `docs/PROTOTYPE.md` §13 and §14.

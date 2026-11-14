@@ -270,5 +270,7 @@ table.who .grp { display: block; font-family: var(--f-body); font-weight: 400; f
 .tag.high { border-color: var(--accent); color: var(--accent); }
 .tag.medium { border-color: var(--heat1); color: var(--heat1); }
 .tag.low { border-color: var(--heat2); color: var(--heat2); }
-.advice-list { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: 0.9rem; }
+.advice-list { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; align-content: start; font-size: 0.9rem; }
 .advice-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+/* Columns share the tallest one's height; keep each list at the top instead of spreading its items. */
+.advice-cols > .stack { align-content: start; }

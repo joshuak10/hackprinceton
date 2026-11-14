@@ -19,3 +19,5 @@ node_modules/
 
 # Impeccable design-check cache (local paths and session ids); the shared config is committed
 .impeccable/hook.cache.json
+# Patch files written by /advise (may describe a real building)
+/patches/

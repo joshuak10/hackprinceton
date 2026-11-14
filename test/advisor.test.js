@@ -400,6 +400,48 @@ describe('advise', () => {
     assert.ok(res.cautions.some(c => /One more seat: its effect on abandon rate .* is not larger than the spread across seeds/.test(c)));
   });
 
+  // Written with names and no id, the way a model might: the engine fills the id and resolves the names.
+  const PIZZA_OFFER = [{ kind: 'offer', offer: { text: 'Forno Slice: 30% off, ready in 2 minutes', to: { groups: ['Takeout grabbers'] }, place: 'Forno Slice', priceOff: 0.3 } }];
+
+  test('an offer test reports the offer as the engine normalized it: reach, the place, and where its audience went', async () => {
+    const { client, calls } = fakeClient([
+      turn(tool('test_change', { label: 'Pizza deal for takeout', why: 'Takeout grabbers spend the most.', patch: PIZZA_OFFER })),
+      turn(finish({ recommendations: [{ experiment: 1, label: 'Pizza deal for takeout', why: 'Their spend falls.', kpi: 'group:takeout.avgSpent', better: 'lower', confidence: 'high' }] }))
+    ]);
+    const res = await advise({ world: FOOD_HALL, client });
+    const offer = res.experiments[0].offers[0];
+    assert.equal(offer.id, 'offer1');
+    assert.equal(offer.place, 'pizza');
+    assert.deepEqual(offer.to, { groups: ['takeout'], cast: [] });
+    assert.ok(offer.reached > 100 && offer.wentToPlace > 0 && offer.wentToPlace <= offer.reached, JSON.stringify(offer));
+    assert.ok(offer.placeArrivals && offer.placeArrivals.before > 0, 'arrivals at the offer place are measured');
+    const takeout = res.experiments[0].segments.byGroup.find(s => s.id === 'takeout');
+    assert.ok(takeout.places.some(p => p.id === 'pizza' && p.after > p.before), JSON.stringify(takeout.places));
+    // The tool result tells the model where the audience went; groups the offer did not target carry no place list.
+    const sent = JSON.parse(resultFor(calls[1], 'toolu_test_change').content);
+    assert.equal(sent.offers[0].id, 'offer1');
+    assert.ok(sent.segments.byGroup.find(s => s.id === 'takeout').whereTheyWent.some(p => p.id === 'pizza'));
+    assert.equal(sent.segments.byGroup.find(s => s.id === 'workers').whereTheyWent, undefined);
+    const rec = res.recommendations[0];
+    assert.equal(rec.kpi, 'group:takeout.avgSpent');
+    assert.ok(rec.effect['group:takeout.avgSpent'].change < 0);
+    assert.equal(rec.confidence, 'high');
+    assert.equal(rec.holdsAcrossSeeds, true);
+    assert.match(adviceMarkdown(res), /\n {3}Offer offer1: reached [\d.]+ people per run; [\d.]+ of them went to Forno Slice; arrivals there [\d.]+ → [\d.]+ \(/);
+  });
+
+  test('a measure with no fixed direction counts as helping only when the recommendation names the better direction', async () => {
+    const { client } = fakeClient([
+      turn(tool('test_change', { label: 'Pizza deal for takeout', why: 'Takeout grabbers spend the most.', patch: PIZZA_OFFER })),
+      turn(finish({ recommendations: [{ experiment: 1, label: 'Pizza deal for takeout', why: 'Their spend moves.', kpi: 'group:takeout.avgSpent', confidence: 'high' }] }))
+    ]);
+    const res = await advise({ world: FOOD_HALL, client });
+    assert.equal(res.experiments[0].segments.byGroup.find(s => s.id === 'takeout').fields.avgSpent.beyondSpread, true);
+    assert.equal(res.recommendations[0].confidence, 'low');
+    assert.equal(res.recommendations[0].holdsAcrossSeeds, false);
+    assert.ok(res.cautions.some(c => /Pizza deal for takeout: takeout · avg spent moved .* but no better direction was given/.test(c)), res.cautions.join('\n'));
+  });
+
   test('baseline runs passed in are used as they are, and their seeds become the test seeds', async () => {
     const spec = normalizeSpec(FOOD_HALL);
     const { runs } = await runSeeds({ spec, seeds: [7, 8], provider: makeProvider('rules') });

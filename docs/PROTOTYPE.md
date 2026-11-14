@@ -27,6 +27,8 @@ providers/index.js    makeProvider(name, opts)
 run/runner.js         runSwarm(...), runSeeds(...), compareRuns(...)
 run/recorder.js       createRecorder(...), loadRun(dir), listRuns(root)
 run/report.js         reportMarkdown(runDir), agentLog(runDir, agentId)
+run/effects.js        measure(...), changeEffects(...), effectLines(...): what a change did, seed by seed (§15d)
+run/advisor.js        buildBrief(...), advise(...), writeAdvice(...) (§15c)
 bin/swarm.js          CLI
 server/server.js      startServer({ port, root }) local HTTP API + static viewer
 web/index.html, web/app.js, web/style.css   viewer
@@ -303,7 +305,7 @@ Loop: `while (!sim.done) { sim.step(); const reqs = sim.pending(); if (reqs.leng
 
 For an inline provider (`external: false`), `runSwarm` just steps to the end with no requests.
 
-`runSeeds({ spec, seeds: [..], provider, ... })` → `{ runs: [...], summary }`. The summary gives the mean and standard deviation of the headline KPIs and the bottleneck ranking frequency (how often each place is #1). `compareRuns({ spec, patch, seeds, provider })` → `{ applied, skipped, before, after, delta }`, where each side's KPIs are averaged over the same seeds.
+`runSeeds({ spec, seeds: [..], provider, ... })` → `{ runs: [...], summary }`. The summary gives the mean and standard deviation of the headline KPIs and the bottleneck ranking frequency (how often each place is #1). `compareRuns({ spec, patch, seeds, provider })` → `{ applied, skipped, before, after, delta, runs: { before, after }, offers }`, where each side's KPIs are averaged over the same seeds. `runs` keeps each seed's run entry (with its metrics) on both sides, in seed order, so effects can be paired seed by seed; `offers` are the offers the patch added, as the engine normalized them (§15d).
 
 **Headline KPIs:**
 - visit: `abandonRate`, `avgWait`, `served`, `abandoned`, `spawned`, top-3 bottlenecks by score.
@@ -316,7 +318,7 @@ For an inline provider (`external: false`), `runSwarm` just steps to the end wit
   - `spec.json`: the normalized spec
   - `metrics.json`: `sim.metrics()`
   - `frames.json`: see below
-  - `agents.json`: `[{ id, personaId, personaName, archetypeId, informed, served, waitTotal, abandons, frustration, born, done, trace: [{t, m}] }]`
+  - `agents.json`: `[{ id, personaId, personaName, archetypeId, informed, served, waitTotal, abandons, frustration, born, done, trace: [{t, m}] }]`. Visit agents also carry `spent` (total dollars paid, after offers, rounded to cents) and `visits` (ids of the places that served them, in order), after `trace` (§15a).
   - `remarks.json`: `sim.remarks`
 
 `loadRun(dir)` reads them back. `listRuns(root)` returns metas, newest first.
@@ -342,6 +344,7 @@ For an inline provider (`external: false`), `runSwarm` just steps to the end wit
 - `remarks: { total, byKind }`
 - `decisions: { total, byProvider: {...}, byKind: {...} }`
 - `frustration: { avg, byArchetype }`
+- `segments: { byGroup, byCast }` and `offers: [{ id, reached, wentToPlace }]` (§15a, §15b)
 
 `minds` is removed.
 
@@ -356,12 +359,15 @@ swarm validate <world>
 swarm estimate <world> [--seed 7]                    # rules-external run: counts decision requests → est. Jev requests, tokens (~900/request), cost
 swarm run <world> [--provider jev|rules|replay] [--seed 7] [--seeds N] [--model jev-latest] [--concurrency 32]
                   [--max-requests 20000] [--batch-window M] [--patch patch.json] [--from <runDir>] [--out runs] [--no-record]
-swarm compare <world> --patch patch.json [--provider rules|jev] [--seeds N]
+swarm compare <world> --patch patch.json [--provider rules|jev] [--seeds N]   # also: offer reach, who it helped, where the audience went (§15d)
 swarm report <runDir|runId>                          # markdown digest for Claude: KPIs, bottlenecks, remarks, per-archetype outcomes,
                                                      #   torn decisions (top-2 choice probs within 0.15), provider stats
 swarm agent <runDir|runId> <agentId>                 # one agent's persona, decisions with probabilities, trace
 swarm runs                                           # list recorded runs
 swarm compile "<description>" [--out worlds/<slug>.json]   # needs ANTHROPIC_API_KEY; without it, prints how to use /swarm in Claude Code
+swarm advise <world> [--question "…"] [--seeds 3] [--seed 7] [--provider rules|jev] [--confirm-with jev] [--max-experiments 6]
+                     [--model claude-fable-5-2] [--follow-up "…" --from advice.json] [--out runs] [--json]
+                                                     # §15c; needs ANTHROPIC_API_KEY, otherwise exits 1 and explains /advise
 swarm serve [--port 4173]
 swarm sanity [--model jev-latest]                    # live Jev checks (validation/jev-sanity.js)
 ```
@@ -386,6 +392,7 @@ GET  /api/runs/:id/meta|spec|metrics|frames|agents|remarks
 GET  /api/runs/:id/decisions           → decisions.jsonl as one JSON array (for the scope display)
 GET  /api/runs/:id/incidents           → incidents.json if the run has one, else 404
 GET  /api/runs/:id/agents/:agentId    → { agent, decisions: [...] }   (decisions filtered from decisions.jsonl)
+GET  /api/runs/:id/advice             → { advice: <advice.json>, markdown: <advice.md or ''> }; 404 without advice.json, 500 if not JSON (§15c)
 POST /api/compile      { description } → validated spec, or 501 { error } when ANTHROPIC_API_KEY is missing
 GET  /api/health                      → { ok, jev: hasTypesafeKey, claude: hasAnthropicKey }
 ```
@@ -781,8 +788,8 @@ question + world ─► swarm run ─► recorded run(s)
 
 Questions like "which people overspend the most?" need results by kind of person.
 
-- Each agent records `spent` (the price it paid at each place that served it, after any offer) and `visits` (the place ids, in order). Both go into `agents.json`.
-- `metrics().segments = { byGroup: [...], byCast: [...] }`. Each entry: `{ id, name, group, count, avgWait, avgSpent, avgVisits, walkAwaysPerPerson, shareNeverServed, avgFrustration, topPlaces: [{ id, name, visits }] }`. In route mode: `{ id, name, group, count, avgTrip, avgDelay, avgFrustration }`.
+- Each visit agent records `spent` (one number: the total it paid at the places that served it, after any offer, rounded to cents) and `visits` (the ids of the places that served it, in order; its length equals `served`). Both go into `agents.json`, after `trace`. Route agents have neither.
+- `metrics().segments = { byGroup: [...], byCast: [...] }`. Each entry: `{ id, name, group, count, avgWait, avgSpent, avgVisits, walkAwaysPerPerson, shareNeverServed, avgFrustration, topPlaces: [{ id, name, visits }], visitsByPlace: { placeId: visits } }`. `topPlaces` holds at most 3, busiest first; `visitsByPlace` holds every place that served the segment, in node order (§15d). In route mode: `{ id, name, group, count, avgTrip, avgDelay, avgFrustration }`.
 - A segment is a kind of simulated person (a group, or everyone who copies one cast member). It is never a real individual. Reports say so.
 - `swarm report` adds two tables: who had the worst time, and who spent the most.
 
@@ -835,3 +842,39 @@ CLI: `swarm advise <world> [--question "…"] [--seeds 3] [--provider rules|jev]
 **Iterating.** `advise` accepts `--follow-up "…"` with `--from <advice.json>`: the user's reply plus the earlier experiments go back to the advisor, which tests further and updates the advice.
 
 Server and viewer: `GET /api/runs/:id/advice` returns the saved advice, and the viewer shows it in an "Advice" panel beside a "Who" panel for the segment tables.
+
+### 15d. Decisions recorded after the advisor build (Nov 14)
+
+**Segments (§15a).**
+- `group` is the archetype id. byGroup is in archetype order; byCast is in persona order, including the Sim's stand-in persona for a group without a cast.
+- An average is `null` when nobody in the segment counts toward it (for example a cast member nobody copied in this run). `avgFrustration` averages only agents with a frustration answer. Route `avgTrip` and `avgDelay` average agents who arrived.
+- `visitsByPlace` was added at integration. `topPlaces` alone cannot say how a place outside a run's top 3 changed: averaging top-3 lists over seeds counted a place that dropped out of a run's top 3 as 0, so an offer test could show a counter's visits collapsing when they had in fact stayed level. Readers use `visitsByPlace` and fall back to `topPlaces` for older runs.
+- `archetypes` metrics are unchanged.
+
+**Offers (§15b).**
+- An agent pays the price it was quoted when it chose the place (at the request's `t`), even if the window closes before it is served. A line or long-wait observation shows that quoted price for the current place.
+- Discounts do not stack: the largest matching `priceOff` at a place applies.
+- The window is inclusive at both ends. `from` defaults to 0 and `until` to the duration.
+- Route-mode offers are messages only (`place` is always null) and show in route observations.
+- Jev names `offers` in next_place, join, keep_waiting and route, never in frustration or tell_others. Requests and Jev bodies without offers are byte-identical to before, and recorded Jev runs replay with 0 misses.
+- `reached` counts distinct agents who matched the offer at any decision moment: choosing on arrival, reaching a place, after service or a walk-away, a long wait, a route choice, including leave-only moments. `wentToPlace` counts those of them whose later move was to the offer's place, including people who would have gone there anyway.
+- `PATCH_FIELDS.offer` lists the fields of an offer; it is not a field op. `applyPatch` fills a missing id (offer1, offer2, …), suffixes a repeated one (deal → deal_1), resolves audience and place names to ids, and skips an offer that names nobody who exists, has no text and no discount to describe, or would pass 50 offers.
+- Rule-based people react to an offer only through its price, weighted by their group's price weight. The text matters only with Jev. A group with price weight 0 ignores a discount under rules (in `er-network` those are the critical and parent groups, the two biggest spenders per person), and a group whose `needs` rule out the offer's place cannot go there at all.
+
+**Measuring a change (`run/effects.js`, shared by `compare` and the advisor).**
+- Effects pair before and after seed by seed. `spread` is the larger of the before and after sample standard deviations across seeds. A change counts only when |change| > spread; `holdsAcrossSeeds` means every seed moved the same way.
+- Added offers are taken from the patched spec (`compareRuns(...).offers`), never from the raw patch, so a model that writes names or leaves out the id still gets its offer's reach.
+- `swarm compare` (CLI and MCP) prints the KPI and bottleneck tables as before, then: offers added by the patch (audience, place, discount, reached, went to the place, arrivals there before → after), "Who, before → after" for every group and each cast member an offer names (`*` marks a change beyond the spread), and where the offer's audience went (visits per run at their busiest places and the offer's place). `--json` replaces the per-seed runs with `effects: { kpis, verdict, holdsAcrossSeeds, segments, offers }`.
+
+**The advisor (§15c).**
+- Untested items go in `cautions` with the prefix `Could not test: `, so the result keeps exactly the 15c fields. advice.md and the viewer list them under "What could not be tested".
+- A recommendation also carries `experiment`, `kpi` and, after confirmation, `confirmation: { testedWith, experiment, effect, holdsAcrossSeeds, agrees, disagreeOn }`. Effect keys are a headline KPI, `group:<id>.<field>`, `cast:<id>.<field>` or `place:<id>.arrivals`.
+- Confidence cap: high only when the effect beats the spread in the better direction, holds on every seed, and at least 3 seeds ran. Low when it does not help, or when the confirming provider disagrees on direction. A measure with no fixed direction (spending, visits, arrivals at a place) helps only when the recommendation names `better: 'lower' | 'higher'`; without it the change is capped at low with a caution.
+- `test_change` results include each group's measured fields; for an offer's audience they add `whereTheyWent`, and each added offer reports `reached`, `wentToPlace` and `placeArrivals`. advice.md and the viewer print the offer's reach under the recommendation that tested it.
+- Confirmation re-runs the top 3 recommendations, then Claude is asked to finish again. `maxExperiments` is at most 20. A follow-up always runs a fresh baseline.
+- `advise` also takes `runs` (baseline runs already made) and `simOpts`; `provider` and `confirmWith` accept a name or a provider object.
+- Requests: streaming with `finalMessage`, server-side refusal fallback (beta `server-side-fallback-2026-07-01`, `fallbacks: 'default'`), `output_config.effort: 'high'`, `tool_choice: auto` (the model rejects forced tool use; the loop nudges once if finish is never called), `eager_input_streaming` on every tool, inputs validated in code. No key value appears in errors, results, the transcript or progress events.
+- The CLI writes advice.json and advice.md into every baseline run folder; `--out` is the runs folder. Without `ANTHROPIC_API_KEY` it exits 1 and explains the `/advise` path.
+- `[open]` Not run against the live Claude API (no key on the build machine). The loop, the runner, compare and the files were exercised with a scripted fake client, and the CLI through the real SDK against a local fake endpoint.
+- `[open]` "Who spent the most" can rank first a cast member copied by only 1 or 2 people per run; read the People column before targeting one.
+- `[open]` The viewer's Who rows do not yet highlight that segment's dots on the map (needs a `highlightAgents` hook in `web/map.js`).

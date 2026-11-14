@@ -203,7 +203,7 @@ export const SEGMENT_NOTE =
 // A segment's bad-time score uses the place bottleneck weighting per person: wait minutes + 30 × walk-aways.
 export const segmentScore = s => (isNum(s.avgWait) ? s.avgWait : 0) + 30 * (isNum(s.walkAwaysPerPerson) ? s.walkAwaysPerPerson : 0);
 
-export const fmtMoney = v => (isNum(v) ? `$${v.toFixed(2)}` : '–');
+export const fmtMoney = v => (isNum(v) ? `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '–');
 const feelingText = v => (isNum(v) ? `${fmtNum(v, 2)} (${feelingWords(v)})` : '–');
 const topPlacesText = list => (list ?? []).slice(0, 3).map(p => `${p.name ?? p.id} ${fmtInt(p.visits)}`).join(' · ') || '–';
 
