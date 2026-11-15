@@ -1,21 +1,24 @@
 // "Tell Jev what just happened, and ask again" in the person view (docs/PROTOTYPE.md §9c): the words and numbers.
-// The viewer writes one sentence about what has just happened to the person; the server asks Jev the person's
-// recorded choice twice, as recorded and with the sentence, and this file says what moved. ask-panel.js builds the DOM.
+// The viewer writes one sentence about what has just happened to the person. The server asks Jev, twice each:
+// do they stay to eat here tonight, and (where the place has a pool of diners) do they come back next week. The two
+// versions differ only in the last sentence, the viewer's or a neutral one. This file says what moved.
+// ask-panel.js builds the DOM.
 
-// Sentences that fit anyone, for one click.
+// Sentences that fit anyone, for one click: a kindness, a slight, and a pull from elsewhere.
 export const ASK_PRESETS = [
-  'In no hurry tonight and happy to wait',
-  'Had an awful day and has no patience left',
-  'Has to be home in half an hour'
+  'The host apologises warmly and brings something on the house',
+  'The host snaps that anyone who cannot wait should eat elsewhere',
+  'A text arrives: they are needed at home in half an hour'
 ];
 
-// Two asks of the same question differ by a few points; for one person a change under 15 can still be chance.
-export const POINTS_NONE = 5, POINTS_SMALL = 15;
-const FEELING = ['calm', 'mildly annoyed', 'frustrated', 'very frustrated', 'furious'];
+// Two asks of the same version differ by a few points: on Nov 15, some 20 repeats of unchanged versions stayed
+// within 4 points of each other. Under 5 is called no change, 5 to 9 small, and 10 or more is stated.
+export const POINTS_NONE = 5, POINTS_SMALL = 10;
 const pts = p => Math.round(100 * p);
 const pct = p => (Number.isFinite(p) ? `${pts(p)}%` : 'n/a');
+export const sizeOf = change => (Math.abs(change) >= POINTS_SMALL ? 'clear' : Math.abs(change) >= POINTS_NONE ? 'small' : 'none');
 
-// The choice to ask again: the person's last choice at or before the time on the slider, else their first.
+// The moment to ask about: the person's last choice at or before the time on the slider, else their first.
 // Only a choice recorded with what the person was told can be asked again.
 export function targetChoice(decisions, agentId, t) {
   const own = (decisions || []).filter(d => d.agentId === agentId && d.observation?.person);
@@ -24,44 +27,47 @@ export function targetChoice(decisions, agentId, t) {
   return past.length ? past[past.length - 1] : own[0];
 }
 
-// One row per answer: "Yes" for a yes/no question, or each option of a choice.
-// Each row: { key, label, recorded, again, changed } as probabilities (null when missing).
-export function askRows(decision, result) {
-  const of = (v, k) => (k === 'yes' ? v?.yesProb : v?.choiceProbs?.[k]);
-  const num = x => (Number.isFinite(x) ? x : null);
-  // A yes/no question can carry a follow-up choice (where to go if not); the yes/no answer is the one that counts.
-  const yesNo = Boolean(decision?.asks?.yesNo) && Number.isFinite(result?.again?.yesProb);
-  const keys = yesNo || !result?.again?.choiceProbs
-    ? [['yes', 'Yes']]
-    : (decision.options || []).map(o => [String(o.key), o.label || String(o.key)]);
-  return keys.map(([key, label]) => ({
-    key, label, recorded: num(of(result?.recorded, key)), again: num(of(result?.again, key)), changed: num(of(result?.changed, key))
-  }));
+// One row per question that was answered both ways: { key, label, again, changed, change (points), size }.
+export function askRows(result, { backLabel = 'Comes back next week' } = {}) {
+  const row = (key, label, pair) => {
+    const a = pair?.again?.yes, b = pair?.changed?.yes;
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    const change = pts(b) - pts(a);
+    return { key, label, again: a, changed: b, change, size: sizeOf(change) };
+  };
+  return [row('tonight', 'Stays to eat here tonight', result?.tonight), row('back', backLabel, result?.back)].filter(Boolean);
 }
 
-// What the sentence did, in words. question: "Keep waiting at Table?" (panels.js). Returns { size, headline, feeling, note }.
-//   size: 'clear' (15 points or more), 'small' (5 to 14) or 'none'.
-export function askWords(decision, result, { question = 'the question' } = {}) {
-  const rows = askRows(decision, result).filter(r => r.again != null && r.changed != null);
+// What the sentence did, in words: { size, headline, feeling, note }. The headline follows the answer that moved most.
+export function askWords(result, opts = {}) {
+  const rows = askRows(result, opts);
   if (!rows.length) return null;
-  // A yes/no question has one row. A choice follows the option that moved most.
-  const row = rows.reduce((best, r) => (Math.abs(r.changed - r.again) > Math.abs(best.changed - best.again) ? r : best), rows[0]);
-  const d = pts(row.changed) - pts(row.again), n = Math.abs(d);
-  const size = n >= POINTS_SMALL ? 'clear' : n >= POINTS_NONE ? 'small' : 'none';
-  const what = row.key === 'yes' ? `“${question}” Yes` : row.label;
-  const pair = `${pct(row.again)} without your sentence, ${pct(row.changed)} with it`;
-  const headline = size === 'clear' ? `${what}: ${pair}. ${d > 0 ? 'More' : 'Less'} likely by ${n} points.`
-    : size === 'small' ? `${what}: ${pair}. A change this small can be chance.`
-      : `${what}: ${pair}. No real change.`;
-  const fa = result?.again?.frustration, fb = result?.changed?.frustration;
-  const word = x => FEELING[Math.max(0, Math.min(4, Math.round(x)))];
-  const feeling = Number.isFinite(fa) && Number.isFinite(fb)
-    ? (word(fa) === word(fb) ? `Feeling ${word(fb)} either way.` : `Feeling ${word(fa)} without it, ${word(fb)} with it.`) : '';
-  const was = Number.isFinite(row.recorded) ? ` That evening the recorded answer was ${pct(row.recorded)}.` : '';
+  const lead = rows.reduce((best, r) => (Math.abs(r.change) > Math.abs(best.change) ? r : best), rows[0]);
+  const pair = `${pct(lead.again)} without your sentence, ${pct(lead.changed)} with it`, n = Math.abs(lead.change);
+  const headline = lead.size === 'clear' ? `${lead.label}: ${pair}. ${lead.change > 0 ? 'More' : 'Less'} likely by ${n} points.`
+    : lead.size === 'small' ? `${lead.label}: ${pair}. A small change, and it can be chance.`
+      : `No real change. ${lead.label}: ${pair}.`;
+  const fa = result?.tonight?.again?.feeling, fb = result?.tonight?.changed?.feeling;
+  const feeling = fa && fb ? (fa === fb ? `Feels ${fb} either way.` : `Feels ${fa} without it, ${fb} with it.`) : '';
   return {
-    size, headline, feeling,
-    note: `Both were asked just now, with nothing else changed.${was} Jev does not answer the same question the same way twice, so a few points either way is noise.`
+    size: lead.size, headline, feeling,
+    note: 'All of it was asked just now. The two versions differ only in their last sentence: yours, or “nothing else has happened”. A few points either way is noise.'
   };
 }
 
-export const rowWords = r => ({ label: r.label, recorded: pct(r.recorded), again: pct(r.again), changed: pct(r.changed) });
+const signed = n => (n === 0 ? 'no change' : `${n > 0 ? '+' : '−'}${Math.abs(n)}`);
+export const rowWords = r => ({ label: r.label, again: pct(r.again), changed: pct(r.changed), change: signed(r.change), size: r.size });
+
+// The same sentence asked of several people: one line each, the largest change first.
+// list: [{ name, about, result }] -> [{ name, about, again, changed, change, points, size, feeling }]
+export function everyoneRows(list) {
+  return (list || []).map(({ name, about, result }) => {
+    const r = askRows(result)[0];
+    if (!r) return null;
+    const fa = result.tonight.again.feeling, fb = result.tonight.changed.feeling;
+    return {
+      name, about: about || '', again: pct(r.again), changed: pct(r.changed), change: signed(r.change), points: r.change, size: r.size,
+      feeling: fa && fb && fa !== fb ? `${fa} to ${fb}` : fb || ''
+    };
+  }).filter(Boolean).sort((a, b) => Math.abs(b.points) - Math.abs(a.points));
+}

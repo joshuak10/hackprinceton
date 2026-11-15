@@ -159,7 +159,7 @@ export function renderFeed(root, st, onPick) {
 // ---------- inspector ----------
 const STATE_WORDS = ['Walking', 'In a line', 'Being served', 'Deciding', 'Leaving', 'Driving'];
 
-export function questionFor(d, nameOf) {
+function questionFor(d, nameOf) {
   const place = nameOf(d.placeId);
   if (d.kind === 'line') return d.placeId === 'entry_drive' ? 'Turn into the lot?' : `Join the line at ${place}?`;
   if (d.kind === 'long') return d.placeId === 'search' ? 'Keep circling for a space?' : `Keep waiting at ${place}?`;

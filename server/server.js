@@ -455,9 +455,10 @@ async function getAgent(ctx, req, res, { id, agentId }) {
   send(res, 200, { agent, decisions: await agentDecisions(join(runDir(ctx, id), 'decisions.jsonl'), n) });
 }
 
-// Ask Jev one of a person's recorded choices again, as recorded and with one more sentence about what has just
-// happened to them (§9c).
-// Body: { decision: "<choice id>", today: "<the sentence>" }. Two Jev requests; nothing is written.
+// Ask Jev about one person again, with one more sentence about what has just happened to them (§9c): do they stay
+// to eat tonight, and, when the place has a pool of diners, do they come back next week.
+// Body: { decision: "<choice id>", today: "<the sentence>", pool?: "pools/<name>.json" }. Two or four Jev requests;
+// nothing is written.
 async function postAskAgain(ctx, req, res, { id, agentId }) {
   if (!/^\d{1,9}$/.test(agentId)) throw new HttpError(400, 'The agent id must be a whole number.');
   const body = await readJsonBody(req);
@@ -470,9 +471,17 @@ async function postAskAgain(ctx, req, res, { id, agentId }) {
   if (!recorded) throw new HttpError(404, `Run ${id} has no choice ${body.decision} for agent ${agentId}.`);
   if (!recorded.observation?.person) throw new HttpError(409, 'This choice was recorded without what the person was told, so it cannot be asked again.');
   const spec = await readRunJson(ctx, id, 'spec').catch(() => null);
+  const agents = await readRunJson(ctx, id, 'agents').catch(() => null);
+  const agent = Array.isArray(agents) ? agents.find(a => a.id === Number(agentId)) || null : null;
+  let pool = null;
+  if (body.pool != null) {
+    const { validPool } = await lib('../run/days-saved.js');
+    if (!validPool(body.pool)) throw new HttpError(400, 'Name the pool as pools/<name>.json.');
+    pool = await readFile(join(ctx.worldsDir, '..', body.pool), 'utf8').then(JSON.parse).catch(() => null);
+  }
   let result;
   try {
-    result = await askAgain(recorded, today, { spec });
+    result = await askAgain(recorded, today, { spec, agent, pool });
   } catch (err) {
     throw new HttpError(502, `Jev could not answer: ${err?.message || err}`);
   }

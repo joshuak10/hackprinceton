@@ -617,6 +617,13 @@ a.btn.quiet:hover { color: var(--text); }
 .ask-again .vt { margin-top: 8px; }
 .ask-again .vt.saved tbody th { white-space: normal; }
 .ask-again .vt thead th { white-space: normal; }
+.ask-again .vt.saved { table-layout: fixed; }
+.ask-again .vt.saved thead td:first-child { width: 46%; }
+.ask-again .vt.saved td { white-space: normal; }
+.ask-again .ask-feel { margin-top: 4px; }
+.ask-again .ask-sub { display: block; color: var(--faint); font-size: var(--fs-xs); font-weight: 400; }
+.ask-again .ask-all-head { margin-top: 14px; font-weight: 600; }
+.ask-again .ask-out > .btn { margin-top: 10px; }
 .dec-item { border-top: 1px solid var(--line); padding: 10px 0; }
 .dec-item.future { opacity: 0.45; }
 .dec-item .dh { display: flex; justify-content: space-between; gap: 8px; font-size: var(--fs-s); color: var(--muted); }

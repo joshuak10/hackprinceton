@@ -10,7 +10,7 @@ import { deriveRun } from './lib/incidents.js';
 import { createHeat, calibrate, advance } from './lib/heat.js';
 import { createRenderer, readPalette, FRUSTRATION } from './lib/render.js';
 import { createTimeline } from './lib/timeline.js';
-import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, questionFor, el } from './lib/panels.js';
+import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, el } from './lib/panels.js';
 import { targetChoice } from './lib/ask-again.js';
 import { createAskPanel } from './lib/ask-panel.js';
 import { clockText } from './lib/frames.js';
@@ -659,7 +659,28 @@ function inspectorState() {
 }
 // The person view, with the box that asks Jev one of their choices again with a sentence about what just happened (§9c).
 // The box is one node kept across redraws, so typing in it survives the replay moving on.
-const askPanel = createAskPanel({ onAsk: (decision, today) => apiAskAgain(st.bundle.meta.runId, st.selectedAgent, decision, today) });
+const askPanel = createAskPanel({
+  onAsk: (decision, today) => apiAskAgain(st.bundle.meta.runId, st.selectedAgent, decision, today, st.caseInfo?.pool || null),
+  onAskAll: askEveryone
+});
+// The same sentence asked of one of each kind of diner, each at their own moment at the time on the slider. The
+// person who is open stands for their own kind. Tonight's question only: two Jev requests each.
+async function askEveryone(today) {
+  const runId = st.bundle.meta.runId, picked = new Map();
+  const open = st.agentsById.get(st.selectedAgent);
+  for (const a of [open, ...st.agentsById.values()]) {
+    if (!a || picked.has(a.personaId)) continue;
+    const d = targetChoice(st.bundle.decisions, a.id, st.t);
+    if (d) picked.set(a.personaId, { agent: a, decision: d });
+  }
+  const jobs = [...picked.values()].slice(0, 16).map(async ({ agent, decision }) => {
+    const result = await apiAskAgain(runId, agent.id, decision.id, today).catch(() => null);
+    return result && { name: agent.personaName || `Person ${agent.id}`, about: st.personas.get(agent.personaId)?.about || '', result };
+  });
+  const list = (await Promise.all(jobs)).filter(Boolean);
+  if (!list.length) throw new Error('Jev could not be asked.');
+  return list;
+}
 askPanel.input.addEventListener('focus', () => pause());
 function drawInspector(id) {
   const meta = st.bundle.meta;
@@ -667,7 +688,8 @@ function drawInspector(id) {
   const recordedHere = Boolean(st.live) && providerWords(meta) !== 'Sample data';
   askPanel.update({
     key: d ? `${meta.runId}/${id}/${d.id}` : null, decision: d,
-    when: d ? clockText(meta.clockStart, d.t) : '', question: d ? questionFor(d, st.nodeName) : '',
+    when: d ? clockText(meta.clockStart, d.t) : '', situation: d?.observation?.now || '',
+    backLabel: st.caseInfo?.pool ? `Comes back next ${String(st.loyalty.saved?.meta?.dayName || 'week').split(' ')[0]}` : undefined,
     why: !d ? '' : !recordedHere ? 'Asking again needs a run recorded by the Swarmscope engine on this computer.'
       : !st.live.jev ? 'Asking again needs a Jev key on the server.' : ''
   });

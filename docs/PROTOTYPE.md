@@ -489,32 +489,39 @@ The owner's view: try one change on simulated customers and see whether it helpe
 
 **Why.** A judge has to see that a person's answer comes from who they are and how their evening is going, and that nobody wrote a rule for it. Reading a recorded choice shows one example. Changing the person's evening in your own words and watching the answer move shows it cannot have been written ahead of time.
 
-**What the viewer does.** Open a person (a dot on the map, or "See this person" from an incident). Under their details is "Tell Jev what just happened, and ask again", with their choice at the time on the slider ("Their choice at 7:03 pm: Join the line at Table?"), a text box and three ready sentences. On Ask again the box shows:
-- the sentence, and a headline such as "“Join the line at Table?” Yes: 36% without your sentence, 57% with it. More likely by 21 points.";
-- how they feel, from Jev's frustration answer: "Feeling mildly annoyed without it, frustrated with it.";
-- a small table: that evening (the recorded answer), asked again, with your sentence;
-- one line saying both were asked just now and that a few points either way is noise.
+**What the viewer does.** Open a person (a dot on the map, or "See this person" from an incident). Under their details is "Tell Jev what just happened, and ask again", with the moment asked about ("At 7:03 pm: Just reached Table. The line is long, about 40 min."), a text box and three ready sentences (a kindness, a slight, a pull from elsewhere). On Ask again the box shows:
+- the sentence, and a headline for the answer that moved most, such as "Comes back next week: 29% without your sentence, 45% with it. More likely by 16 points.";
+- how they feel, in one word each way: "Feels impatient without it, touched with it.";
+- a table of two answers, without the sentence and with it: **Stays to eat here tonight** and, where the place has a pool of diners (§21), **Comes back next week**;
+- **Ask every diner the same**: the sentence is asked of one of each kind of diner, each at their own moment, and listed with who they are, largest change first. Who moves and who does not is the evidence that Jev reads the person.
 
-A change of 15 points or more is stated plainly, 5 to 14 is "a change this small can be chance", under 5 is "no real change". While a person is open the verdict panel steps aside, so the person has the whole side panel.
+A change of 10 points or more is stated plainly, 5 to 9 is "a small change, and it can be chance", under 5 is "no real change". On Nov 15 some 20 repeats of unchanged versions stayed within 4 points of each other. While a person is open the verdict panel steps aside, so the person has the whole side panel.
 
-**What is asked.** `POST /api/runs/:id/agents/:agentId/ask` with `{ decision, today }` reads that choice from the run's `decisions.jsonl` and sends Jev two requests: the recorded one unchanged, and the same one with `Just now: <sentence>.` added to `now`, what the person is told is happening. Nothing else differs, and the options go in the same order in both (`shuffle: false`), so the order cannot be what moves the answer. The recorded answer is returned for reference; the comparison is between the two asked now, because Jev does not answer the same question the same way twice. Two requests, well under a tenth of a cent. Nothing is written. It needs a run recorded by the engine and a Jev key.
+**What is asked.** `POST /api/runs/:id/agents/:agentId/ask` with `{ decision, today, pool? }` reads that choice from the run's `decisions.jsonl` and sends Jev two or four requests (`run/ask-again.js`), all now:
+- **Tonight, twice.** What the person was told at that moment, with `Just now: <sentence>.` added to `now`, against the same with `Just now: Nothing else has happened.` The question is `stay_tonight` ("Does the person stay to eat here tonight?"), with their frustration and `feeling_now`, one word from `FEELING_WORDS` (content, relieved, touched, hopeful, impatient, worried, embarrassed, sad, hurt, angry).
+- **Next week, twice**, when `pool` names the place's pool of diners. The morning question of §20 for the same cast member, whose one memory is this evening as it went for them in the run ("found people waiting for a seat at the sushi restaurant and left without eating"), followed by the sentence or by "Nothing else happened that evening."
+- The two versions of each differ only in that last sentence, and the options go in the same order. Nothing is written. A few hundredths of a cent.
 
-**Where the sentence goes** was checked first (Nov 15, 36 requests). Added to who the person is ("Today: …" at the end of `about`), most sentences moved the answer by under 10 points. Added to `now`, the same sentences moved it more and in the same direction, so `now` is used. For Julian Reyes ("Tenth anniversary tonight. The babysitter leaves at nine."), facing a 40-minute line at the table, 40% to join:
+**Three decisions, from a first version judged on Nov 15.** Three judges (a hackathon judge, a sceptical engineer, a restaurant owner) typed about 250 sentences of their own into a first version that re-asked the recorded question ("Join the line at Table?") against the recorded request unchanged. All three were convinced a model reads the person (9, 9 and 8 of 10). They scored "feelings drive decisions" 5, 5 and 4, and found three faults, each fixed here:
+- **Good news read as a walk-away.** "The host says your table is ready" lowered "join the line?" by about 30 points, because a person with a table does not join a line. Asking whether they stay to eat removes it: the same sentence now raises staying by 17 points and coming back by 19.
+- **Any sentence at all raised the answer by about 5 points.** The unchanged version now ends with a neutral sentence of the same shape. A pigeon on the awning now moves nobody by more than 2 points, and a babysitter's text no longer moves a student who has no babysitter.
+- **Feeling was one scale of annoyance.** Grief and tenderness came out as "mildly annoyed". Jev is now asked for the feeling in one word.
 
-| Sentence | In `about` | In `now` | Feeling |
+**What it shows now** (one run of each, jev-1.14.0, sizes not validated). For Julian Reyes ("Tenth anniversary tonight. The babysitter leaves at nine."), facing a 40-minute line:
+
+| Sentence | Stays tonight | Comes back next week | Feels |
 |---|---|---|---|
-| The babysitter texted that she can stay as late as they like | +7 | +20 | mildly annoyed either way |
-| In no hurry tonight and happy to wait | +20 | +27 | mildly annoyed to calm |
-| Has to be home in half an hour | −16 | −18 | mildly annoyed to frustrated |
-| Had an awful day and has no patience left | −1 | −5 | mildly annoyed to frustrated |
-| Found a twenty dollar bill on the sidewalk | +4 | +4 | no change |
+| The host apologises warmly and brings two glasses of sparkling wine for their anniversary | +13 | +17 | impatient to touched |
+| The host says their table is ready | +17 | +19 | impatient |
+| The babysitter texted that she can stay as late as they like | +15 | +5 | impatient to relieved |
+| The host laughs when he mentions it is their anniversary | −1 | −8 | impatient |
+| A pigeon lands on the awning across the street | +2 | 0 | impatient |
 
-- **It reads the person.** The babysitter sentence moves Julian by 20 points and Ana Ferreira, a nurse who lives upstairs and has no babysitter, by 3.
-- **It ignores what does not matter.** The twenty-dollar bill moves nobody by more than 4 points.
-- **Feeling moves even when the choice does not.** "An awful day" takes Ana from calm to very frustrated (0.6 to 2.5 on Jev's five-step scale) while her chance of joining a 15-minute line falls 7 points.
-- One run of each, on two people, with jev-1.14.0. Sizes are not validated.
+- **Feelings are read, and move the answer less than circumstances do.** Walter Brandt, a widower, told "today would have been their forty-fifth wedding anniversary" feels sad and stays just the same (+1). Told nobody recognises him, he feels hurt and is 6 points less likely to stay. A table, a time limit or a price moves people by 15 to 47 points. The claim this supports is that each person's situation and feelings shape the answer in a way no table could cover, with situation the larger part.
+- **Where the sentence goes** was checked first (36 requests): added to who the person is ("Today: …" at the end of `about`) it moved answers by under 10 points; added to `now` the same sentences moved them further in the same direction.
+- `[open]` The come-back answer uses one memory and a fixed history of visits, not the person's place in a multi-day run.
 
-**Code.** `run/ask-again.js` (the two requests), `server/server.js` (`postAskAgain`), `web/scope/lib/ask-again.js` (which choice, and the words), `web/scope/lib/ask-panel.js` (the box, one node kept across redraws so typing survives the replay), `web/scope/app.js` (`drawInspector`). Test: `test/ask-again.test.js`.
+**Code.** `run/ask-again.js` (the requests), `providers/jev.js` (`stay_tonight`, `feeling_now`), `server/server.js` (`postAskAgain`), `web/scope/lib/ask-again.js` (which moment, and the words), `web/scope/lib/ask-panel.js` (the box, one node kept across redraws so typing survives the replay), `web/scope/app.js` (`drawInspector`, `askEveryone`). Test: `test/ask-again.test.js`.
 
 ## 10. Compile, schema, slash command, MCP
 

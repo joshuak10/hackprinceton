@@ -10,6 +10,9 @@ export const PRICE_PER_MTOK_USD = 0.042;
 export const PRICE_NOTE = '$0.042 per million input tokens (TypeSafe published price, unverified)';
 export const FRUSTRATION_LEVELS = ['Calm and content', 'Mildly annoyed', 'Frustrated', 'Very frustrated', 'Furious'];
 
+// How a person feels, in one word, for "ask again" (§9c). Frustration is one scale; these name the feeling.
+export const FEELING_WORDS = ['content', 'relieved', 'touched', 'hopeful', 'impatient', 'worried', 'embarrassed', 'sad', 'hurt', 'angry'];
+
 export class JevAuthError extends Error {
   constructor(message = 'Jev rejected the API key (HTTP 401). Check TYPESAFE_API_KEY.') {
     super(message);
@@ -39,6 +42,12 @@ const YES_NO_QUESTIONS = {
   keep_waiting: {
     instructions: 'Does the person in `person` keep waiting in the line described in `now`?',
     criteria: { true: 'They stay in line.', false: 'They give up on this line.' }
+  },
+  // Asked by "ask again" in the person view (§9c): does the person stay to eat here tonight, by waiting or by
+  // sitting down. Unlike `join`, good news about a seat cannot read as a no.
+  stay_tonight: {
+    instructions: 'Does the person in `person` stay to eat here tonight, given `now`?',
+    criteria: { true: 'They stay to eat here: they wait if they have to, or sit down if a seat is ready.', false: 'They leave without eating here.' }
   },
   // The morning question of a multi-day run (§20b), asked alone before the day starts. Its instructions are a
   // function, so they name only the memory fields this observation has.
@@ -140,6 +149,13 @@ export function buildJevRequest(req, { model = 'jev-latest', spec = null, shuffl
       criteria: FRUSTRATION_LEVELS.slice()
     };
   }
+  if (asks.feeling) {
+    questions.feeling_now = {
+      type: 'choice',
+      instructions: `Which one word best describes how the person in \`person\` feels right now${given(obs, ['so_far', 'now', 'memory'])}?`,
+      criteria: Object.fromEntries(FEELING_WORDS.map(w => [w, null]))
+    };
+  }
   if (asks.tellOthers) {
     const where = subjectPhrase(req, spec);
     questions.tell_others = {
@@ -203,6 +219,10 @@ export function parseAnswers(req, answers) {
       expected: clamp(Number(a.frustration.score), 0, FRUSTRATION_LEVELS.length - 1),
       probs: pickProbs(a.frustration.probabilities, FRUSTRATION_KEYS) ?? {}
     };
+  }
+  if (asks.feeling) {
+    const feeling = pickProbs(a.feeling_now?.probabilities, FEELING_WORDS);
+    if (feeling) out.feelingProbs = feeling;
   }
   if (asks.tellOthers) {
     const tell = noulOf(a.tell_others);
