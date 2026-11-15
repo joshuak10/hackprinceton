@@ -410,7 +410,7 @@ async function getDays(ctx, req, res) {
   const pool = new URL(req.url, 'http://localhost').searchParams.get('pool') || '';
   const { savedDays, validPool } = await lib('../run/days-saved.js');
   if (!validPool(pool)) throw new HttpError(400, 'Name the pool as ?pool=pools/<name>.json.');
-  send(res, 200, await savedDays(ctx.daysDir, pool));
+  send(res, 200, await savedDays(ctx.daysDir, pool, { root: join(ctx.worldsDir, '..') }));
 }
 
 async function getRuns(ctx, req, res) {

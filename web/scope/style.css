@@ -503,6 +503,49 @@ a.btn.quiet:hover { color: var(--text); }
 .vt .delta.strong { font-weight: 600; }
 .onmap { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .verdict .btn.again { display: block; margin: 8px 0 0 -10px; }
+/* The owner's view (§21g): one period, one change, and today next to it in four numbers. Plenty of air. */
+.side.owner .verdict { padding: 22px 22px 20px; }
+.side.owner:not(.details) .counters, .side.owner:not(.details) .side-body { display: none; }
+.owner-head { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.owner-head:first-child { margin-top: 0; }
+.owner-label { width: 34px; color: var(--muted); font-size: var(--fs-s); }
+.owner-seg { flex: 1; display: flex; }
+.owner-seg button { flex: 1; min-width: 0; padding: 0 6px; }
+.verdict .owner-headline { margin-top: 26px; }
+.owner-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
+.owner-col { padding: 16px 16px 6px; border: 1px solid var(--line); border-radius: var(--radius); }
+.owner-col.after { border-color: var(--text); }
+.owner-col h3 { font-size: var(--fs-s); font-weight: 600; color: var(--muted); min-height: 2.6em; }
+.owner-col.after h3 { color: var(--text); }
+.owner-fig { margin-bottom: 18px; }
+.owner-fig-label { color: var(--muted); font-size: var(--fs-xs); }
+.owner-fig-num { font-size: 26px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+.owner-fig-change { color: var(--faint); font-size: var(--fs-xs); min-height: 1.4em; }
+.owner-fig-change.moved { color: var(--text); font-weight: 600; }
+.owner-col.before .owner-fig::after { content: ''; display: block; min-height: 1.4em; }
+.verdict .owner-foot { display: flex; flex-wrap: wrap; gap: 0 4px; margin: 10px 0 0 -10px; }
+.verdict .owner-foot .btn { margin-top: 0; }
+/* A period of several evenings: a chart takes the map's place, and the replay controls step aside. */
+.period-view { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; padding: 34px 40px 30px; background: var(--ground); overflow: auto; }
+.period-view[hidden] { display: none; }
+.period-view h2 { font-size: var(--fs-l); font-weight: 600; }
+.period-view .hint { margin-top: 6px; }
+.stage.period-many .timeline, .stage.period-many .map-corner, .stage.period-many .legend-mini, .stage.period-many .map-keys { display: none; }
+.pc-plot { flex: 1; min-height: 220px; display: flex; align-items: stretch; gap: 18px; margin-top: 28px; padding-bottom: 4px; }
+.pc-day { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.pc-pair { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 6px; border-bottom: 1px solid var(--line-2); }
+.pc-bar { width: 38%; max-width: 46px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+.pc-bar i { display: block; }
+.pc-bar.before { opacity: 0.55; }
+.pc-returning { background: var(--a-serve); }
+.pc-fresh { background: var(--a-queue); }
+.pc-away { background: transparent; border: 1px dashed var(--muted); border-bottom: 0; box-sizing: border-box; }
+.pc-day-label { margin-top: 8px; text-align: center; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.pc-legend { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 20px; color: var(--muted); font-size: var(--fs-s); }
+.pc-legend span { display: inline-flex; align-items: center; gap: 8px; }
+.pc-legend i { width: 14px; height: 14px; display: inline-block; }
+.pc-legend i.pc-away { border-bottom: 1px dashed var(--muted); }
+
 /* The changes to try at the sushi restaurant (§21f): three plain buttons, one under the other. */
 .verdict .choices { display: grid; gap: 6px; margin-top: 12px; }
 .verdict .choices .btn { margin-top: 0; width: 100%; text-align: left; }

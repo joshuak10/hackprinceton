@@ -48,6 +48,7 @@
             <fieldset>
               <legend>Color people by</legend>
               <label><input type="radio" name="colorBy" value="state" checked> What they are doing</label>
+              <label id="colorCustomer" hidden><input type="radio" name="colorBy" value="customer"> New or returning customers</label>
               <label><input type="radio" name="colorBy" value="archetype"> Group</label>
               <label><input type="radio" name="colorBy" value="frustration" aria-describedby="frustrationWhy"> How frustrated they are</label>
               <p class="menu-note" id="frustrationWhy" hidden>Needs a run decided by Jev. The rule model does not record how people feel.</p>
@@ -60,6 +61,7 @@
             </fieldset>
           </div>
         </div>
+        <div class="period-view" id="periodView" hidden aria-live="polite"></div>
         <div class="callout" id="callout" hidden></div>
         <div class="legend-mini" id="legendMini" hidden></div>
         <p class="map-keys" id="mapKeys">Enter picks a person. Arrow keys move between people. Enter opens them. Escape lets go.</p>

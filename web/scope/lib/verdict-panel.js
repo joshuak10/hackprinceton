@@ -49,14 +49,15 @@ export function createVerdict(root, { onTest, onCancel, onPick, onChoose = () =>
     message(text) { set([el('p', 'hint', text)]); },
 
     // words: { headline, why, offer? } from worstLineWords or promotionWords; test: testWords for the change.
-    before({ words, test, canTest, cannotWhy, note }) {
+    before({ words, test, canTest, cannotWhy, note, more = null }) {
       set([
         el('h2', null, words.headline),
         el('p', 'why', words.why),
         words.offer ? el('p', 'offer', words.offer) : null,
         canTest ? action('btn solid', test.action, onTest) : null,
         el('p', 'hint', canTest ? test.plan : cannotWhy),
-        note ? el('p', 'hint', note) : null
+        note ? el('p', 'hint', note) : null,
+        more ? action('btn quiet small again', more.label, more.onClick) : null
       ]);
     },
 

@@ -2,7 +2,7 @@
 // that the inspector keeps across its redraws, so what is typed, and the last answer, stay while the replay runs.
 // The words come from ask-again.js; asking is done by the caller (onAsk, onAskAll).
 import { el } from './panels.js';
-import { ASK_PRESETS, askRows, askWords, rowWords, everyoneRows, elsewhereWords } from './ask-again.js';
+import { ASK_PRESETS, askWords, everyoneRows, elsewhereWords } from './ask-again.js';
 
 // A small table. head: column titles (the first is the row title's, usually ''). rows: arrays of cells, each a
 // string or { text, sub, cls }; a row may carry a class as rows[i].cls.
@@ -69,7 +69,6 @@ export function createAskPanel({ onAsk, onAskAll }) {
     if (!S.result) { out.replaceChildren(); return; }
     const words = askWords(S.result);
     if (!words) { out.replaceChildren(el('p', 'hint warn', 'Jev did not answer.')); return; }
-    const row = rowWords(askRows(S.result)[0]);
     const list = S.all ? everyoneRows(S.all) : null;
     const elsewhere = list ? elsewhereWords(list, S.name, words.size) : '';
     const parts = [
@@ -77,8 +76,6 @@ export function createAskPanel({ onAsk, onAskAll }) {
       el('p', `why ask-${words.size}`, words.headline),
       words.feeling ? el('p', 'ask-feel', words.feeling) : null,
       elsewhere ? el('p', 'why ask-clear', elsewhere) : null,
-      table(['', 'Without it', 'With your sentence', 'Change'], [[row.label, row.again, row.changed, { text: row.change, cls: 'delta' + (row.size === 'clear' ? ' strong' : '') }]]),
-      el('p', 'hint', words.note)
     ];
     if (S.allBusy) parts.push(el('p', 'hint', 'Asking every kind of diner the same…'));
     if (S.allError) parts.push(el('p', 'hint warn', S.allError));
@@ -89,7 +86,7 @@ export function createAskPanel({ onAsk, onAskAll }) {
           [{ text: r.name, sub: r.about }, { text: `${r.again} to ${r.changed}`, cls: 'delta' + (r.size === 'clear' ? ' strong' : '') }, r.feeling],
           { cls: r.size === 'none' ? 'quiet' : null }
         ))),
-        el('p', 'hint', 'Each is asked at their own moment in the evening. Grey rows moved less than two asks of the same question can differ.')
+        el('p', 'hint', 'Grey rows did not really move.')
       );
     }
     out.replaceChildren(...parts.filter(Boolean));
@@ -144,7 +141,7 @@ export function createAskPanel({ onAsk, onAskAll }) {
         input.value = '';
         drawOut();
       }
-      which.textContent = why || `At ${when}: ${situation} Add one sentence and see whether what they do, and how they feel, changes.`;
+      which.textContent = why || `At ${when}: ${situation}`;
       form.hidden = Boolean(why);
       presets.hidden = Boolean(why);
     }

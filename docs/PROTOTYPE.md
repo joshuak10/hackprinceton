@@ -1465,3 +1465,26 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 **A result that is not saved on this computer** says so and shows the command, for example `node bin/swarm.js days pools/sushi-restaurant.json --days 8 --seeds 3 --provider jev --change seats+2 --out data/days/seats.json`. All four at once: `--change promo20,seats+2,faster15,sorry --out data/days/sushi-all.json` (about 43 cents and 11,000 Jev requests). Results are saved per computer, so a teammate's numbers differ a little: Jev does not answer the same question the same way twice.
 
 **Code.** `run/days-saved.js` (reading and merging), `server/server.js` (`getDays`), `web/scope/lib/loyalty.js` (the words and the table, no DOM), `web/scope/lib/verdict-panel.js` (`choices`, `saved`), `web/scope/app.js` (`showChoices`, `showSaved`). Tests: `test/server-days.test.js`, `test/loyalty.test.js`.
+
+### 21g. The owner's view (Nov 15)
+
+**Decision (Ryan).** The sushi page showed too much for a business owner, and mixed time scales: one evening on the map, two months in the panel. It now opens on an owner's view with one period for the whole screen.
+
+**What is on the screen.**
+- **Over:** one control sets the period for everything: 1 Friday, 2 Fridays, 1 month, 2 months (as far as the saved runs go; a place open every day gets 1 day, 1 week, 2 weeks, 1 month, 2 months).
+- **Try:** one change at a time: More seats, Faster meals, Sorry card.
+- **One sentence**, stating only what every run agrees on: "Over 2 months, two more seats means $1,132 more revenue and 32 more customers seated."
+- **Two columns, Today and With the change, four numbers each:** revenue, customers seated, average stay (the wait for a seat plus the meal), and returning customers as a share of the people seated. Under each number on the right is the change, or "about the same" when the runs disagree or nothing shows.
+- **The left side follows the period.** For 1 Friday it is the map with the evening's replay. For anything longer a chart takes its place and the replay controls step aside: one pair of bars per evening, today and with the change, stacked as returning customers, new customers and people turned away.
+- **People on the map are coloured by new or returning customer**, not by what they are doing (View still offers the other colourings).
+- **Everything else is one step away:** "Show the evening in detail" brings back the live counts, bottlenecks and incidents; "See the promotion test" (or "Test a promotion") opens the earlier panel, with "Back to the comparison".
+- In the person view, the ask-again box (§9c) shows the sentence's effect in one line and the list of diners, without the table and the notes.
+
+**Where the numbers come from.** `GET /api/days` now also returns, for each saved change, `series` (per run and per day, before and after: `seated`, `fresh`, `away`, `revenue`, `waited`), `meal` (the average meal in minutes across the business's seats, before and after) and, once for the pool, `newcomers`.
+- All of it is from the saved runs of the multi-day loop (§21), so every period is the first n evenings of the same runs.
+- **A new customer** is one of a kind the pool marks `newcomer` (a first date, a walk-in, a student treating herself). The map and the numbers use the same rule, so the picture and the percentage agree. It is an assumption of the pool, like its visit rates; a first visit in the strict sense is rarer (about 1 a Friday).
+- **Average stay** is the minutes waited by the people seated, divided by them, plus the meal. The meal is the world's service time averaged over the seats, with the change applied to the first place (two more seats, or 15% quicker).
+- **Revenue** is what the people seated paid in the runs.
+- The replay on the map for 1 Friday is one recorded evening, not the first evening of the loop, so its live counts (hidden by default) differ a little from the panel.
+
+**Code.** `run/days-saved.js` (`daySeries`, `mealMinutes`), `web/scope/lib/owner.js` (periods, totals, words; no DOM), `web/scope/lib/owner-panel.js` (the panel and the chart), `web/scope/app.js` (`showOwner`, `ownerLayout`), `web/scope/lib/render.js` (`colorBy: 'customer'`). Tests: `test/owner.test.js`, `test/server-days.test.js`.
