@@ -111,7 +111,8 @@ export function changeFor(name, spec, shopId, days) {
   const { shop } = shopView(spec, shopId);
   const whole = { from: 0, to: days - 1 };
   if (name == null || name === '' || name === 'none') return null;
-  if (name === 'staff+1') return { ...whole, label: `+1 staff at ${shop.name}`, patch: [{ kind: 'node', id: shop.id, field: 'servers', value: shop.servers + 1 }] };
+  const staff = /^staff\+(\d+)$/.exec(name);
+  if (staff && Number(staff[1]) > 0) return { ...whole, label: `+${staff[1]} staff at ${shop.name}`, patch: [{ kind: 'node', id: shop.id, field: 'servers', value: shop.servers + Number(staff[1]) }] };
   const price = /^price([+-]\d+(?:\.\d+)?)$/.exec(name);
   if (price) {
     const to = round2(shop.price + Number(price[1]));

@@ -68,6 +68,20 @@ Read the current values in the world file. The levers (`PATCH_FIELDS` in `engine
 
 Pick changes aimed at the question: capacity at the top bottleneck, live information for a group, staggered arrivals, or an offer aimed at the segment the question is about. Prefer cheap, concrete changes.
 
+### One day or several
+
+Decide this from the question before testing anything. The two kinds of run start their people differently, so one cannot stand in for the other.
+
+- **One day** (`swarm compare`, below): a fresh crowd, each person a new copy of a cast member with no past. For what happens on the day: lines, waits, walk-aways, where people go, staffing at a rush, layout, an offer made that day.
+- **Over days** (`swarm days`): the same people for two weeks. Each decides every morning whether to come, remembering what happened to them. For anything about later days: whether people come back, regulars and loyalty, new customers finding the place, word of mouth, a price change people remember, what a promotion leaves behind, a stamp card.
+
+Rules for a test over days:
+- It needs a pool file for the world (`pools/<name>.json`: who the regular customers are and how often each kind comes) and `--provider jev`. With the rule model nobody reads memory, so it is only a dry run. If there is no pool, say under "What could not be tested" that the question is about later days and what is missing.
+- Run it as `node bin/swarm.js days pools/<name>.json --days 10 --seeds 3 --provider jev --change <staff+1 | price+0.5 | promo20 | card10> --out data/days/<name>.json`. One morning costs about a cent with Jev, so one change on 3 seeds is about 50 cents. Ask before a run estimated over $1.
+- Report a measure as changed only where every seed agrees, as direction and range. Say that its sizes are unvalidated: every usual visit rate in the pool is an assumption, and Jev's sensitivity to waits is unchecked (docs/PROTOTYPE.md §20d, §21).
+- Read the realism checks it prints. If the baseline does not hold steady, do not report a change in visits.
+- A change can deserve both: one day for what it does at the rush, then over days for whether it lasts.
+
 ## 4. Test each change (at most 6 experiments)
 
 For each experiment, first say in one line what you are testing and why. Then write the patch to `patches/<world-slug>/<n>-<short-name>.json` and run it on the same seeds:

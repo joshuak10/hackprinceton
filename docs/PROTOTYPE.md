@@ -1304,3 +1304,17 @@ Per arm and seed: visits, first-time visitors, people served, walk-aways and the
 - New customers come back less often than established ones.
 
 Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 --provider jev --change staff+1 --out data/days/cafe.json`. Changes: `staff+1`, `price+0.5`, `promo20`, `card10`, several at once separated by commas. `--baseline-from <earlier --out file>` reuses saved baselines so only the changes are run; `--remember outcome` is the conservative run. Results go to `data/days/` (not committed). One simulated morning of this café costs about 1 cent and takes about 8 seconds with Jev.
+
+### 21d. One day or several: how the AI knows which to run
+
+**Why.** The two kinds of run start their people differently. In a one-day run every arrival is a new copy of a cast member with no past, drawn at random from the world's arrivals. In a multi-day run the same people persist in a pool, each with a usual rate and a record, and are asked a different question (`visit_today`) before each day. So a one-day run cannot answer "will they come back", and a question about one rush does not need a pool. Whoever chooses the test has to choose by the question.
+
+- **The rule is written once,** in `run/timescale.js`. `TIMESCALE_RULE` is the rule in words: one day for what happens on the day (lines, waits, walk-aways, where people go, staffing at a rush, layout, an offer made that day); over days for anything about later days (coming back, regulars and loyalty, new customers, word of mouth, a remembered price change, what a promotion leaves behind, a stamp card). `timescaleOf(question)` is the same rule as a keyword check, `{ scale: "day" | "days", matched }`, for a page that has no model.
+- **The advisor** (§15, `run/advisor.js`) has the rule in its instructions and a second test, `test_over_days({ label, why, change: staff | price | promotion | stamp_card, value })`, beside `test_change`. Its first message says whether the test over days can run for this world, and if not, what is missing. The tool is offered, and `testsOverDays` returned, only for a world with a pool; for every other world the request and the advice are what they were.
+  - It needs a pool: `advise({ pool })`. `swarm advise <world>` passes the file in `pools/` whose `world` is that world.
+  - It needs Jev. It uses the experiments' provider if that is Jev, else the confirming one, else a new one when a key is set. The rule model does not read memory, so with no Jev the tool refuses and the model must say so under what it could not test.
+  - It is limited to 1 per round by default (`maxDaysTests`, at most 3), on the first 3 seeds for 10 mornings. The baseline is run once and reused.
+  - It returns each measure's before, after, range across seeds and whether every seed agrees, with the instruction to report direction and range only and to say the sizes are unvalidated. Results are in the advice as `testsOverDays`, cited "test over days W1".
+- **The Claude Code advisor** (`.claude/commands/advise.md`) has the same rule and the `swarm days` command.
+- **The dashboard** does not use the rule yet: a typed question there does not change what is simulated.
+

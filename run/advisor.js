@@ -12,6 +12,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { normalizeSpec, validateWorld, cleanSpec, applyPatch, PATCH_FIELDS, specHash } from '../engine/spec.js';
 import { clockText } from '../engine/util.js';
 import { makeProvider } from '../providers/index.js';
+import { hasKey } from '../engine/env.js';
+import { normalizePool } from './days.js';
+import { shopView } from './morning.js';
+import { TIMESCALE_RULE } from './timescale.js';
 import { runSeeds, compareRuns, rankedPlaces, KPI_NAMES } from './runner.js';
 import { BETTER, HEADLINE, meanSd, changeEffects, placeVisits } from './effects.js';
 import { readDecisions } from './recorder.js';
@@ -582,6 +586,13 @@ How to work:
 3. Test each change with test_change. It runs the changed world on the same seeds as the brief (the same simulated crowd) and returns before, after, the change and the spread across seeds. Give every test a short label and say why you are trying it. Tests are limited: spend them on the changes most likely to answer the question; put several operations in one patch to test them together.
 4. Call finish once with your advice.
 
+One day or several:
+${TIMESCALE_RULE}
+- test_change is the one-day test. test_over_days is the test over days. The first message says whether test_over_days can run for this world.
+- Decide from the question, before testing. A question about the day gets test_change only. A question about later days needs test_over_days: a one-day result cannot answer it, and you must say so if test_over_days cannot run (under what you could not test, with what is missing).
+- A change can deserve both: test_change for what it does on the day, then test_over_days for whether it lasts.
+- Cite a test over days in your answer and findings as "test over days W1" (W2, ...). Recommendations still cite one-day experiments by number.
+
 Rules:
 - Answer the user's question first, in plain words.
 - Report a change as helping only if its effect is larger than the spread across seeds, in the better direction. A smaller effect is "no clear effect", whatever its sign.
@@ -663,6 +674,25 @@ const TOOLS = [
     }
   },
   {
+    name: 'test_over_days',
+    description: 'Play the same people over two weeks, with and without one change at the shop the pool is about, on the same seeds. ' +
+      'Returns visits per week, regulars, first-time visitors, first-timers who came back, walk-aways and the average wait: before, after, ' +
+      'the range across seeds and whether every seed agrees. For questions about later days only; see "One day or several". Results are unvalidated in size.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        label: { type: 'string', description: 'Short name for the change, e.g. "One more barista, over two weeks".' },
+        why: { type: 'string', description: 'Why this needs a test over days and not a one-day test, in one sentence.' },
+        change: {
+          type: 'string', enum: ['staff', 'price', 'promotion', 'stamp_card'],
+          description: 'staff: more people serving. price: a new price. promotion: a percentage off for the first week. stamp_card: buy N-1, the Nth is free.'
+        },
+        value: { type: 'number', description: 'staff: how many more (1). price: the change in dollars, e.g. 0.5 or -0.5. promotion: percent off, e.g. 20. stamp_card: N, e.g. 10.' }
+      },
+      required: ['label', 'why', 'change', 'value']
+    }
+  },
+  {
     name: 'finish',
     description: 'End with your advice. Recommend only tested changes, cited by experiment number; the measured numbers are attached by the simulator.',
     input_schema: {
@@ -732,6 +762,27 @@ function redactError(err, redact) {
     }
   }
   return err;
+}
+
+// What the test over days runs with. A provider object is used as given (tests pass one). Otherwise Jev: the
+// experiments' own provider if that is Jev, or the confirming one, or a new one when a key is set.
+function daysSetup({ pool, daysProvider, expProvider, confirmProvider, spec, seeds, days, maxDaysTests }) {
+  const none = { pool: null, provider: null, tests: [], max: 0, baselines: null };
+  if (!pool || spec.mode !== 'visit') return none;
+  let normal, shopName;
+  try {
+    normal = normalizePool(pool);
+    shopName = shopView(spec, normal.shop).shop.name;
+  } catch { return none; }
+  let provider = null;
+  if (daysProvider !== undefined) provider = daysProvider;
+  else if (expProvider.name === 'jev') provider = expProvider;
+  else if (confirmProvider?.name === 'jev') provider = confirmProvider;
+  else if (hasKey('TYPESAFE_API_KEY')) { try { provider = makeProvider('jev'); } catch { provider = null; } }
+  return {
+    pool: normal, shopName, provider, days: Math.max(5, Math.min(20, Math.round(Number(days) || 10))), seeds: seeds.slice(0, 3),
+    tests: [], max: Math.max(0, Math.min(3, Math.round(Number(maxDaysTests) || 1))), baselines: null
+  };
 }
 
 function providerInstance(p, label) {
@@ -839,12 +890,13 @@ function earlierBlock(previous) {
   return lines.join('\n');
 }
 
-function firstMessage({ brief, question, maxExperiments, seeds, providerName, previous, followUp, startN }) {
+function firstMessage({ brief, question, maxExperiments, seeds, providerName, previous, followUp, startN, overDays = null }) {
   const parts = [
     `<brief>\n${brief}</brief>`, '',
     `<question>\n${question}\n</question>`, '',
     `You have ${maxExperiments} test${maxExperiments === 1 ? '' : 's'} in this round. Each test_change runs the changed world on seeds ` +
-      `${seeds.join(', ')} with the ${providerName} provider: the same simulated crowd as the brief.`
+      `${seeds.join(', ')} with the ${providerName} provider: the same simulated crowd as the brief.`,
+    '', overDaysLine(overDays)
   ];
   if (previous) {
     parts.push('', earlierBlock(previous), '', `<user_reply>\n${followUp}\n</user_reply>`, '',
@@ -955,6 +1007,54 @@ function lookAtPerson(ctx, input) {
       decisions,
       trace: (agent.trace ?? []).slice(-25).map(s => `${isNum(s.t) ? clockText(spec, s.t) : '–'} ${s.m}`)
     }))
+  };
+}
+
+// What the first message says about the test over days: whether it can run here, and if not, what is missing.
+function overDaysLine(d) {
+  if (!d?.pool) return 'test_over_days cannot run for this world: it has no pool (who the regular customers are and how often each kind comes). If the question is about later days, say that this is what is missing.';
+  if (!d.provider) return 'test_over_days cannot run now: it needs Jev, and no Jev key is set. The rule model does not read memory, so it cannot answer a question about later days.';
+  return `test_over_days can run: a pool of ${d.pool.size} people for ${d.shopName}, ${d.days} mornings on seeds ${d.seeds.join(', ')}, decided by Jev. ` +
+    `You have ${d.max} of these in this round; each costs many times a one-day test.`;
+}
+
+const DAYS_CHANGE = {
+  staff: v => (Number.isInteger(v) && v >= 1 && v <= 5 ? `staff+${v}` : null),
+  price: v => (Number.isFinite(v) && v !== 0 && Math.abs(v) <= 20 ? `price${v > 0 ? '+' : ''}${v}` : null),
+  promotion: v => (Number.isFinite(v) && v >= 1 && v <= 90 ? `promo${Math.round(v)}` : null),
+  stamp_card: v => (Number.isInteger(v) && v >= 2 && v <= 30 ? `card${v}` : null)
+};
+
+// The same people over days, with and without one change (run/days.js). The baseline is run once and kept.
+async function testOverDays(ctx, input) {
+  const d = ctx.days;
+  if (!isText(input?.label) || !isText(input?.why)) return { isError: true, content: 'test_over_days needs a label and a why.' };
+  if (!d.pool) return { isError: true, content: 'Nothing was run: this world has no pool of regular customers, so the same people cannot be followed over days. Put the question under what you could not test, and say what is missing: how often each kind of customer comes.' };
+  if (!d.provider) return { isError: true, content: 'Nothing was run: a test over days needs Jev, and no Jev key is set. The rule model does not read memory. Put this under what you could not test.' };
+  if (d.tests.length >= d.max) return { isError: true, content: `Nothing was run: all ${d.max} tests over days in this round are used.` };
+  const name = DAYS_CHANGE[input.change]?.(Number(input.value));
+  if (!name) return { isError: true, content: 'Nothing was run: change must be staff, price, promotion or stamp_card, with a value in range (see the tool description).' };
+  const { compareDays, changeFor } = await import('./days.js');
+  const change = changeFor(name, ctx.spec, d.pool.shop, d.days);
+  const id = `W${d.tests.length + 1}`;
+  ctx.step({ type: 'days', id, label: input.label, why: input.why, change: change.label });
+  const res = await compareDays({ pool: d.pool, spec: ctx.spec, days: d.days, seeds: d.seeds, provider: d.provider, changes: [change], baselines: d.baselines });
+  d.baselines = res.baselines;
+  const effects = Object.fromEntries(Object.entries(res.results[0].effects).map(([k, e]) => [k, rounded({ before: e.before, after: e.after, change: e.mean, least: e.min, most: e.max, everySeedAgrees: e.agrees })]));
+  const checks = res.baselines.map(b => b.realism);
+  const record = {
+    id, label: input.label.trim(), why: input.why.trim(), change: change.label, days: d.days, seeds: d.seeds, effects,
+    baselineHoldsSteady: checks.every(c => c.steady.pass !== false), visitsLopsided: checks.every(c => c.lopsided.pass !== false)
+  };
+  d.tests.push(record);
+  ctx.step({ type: 'days-result', id, label: record.label, effects });
+  return {
+    content: JSON.stringify({
+      ...record, testsOverDaysLeft: d.max - d.tests.length,
+      read: 'Report a measure as changed only where everySeedAgrees is true. A week is 5 mornings. ' +
+        "Sizes are unvalidated: every usual visit rate in the pool is an assumption and Jev's sensitivity to waits is unchecked. Give direction and range, and say so." +
+        (record.baselineHoldsSteady ? '' : ' The baseline did not hold steady on every seed, so treat changes in visits with extra caution.')
+    })
   };
 }
 
@@ -1125,7 +1225,10 @@ function fallbackRecommendations(ctx) {
 export async function advise({
   world, question = null, seeds = null, provider = 'rules', confirmWith = null, maxExperiments = 6,
   model = DEFAULT_MODEL, apiKey = process.env.ANTHROPIC_API_KEY, client = null, onStep = null,
-  previous = null, followUp = null, runs = null, simOpts = {}
+  previous = null, followUp = null, runs = null, simOpts = {},
+  // The test over days (§21d): `pool` is the world's pool file as an object, or null. `daysProvider` is the
+  // provider it runs with: Jev by default when a key is set, because the rule model does not read memory.
+  pool = null, daysProvider = undefined, days = 10, maxDaysTests = 1
 } = {}) {
   const secrets = [apiKey, process.env.ANTHROPIC_API_KEY, process.env.TYPESAFE_API_KEY]
     .filter(s => typeof s === 'string' && s.trim().length >= 8);
@@ -1171,7 +1274,8 @@ export async function advise({
     views, baseHash: specHash(spec),
     maxExperiments: limit, newCount: 0, round,
     experiments: earlier, nextN: Math.max(0, ...earlier.map(e => e.n ?? 0)) + 1,
-    confirmations: new Map()
+    confirmations: new Map(),
+    days: daysSetup({ pool, daysProvider, expProvider, confirmProvider, spec, seeds, days, maxDaysTests })
   };
 
   const transcript = [{
@@ -1187,7 +1291,8 @@ export async function advise({
     output_config: { effort: 'high' },
     cache_control: { type: 'ephemeral' },
     system: SYSTEM_PROMPT,
-    tools: TOOLS,
+    // The test over days is offered only for a world with a pool; without one the request is what it always was.
+    tools: ctx.days.pool ? TOOLS : TOOLS.filter(t => t.name !== 'test_over_days'),
     // This model rejects forced tool_choice, so the prompt asks for finish and the loop checks it was called.
     tool_choice: { type: 'auto' }
   };
@@ -1195,7 +1300,7 @@ export async function advise({
     role: 'user',
     content: firstMessage({
       brief: brief.markdown, question: ask, maxExperiments: limit, seeds, providerName: expProvider.name,
-      previous, followUp, startN: ctx.nextN
+      previous, followUp, startN: ctx.nextN, overDays: ctx.days
     })
   }];
 
@@ -1212,6 +1317,7 @@ export async function advise({
     const input = call.input;
     switch (call.name) {
       case 'test_change': return testChange(ctx, input);
+      case 'test_over_days': return testOverDays(ctx, input);
       case 'look_at_person': return lookAtPerson(ctx, input);
       case 'list_people': return listPeople(ctx, input);
       case 'finish': {
@@ -1225,7 +1331,7 @@ export async function advise({
         step({ type: 'finish' });
         return { content: 'Advice recorded.' };
       }
-      default: return { isError: true, content: `Unknown tool ${call.name}. Use test_change, look_at_person, list_people or finish.` };
+      default: return { isError: true, content: `Unknown tool ${call.name}. Use test_change, test_over_days, look_at_person, list_people or finish.` };
     }
   };
 
@@ -1337,6 +1443,7 @@ export async function advise({
     cautions,
     nextSteps: strings(final?.nextSteps),
     experiments: ctx.experiments,
+    ...(ctx.days.pool ? { testsOverDays: ctx.days.tests } : {}),
     transcript
   };
   return redactDeep(rounded(result, 6), redact);

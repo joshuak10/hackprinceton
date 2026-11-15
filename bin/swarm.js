@@ -529,6 +529,20 @@ function formatDelta(k, d, base) {
   return `${sign}${amount}${rel}`;
 }
 
+// The pool file written for a world (pools/*.json whose "world" is that file), or null. With one, the advisor
+// can test a change over days as well as over one day (§21d).
+function poolFor(ref) {
+  const dir = resolve('pools');
+  if (!existsSync(dir) || typeof ref !== 'string') return null;
+  for (const name of readdirSync(dir).filter(f => f.endsWith('.json')).sort()) {
+    try {
+      const pool = JSON.parse(readFileSync(join(dir, name), 'utf8'));
+      if (pool?.world && basename(pool.world) === basename(ref.endsWith('.json') ? ref : `${ref}.json`)) return pool;
+    } catch { /* not a pool file */ }
+  }
+  return null;
+}
+
 // The same people over days (§21). The pool file names its world.
 async function cmdDays([ref], flags) {
   const providerName = flags.provider ?? 'rules';
@@ -786,7 +800,8 @@ async function cmdAdvise([ref], flags) {
   const advice = await advise({
     world: raw, question: flags.question ?? null, seeds, provider, confirmWith: confirm, maxExperiments, model,
     apiKey: process.env.ANTHROPIC_API_KEY, runs: base.runs, onStep: adviceStepPrinter(out, effectText),
-    previous, followUp: previous ? flags['follow-up'] : null
+    previous, followUp: previous ? flags['follow-up'] : null,
+    pool: poolFor(ref)
   });
   const written = base.runs.map(r => writeAdvice(r.runDir, advice));
   if (flags.json) {
