@@ -32,11 +32,16 @@
 
       <form id="form" autocomplete="off">
         <fieldset>
+          <legend>How everyone feels today</legend>
+          <div class="chips" id="moods"></div>
+          <p class="hint">Adds one sentence about today to everyone. Open a person to give only them a feeling, or to write your own.</p>
+        </fieldset>
+
+        <fieldset>
           <legend id="signLegend">A sign on the door</legend>
           <label class="visually-hidden" for="sign">Sign text</label>
           <textarea id="sign" rows="2" maxlength="160" placeholder="Type any sign and press Enter. For example: No laptops before 9 am."></textarea>
           <div class="chips" id="chips"></div>
-          <p class="hint">A sign is compared with a plain sign about restrooms, because any sign at all nudges the answers.</p>
         </fieldset>
 
         <fieldset>

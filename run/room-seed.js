@@ -45,8 +45,13 @@ export function seedScenarios(rawSpec, presets = presetSigns()) {
   }
   const tomas = spec.minds.find(m => m.id === 'tomas');
   if (tomas) list.push({ scenario: raised[1], edits: { tomas: { bio: `${tomas.bio} Today is his birthday and he promised himself one good thing.` } } });
-  // Every one-click feeling for every cast member, at the opening moment.
-  for (const m of spec.minds) for (const f of FEELINGS) list.push({ scenario: {}, edits: { [m.id]: { bio: withFeeling(m.bio, m.name, f) } }, only: [m.id] });
+  // Every one-click feeling for every cast member: at the opening moment, with a long line at the shop, and at a
+  // higher price. A feeling decides most when there is something to weigh.
+  const shopName = spec.nodes.find(n => n.id === base.shop)?.name;
+  const strained = [{}, { ahead: { ...base.ahead, [base.shop]: 10 } }, raised[1]];
+  for (const scenario of strained) {
+    for (const m of spec.minds) for (const f of FEELINGS) list.push({ scenario, edits: { [m.id]: { bio: withFeeling(m.bio, m.name, f, shopName) } }, only: [m.id] });
+  }
   return list;
 }
 

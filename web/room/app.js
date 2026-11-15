@@ -1,7 +1,7 @@
 // Ask the room (docs/PROTOTYPE.md §17). Change the moment, ask every cast member, see who moves.
 import { points, refOf, grade, recomputeShare, summarize, byChange } from './maths.js';
 import { langButton } from '../scope/lib/i18n.js';
-import { FEELINGS, withFeeling } from './feelings.js';
+import { FEELINGS, withFeeling, firstName } from './feelings.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -22,6 +22,7 @@ const FONTS = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz
 
 const st = {
   view: null, scenario: null, asked: null, edits: {}, result: null, open: null, busy: false, queued: null, sortByChange: true,
+  mood: null, feel: {},          // a feeling for the whole room, and one per person (ids from feelings.js)
   theme: new URLSearchParams(location.search).get('theme') || store.get('room-theme') || 'dark',
   world: new URLSearchParams(location.search).get('world') || ''
 };
@@ -42,6 +43,16 @@ const waitOf = (p, ahead) => (ahead > 0 ? (ahead + 1) * p.serviceTime / p.server
 const waitWords = min => (min < 1 ? 'no line' : `about ${min >= 10 ? Math.round(min / 5) * 5 : Math.max(1, Math.round(min))} min`);
 const duration = ms => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 
+// The feeling a person has today: their own, or the room's. A typed rewrite takes its place.
+const feelingOf = id => (st.edits[id] ? null : FEELINGS.find(f => f.id === (st.feel[id] || st.mood)) || null);
+const feltBio = (id, feeling) => { const o = original(id); return withFeeling(o.bio, o.name, feeling, shop().name); };
+// What is asked: each typed rewrite, and for everyone else with a feeling, their situation plus that one sentence.
+function editsToSend() {
+  const out = { ...st.edits };
+  for (const c of st.view.cast) { const f = feelingOf(c.id); if (f) out[c.id] = { bio: feltBio(c.id, f) }; }
+  return out;
+}
+
 // A click made while an ask is running is kept, not dropped: the latest one runs next. A waiting ask for
 // everyone is never replaced by an ask for one person.
 async function ask(only = null) {
@@ -53,7 +64,7 @@ async function ask(only = null) {
   try {
     // One person is asked about the moment everyone last answered, whatever the controls say now.
     const one = Boolean(only && st.result && st.asked);
-    const body = { scenario: one ? st.asked : st.scenario, edits: st.edits };
+    const body = { scenario: one ? st.asked : st.scenario, edits: editsToSend() };
     if (st.world) body.world = st.world;
     if (one) body.only = [only];
     const result = await api('/api/room/ask', body);
@@ -76,7 +87,7 @@ async function ask(only = null) {
       }
       report(result, ms);
       render();
-      if (!one) document.querySelector('.room').scrollTop = 0;      // a new answer for everyone starts at its headline
+      document.querySelector('.room').scrollTop = 0;                // every new answer starts at its headline, which names who moved
     }
   } catch (err) {
     setStatus(err.message, true);
@@ -138,6 +149,14 @@ function buildControls() {
     row.append(label, out, range);
     lines.append(row);
   }
+  const moods = $('moods');
+  moods.replaceChildren();
+  for (const f of FEELINGS) {
+    const b = el('button', 'chip', f.label);
+    b.type = 'button'; b.dataset.feeling = f.id;
+    b.addEventListener('click', () => { st.mood = st.mood === f.id ? null : f.id; st.feel = {}; syncControls(); ask(); });
+    moods.append(b);
+  }
   const chips = $('chips');
   chips.replaceChildren();
   for (const text of PRESETS) {
@@ -158,6 +177,7 @@ function syncControls() {
     range.setAttribute('aria-valuetext', words);
     $(`ahead-${p.id}-out`).textContent = words;
   }
+  for (const b of $('moods').children) b.setAttribute('aria-pressed', String(st.mood === b.dataset.feeling));
   $('priceOut').textContent = `$${Math.round(s.price)}`;
   const changed = Math.round(s.price) !== Math.round(base.price);
   if (!changed) s.priorPrice = null;
@@ -181,6 +201,8 @@ function setPrice(next) {
 function reset() {
   st.scenario = structuredClone(st.view.defaults);
   st.edits = {};
+  st.mood = null;
+  st.feel = {};
   st.open = null;
   syncControls();
   ask();
@@ -188,6 +210,7 @@ function reset() {
 
 // What is typed into a person's boxes is kept as it is typed, so either Ask button carries it.
 function draft(id, key, value) {
+  delete st.feel[id];                                   // typing takes over from a one-click feeling
   const v = value.trim(), e = (st.edits[id] ??= {});
   if (v && v !== original(id)[key]) e[key] = v; else delete e[key];
   if (!Object.keys(e).length) delete st.edits[id];
@@ -203,7 +226,10 @@ function render() {
   $('smallKey').textContent = `under ${points(sum.noisePerson)} points: too small to tell`;
 
   const list = $('people');
-  const shown = st.sortByChange ? byChange(r.people, sum.id, sum.withSign) : r.people;
+  const undecided = p => (p.now ? Math.abs(p.now[sum.id] - 0.5) : 1);
+  const shown = !st.sortByChange ? r.people
+    : sum.unchanged ? r.people.map((p, i) => ({ p, i })).sort((a, b) => undecided(a.p) - undecided(b.p) || a.i - b.i).map(x => x.p)
+      : byChange(r.people, sum.id, sum.withSign);
   const existing = new Map([...list.children].map(li => [li.dataset.id, li]));
   shown.forEach((p, i) => {
     const li = existing.get(p.id) || personNode(p);
@@ -221,16 +247,44 @@ function renderSummary(sum, home) {
   const first = name => name.split(' ')[0];
   const versus = sum.withSign ? 'with a plain sign' : 'before';
   const parts = [];
+  const r = st.result, mood = FEELINGS.find(f => f.id === st.mood) || null;
+  const felt = r.people.filter(p => p.edited && p.now && p.written);
+  const names = (list, dir) => list.filter(m => (m.d > 0) === dir).slice(0, 3).map(m => `${first(m.p.name)} (${signed(m.d)})`);
+  if (mood && felt.length === r.people.length && felt.length) {
+    // The whole room has the same feeling: each person against themselves without it, at this same moment.
+    const without = felt.reduce((s, p) => s + p.written[sum.id], 0) / felt.length, d = sum.to - without;
+    const flat = Math.abs(points(d)) < points(sum.noise);
+    big.append(`Everyone ${mood.today}: ${home.name} gets `, el('b', flat ? null : d > 0 ? 'up' : 'down', pct(sum.to)), ` of these ${sum.asked} people`);
+    big.append(flat ? ', about the same as without it.' : `, ${d > 0 ? 'up' : 'down'} from ${pct(without)}.`);
+    const lost = names(sum.movers, false), won = names(sum.movers, true);
+    if (lost.length) parts.push(`Less likely: ${lost.join(', ')}.`);
+    if (won.length) parts.push(`More likely: ${won.join(', ')}.`);
+    parts.push(sum.movers.length ? `${sum.still} of ${sum.asked} did not move.` : `No one moved by ${points(sum.noisePerson)} points or more.`);
+    parts.push('Each person is compared with themselves without the feeling, at this same price and line.');
+    sub.textContent = parts.join(' ');
+    return;
+  }
+  if (!mood && felt.length === 1 && !sum.withSign) {
+    // One person with a feeling or a rewrite: say who, what, and both numbers.
+    const p = felt[0], f = feelingOf(p.id), now = p.now[sum.id], was = p.written[sum.id], d = now - was;
+    const g = grade(d, sum.noise, sum.noisePerson);
+    big.append(`${first(p.name)}, ${f ? f.today : 'rewritten'}: `, el('b', g === 'up' || g === 'down' ? g : null, pct(now)), `, was ${pct(was)}.`);
+    if (g === 'none' || g === 'small') parts.push(`A change this small could be chance: one person’s answer can shift by nearly ${points(sum.noisePerson)} points when nothing real changes.`);
+    parts.push(`${home.name} gets ${pct(sum.to)} of these ${sum.asked} people.`);
+    parts.push(`${first(p.name)} is compared with ${first(p.name)} as first written, at this same price and line.`);
+    sub.textContent = parts.join(' ');
+    return;
+  }
   if (sum.unchanged) {
     big.append(`Right now ${home.name} gets `, el('b', null, pct(sum.to)), ` of these ${sum.asked} people.`);
-    parts.push('Change the sign, the price or the line, and see who moves. Or open a person and give them a feeling.');
+    parts.push('Start here: give the room a feeling on the left, or open a person and give only them one. You can also change the sign, the price or the line.');
   } else if (sum.flat && sum.movers.length) {
     // The room's total hides it, so the people come first.
     const named = sum.movers.slice(0, 4);
     named.forEach((m, i) => {
       if (i) big.append(', ');
       big.append(el('b', m.d > 0 ? 'up' : 'down', `${first(m.p.name)} ${signed(m.d)}`));
-      if (m.p.edited) big.append(' (rewritten)');
+      if (m.p.edited) big.append(` (${feelingOf(m.p.id)?.today || 'rewritten'})`);
     });
     const rest = sum.asked - named.length;
     big.append(named.length < sum.movers.length ? ` and ${sum.movers.length - named.length} more moved.` : ' moved.');
@@ -264,7 +318,11 @@ function personNode(p) {
   meter.append(track, el('span', 'tick'));
   const num = el('span', 'num'); num.append(el('span', 'pct'), el('span', 'chg'));
   row.append(who, meter, num);
-  row.addEventListener('click', () => { st.open = st.open === p.id ? null : p.id; render(); });
+  row.addEventListener('click', () => {
+    st.open = st.open === p.id ? null : p.id;
+    render();
+    if (st.open === p.id) li.scrollIntoView({ block: 'nearest' });       // the panel and its feelings, not only the row
+  });
   li.append(row);
   return li;
 }
@@ -273,9 +331,10 @@ function updatePerson(li, p, sum, home) {
   const id = sum.id, row = li.querySelector('.row');
   const name = li.querySelector('.name');
   name.replaceChildren(p.name, el('span', 'age', String(p.age)), el('span', 'group', p.group));
-  if (p.edited) name.append(el('span', 'edited', 'rewritten'));
-  const feel = li.querySelector('.feel');
-  feel.textContent = p.personality || '';
+  if (p.edited && !feelingOf(p.id)) name.append(el('span', 'edited', 'rewritten'));
+  const feel = li.querySelector('.feel'), today = p.edited ? feelingOf(p.id) : null;
+  feel.textContent = today ? `Today: ${today.today}` : p.personality || '';
+  feel.classList.toggle('today', Boolean(today));
   feel.title = p.bio || '';
   const meter = li.querySelector('.meter'), fill = li.querySelector('.fill'), delta = li.querySelector('.delta'), tick = li.querySelector('.tick');
   const pctEl = li.querySelector('.pct'), chg = li.querySelector('.chg');
@@ -312,22 +371,24 @@ function detailNode(personId) {
   // One click adds one sentence about how the person feels today, and asks them again. Nothing else changes.
   const feel = el('div', 'feelings');
   feel.append(el('span', 'feel-lead', 'Give them a feeling today'));
+  const chips = {};
   for (const f of FEELINGS) {
     const b = el('button', 'chip', f.label);
     b.type = 'button';
     b.addEventListener('click', () => {
-      const o = original(personId), bio = withFeeling(o.bio, o.name, f);
-      inputs.bio.value = bio;
-      draft(personId, 'bio', bio);
+      const on = !st.edits[personId] && st.feel[personId] === f.id;
+      delete st.edits[personId];
+      if (on) delete st.feel[personId]; else st.feel[personId] = f.id;
       ask(personId);
     });
+    chips[f.id] = b;
     feel.append(b);
   }
   right.append(feel);
   const inputs = {};
   for (const [key, label] of FIELDS) {
     const lab = el('label', null, label);
-    const ta = el('textarea'); ta.rows = key === 'bio' ? 3 : 2; ta.maxLength = st.view.limits.text;
+    const ta = el('textarea'); ta.rows = key === 'bio' ? 5 : 2; ta.maxLength = st.view.limits.text;
     ta.addEventListener('input', () => draft(personId, key, ta.value));
     lab.append(ta); right.append(lab); inputs[key] = ta;
   }
@@ -335,18 +396,29 @@ function detailNode(personId) {
   const go = el('button', 'btn primary', 'Ask this person'); go.type = 'button';
   go.addEventListener('click', () => ask(personId));
   const undo = el('button', 'btn', 'Restore'); undo.type = 'button';
-  undo.addEventListener('click', () => { delete st.edits[personId]; for (const [key] of FIELDS) inputs[key].value = original(personId)[key] || ''; ask(personId); });
+  undo.addEventListener('click', () => { delete st.edits[personId]; delete st.feel[personId]; ask(personId); });
   actions.append(go, undo);
   right.append(actions, el('p', 'note', 'The three boxes are read together. Change the words and ask again: Jev reads them each time, and no answer on this page was written by us.'));
+  const certain = el('p', 'certain');
+  right.append(certain);
   wrap.append(left, right);
-  return { wrap, left, inputs };
+  return { wrap, left, inputs, chips, certain };
 }
 
 function updateDetail(detail, p, sum, home, ref) {
+  const mine = feelingOf(p.id);
   for (const [key] of FIELDS) {
-    const ta = detail.inputs[key], want = st.edits[p.id]?.[key] ?? original(p.id)[key] ?? '';
+    const ta = detail.inputs[key];
+    const want = st.edits[p.id]?.[key] ?? (key === 'bio' && mine ? feltBio(p.id, mine) : original(p.id)[key]) ?? '';
     if (document.activeElement !== ta && ta.value.trim() !== want) ta.value = want;
   }
+  for (const f of FEELINGS) detail.chips[f.id].setAttribute('aria-pressed', String(mine?.id === f.id));
+  // A person who is already sure has no room to show a feeling: say so, and say what to try.
+  const sure = mine && ref?.kind === 'written' && p.now ? ref.probs[sum.id] : null;
+  const still = sure != null && Math.abs(points(p.now[sum.id] - sure)) < points(sum.noisePerson);
+  detail.certain.textContent = still && (sure >= 0.95 || sure <= 0.05)
+    ? `${firstName(p.name)} is already almost certain ${sure >= 0.95 ? 'to come in' : 'not to come in'} at this line and price, so a feeling has little room to show. ${sure >= 0.95 ? 'Make the line longer or raise the price' : 'Shorten the line'} and try the feeling again.`
+    : '';
   const left = detail.left;
   left.replaceChildren(el('h3', null, 'What they were told'));
   const told = el('div', 'told');

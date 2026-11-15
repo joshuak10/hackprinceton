@@ -26,9 +26,22 @@ for (const [source, zh] of PATTERNS) {
 
 // ---------- one string ----------
 const cache = new Map();
+// Sentences of a piece that holds several, split after . ! or ? when a new sentence clearly starts.
+const sentencesOf = text => text.split(/(?<=[.!?])\s+(?=[A-Z0-9“"'(])/);
+
 function lookup(core, depth) {
   if (Object.hasOwn(EXACT, core)) return EXACT[core];
   if (depth > 2) return null;
+  // A line the app joins from several sentences: when every sentence is known on its own, translate them one by one.
+  const parts = depth === 0 ? sentencesOf(core) : [];
+  const each = parts.length > 1 ? parts.map(p => lookup(p.trim(), 1)) : [];
+  if (each.length && each.every(z => z != null)) return each.join('');
+  const whole = wholePattern(core, depth);
+  if (whole != null) return whole;
+  // Otherwise the sentences that are known, with the rest left in English.
+  return each.some(z => z != null) ? parts.map((p, i) => each[i] ?? p).join(' ') : null;
+}
+function wholePattern(core, depth) {
   for (const [re, zh] of compiled) {
     const m = core.match(re);
     if (!m) continue;
