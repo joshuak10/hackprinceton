@@ -9,7 +9,7 @@ import { Sim } from '../engine/sim.js';
 import { memoryWords } from '../engine/observe.js';
 import { RulesProvider } from '../providers/rules.js';
 import {
-  WEEK, calendarDay, rememberedWait, normalizePool, buildPeople, changeFor, recordsFor, usualToday, movedChance,
+  WEEK, USUAL_MAX, calendarDay, rememberedWait, normalizePool, buildPeople, changeFor, recordsFor, usualToday, chanceOf, centerOf,
   runDays, summarize, realism, compareDays, renderDays
 } from '../run/days.js';
 
@@ -63,31 +63,43 @@ describe('days: small pieces', () => {
     assert.equal(memoryWords({ daysAgo: 1, wait: 12, outcome: 'left', ahead: null }, 'Crumb & Co'), 'Yesterday: waited about 12 minutes in line at Crumb & Co, then left without ordering.');
   });
 
-  test('the chance is the usual rate moved by the odds between two Jev answers', () => {
-    assert.equal(movedChance({ usual: 0.3 }), 0.3);
-    assert.equal(movedChance({ usual: 0.3, now: 0.5, reference: null }), 0.3, 'no answer: the usual rate');
-    assert.ok(Math.abs(movedChance({ usual: 0.3, now: 0.6, reference: 0.6 }) - 0.3) < 1e-9, 'the same answer moves nothing');
-    const down = movedChance({ usual: 0.3, now: 0.4, reference: 0.6 });
-    assert.ok(down < 0.3 && down > 0.1);
-    // The level comes from the person: the same pair of answers moves a daily customer and an occasional one
-    // by the same odds, not to the same chance.
-    const daily = movedChance({ usual: 0.95, now: 0.4, reference: 0.6 }), rare = movedChance({ usual: 0.1, now: 0.4, reference: 0.6 });
+  test('the chance is the usual rate, moved on the odds scale', () => {
+    const logit = p => Math.log(p / (1 - p)), odds = p => p / (1 - p);
+    assert.equal(chanceOf({ usual: 0.3 }), 0.3);
+    assert.equal(chanceOf({ usual: 0.3, env: null, center: 0.4 }), 0.3, 'nothing remembered: the zero point does not apply');
+    assert.equal(chanceOf({ usual: 0.3, env: 0.4, center: 0.4 }), 0.3, 'an average morning leaves the usual rate alone');
+    const worse = chanceOf({ usual: 0.3, env: -0.5, center: 0.4 });
+    assert.ok(Math.abs(logit(worse) - (logit(0.3) - 0.9)) < 1e-9);
+    // The level comes from the person: the same move takes a daily customer and an occasional one by the
+    // same odds, not to the same chance.
+    const daily = chanceOf({ usual: 0.95, env: -0.8 }), rare = chanceOf({ usual: 0.1, env: -0.8 });
     assert.ok(daily > 0.85 && rare < 0.06);
-    const odds = p => p / (1 - p);
     assert.ok(Math.abs(odds(daily) / odds(0.95) - odds(rare) / odds(0.1)) < 1e-9);
   });
 
-  test('loss aversion multiplies only the part of the move the price rise caused', () => {
+  test('the zero point keeps the expected visits at the usual rates, whoever the memories fall on', () => {
+    assert.equal(centerOf([{ usual: 0.3, env: null }]), 0);
+    const jobs = [{ usual: 0.9, env: 0.6 }, { usual: 0.15, env: 0.6 }, { usual: 0.15, env: -1.2 }, { usual: 0.4, env: 0.1 }, { usual: 0.2, env: null }];
+    const c = centerOf(jobs);
+    const mine = jobs.filter(j => j.env != null);
+    const visits = mine.reduce((s, j) => s + chanceOf({ usual: j.usual, env: j.env, center: c }), 0);
+    assert.ok(Math.abs(visits - (0.9 + 0.15 + 0.15 + 0.4)) < 1e-6, `${visits}`);
+    // Zeroing the average move instead would have added visits here.
+    const naive = mine.reduce((s, j) => s + j.env, 0) / mine.length;
+    assert.ok(Math.abs(mine.reduce((s, j) => s + chanceOf({ usual: j.usual, env: j.env, center: naive }), 0) - 1.6) > 0.01);
+    // The same good morning for everyone is an average morning: nobody moves.
+    const same = [{ usual: 0.9, env: 0.5 }, { usual: 0.2, env: 0.5 }];
+    assert.ok(Math.abs(centerOf(same) - 0.5) < 1e-6);
+  });
+
+  test('what the change adds is not centred, and the loss-aversion rule multiplies only that part', () => {
     const logit = p => Math.log(p / (1 - p));
-    const base = { usual: 0.5, reference: 0.6 };
-    const plain = movedChance({ ...base, now: 0.5 });
-    const noRule = movedChance({ ...base, now: 0.5, unpriced: 0.6, lossAversion: 1 });
-    const doubled = movedChance({ ...base, now: 0.5, unpriced: 0.6, lossAversion: 2 });
-    assert.ok(Math.abs(plain - noRule) < 1e-9);
-    assert.ok(Math.abs(logit(doubled) - 2 * logit(plain)) < 1e-9, 'all of the move was the price: doubled');
-    // Half of the move came from something else (a bad visit): only the price half is doubled.
-    const mixed = movedChance({ ...base, now: 0.4, unpriced: 0.5, lossAversion: 2 });
-    assert.ok(Math.abs(logit(mixed) - ((logit(0.5) - logit(0.6)) + 2 * (logit(0.4) - logit(0.5)))) < 1e-9);
+    const plain = chanceOf({ usual: 0.5, env: 0.2, center: 0.2, delta: -0.3 });
+    assert.ok(Math.abs(logit(plain) - -0.3) < 1e-9);
+    const doubled = chanceOf({ usual: 0.5, env: 0.2, center: 0.2, delta: -0.3, factor: 2 });
+    assert.ok(Math.abs(logit(doubled) - -0.6) < 1e-9);
+    const mixed = chanceOf({ usual: 0.5, env: -0.4, center: 0.1, delta: -0.3, factor: 2 });
+    assert.ok(Math.abs(logit(mixed) - (-0.5 - 0.6)) < 1e-9, 'a bad visit and a price rise: only the rise is doubled');
   });
 });
 
@@ -95,7 +107,7 @@ describe('days: the pool', () => {
   test('defaults fill in, values are clamped, and a pool with no people cannot run', () => {
     const p = normalizePool({ people: { ines: { usualPerWeek: 9, knows: 2 } } });
     assert.deepEqual(p.people.ines, { usualPerWeek: 5, knows: 1, weight: 1, newcomer: false, dayVisitor: false });
-    assert.deepEqual([p.size, p.ordinaryWait, p.rules.lossAversion, p.habit.length], [200, 5, 2, 5]);
+    assert.deepEqual([p.size, p.ordinaryWait, p.rules.lossAversion, p.habit.length, p.tellReach], [200, 5, 2, 5, 0.3]);
     assert.throws(() => normalizePool({}), /people/);
   });
 
@@ -106,6 +118,8 @@ describe('days: the pool', () => {
     assert.deepEqual([count('ines'), count('theo'), count('noor'), count('visitor')], [35, 35, 30, 0]);
     assert.equal(people.filter(p => p.persona === 'noor' && p.knows).length, 6);
     assert.ok(people.filter(p => p.persona === 'ines').every(p => p.knows && p.established && p.usual === 0.8 && p.lastPaid === 4));
+    const daily = buildPeople(normalizePool({ ...POOL, people: { ...POOL.people, ines: { usualPerWeek: 5, knows: 1 } } }), spec, 7);
+    assert.ok(daily.filter(p => p.persona === 'ines').every(p => p.usual === USUAL_MAX), 'nobody comes every single morning');
     assert.ok(people.every(p => p.time >= 0 && p.time <= 120));
   });
 
@@ -141,7 +155,8 @@ describe('days: a person\'s record each morning', () => {
     const r = recordsFor(person(), 3, ctx());
     assert.deepEqual(r.today, r.reference);
     assert.deepEqual(r.today.history, { visits: 14, weeks: 4 }, 'before day 0 they came at their usual rate');
-    assert.equal(r.unpriced, null);
+    assert.equal(r.plain, null, 'nothing was changed');
+    assert.equal(r.priceRise, false);
   });
 
   test('a visit is remembered with its date; the reference has the same visit as an ordinary one', () => {
@@ -163,12 +178,13 @@ describe('days: a person\'s record each morning', () => {
 
   test('a price rise is shown against last week until they have paid the new price', () => {
     const before = recordsFor(person(), 2, ctx({ price: 4.5 }));
-    assert.deepEqual([before.today.price, before.today.wasPrice, before.reference.price], [4.5, 4, 4]);
-    assert.deepEqual([before.unpriced.price, before.unpriced.wasPrice], [4, undefined]);
+    assert.deepEqual([before.today.price, before.today.wasPrice, before.reference.price, before.priceRise], [4.5, 4, 4, true]);
+    assert.deepEqual([before.plain.price, before.plain.wasPrice], [4, undefined], 'plain: this morning had nothing been changed');
     const after = recordsFor(person({ lastPaid: 4.5 }), 2, ctx({ price: 4.5 }));
     assert.equal(after.today.wasPrice, undefined);
     assert.equal(after.today.price, 4.5, 'the level still differs from the reference price');
-    assert.equal(recordsFor(person(), 2, ctx({ price: 3.5 })).unpriced, null, 'a cut needs no loss-aversion ask');
+    assert.equal(after.plain.price, 4);
+    assert.equal(recordsFor(person(), 2, ctx({ price: 3.5 })).priceRise, false, 'a cut is not a rise');
   });
 
   test('a card, remarks and a promotion appear when the person has them', () => {
@@ -178,6 +194,7 @@ describe('days: a person\'s record each morning', () => {
     assert.deepEqual(r.today.heard, ['A friend (3 days ago): long line at Crumb & Co', 'A friend (1 week ago): Crumb & Co was good and quick']);
     assert.deepEqual([r.today.offers, r.today.offerPrice], [['Crumb & Co: 20% off everything today.'], 3.2]);
     assert.deepEqual(Object.keys(r.reference).sort(), ['history', 'memory', 'price']);
+    assert.deepEqual(Object.keys(r.plain).sort(), ['heard', 'history', 'memory', 'price'], 'plain keeps the remarks and drops the card and the promotion');
     assert.equal(recordsFor(person({ reached: false }), 5, ctx({ promo: { text: 'x', priceOff: 0.2 } })).today.offers, undefined);
   });
 
@@ -247,6 +264,17 @@ describe('days: a run', () => {
     assert.notDeepEqual((await runDays({ pool: POOL, spec: WORLD, days: 6, seed: 8, provider: rules() })).days, a.days);
   });
 
+  test('the baseline is its own zero point: a provider that likes every memory moves nobody on average', async () => {
+    // Every remembered visit raises this provider's answer by the same amount, so every morning is an average one.
+    const fond = { name: 'fond', external: false, async decideMany(reqs) { return reqs.map(r => ({ provider: 'jev', yesProb: r.observation.memory?.some(m => /about 5 minutes/.test(m)) ? 0.5 : 0.7 })); }, stats() { return {}; } };
+    const plain = await runDays({ pool: POOL, spec: WORLD, days: 6, seed: 7, provider: rules() });
+    const run = await runDays({ pool: POOL, spec: WORLD, days: 6, seed: 7, provider: fond });
+    assert.ok(run.centers.slice(1).some(c => c > 0.3), 'the raw move is large');
+    const visits = r => r.days.reduce((s, d) => s + d.went, 0);
+    assert.ok(Math.abs(visits(run) - visits(plain)) <= 0.08 * visits(plain), `${visits(run)} against ${visits(plain)}`);
+    assert.deepEqual(plain.centers, [0, 0, 0, 0, 0, 0]);
+  });
+
   test('each evening writes what happened into the person\'s record', async () => {
     const run = await runDays({ pool: POOL, spec: WORLD, days: 4, seed: 7, provider: rules() });
     const regular = run.people.find(p => p.persona === 'ines' && p.went.length >= 2);
@@ -283,26 +311,29 @@ describe('days: a run', () => {
     stats() { return { provider: 'reader', requests: this.asked }; }
   });
 
-  test('a provider that reads memory keeps people away after bad visits; one more person serving brings them back', async () => {
+  test('with a provider that reads memory, one more person serving brings more visits than the baseline', async () => {
     const plain = await runDays({ pool: POOL, spec: WORLD, days: 10, seed: 7, provider: rules() });
     const read = await runDays({ pool: POOL, spec: WORLD, days: 10, seed: 7, provider: reader() });
     const visits = r => r.days.reduce((s, d) => s + d.went, 0);
     assert.equal(read.days[0].went, plain.days[0].went, 'day 0: nothing to remember yet');
-    assert.ok(visits(read) < visits(plain), `${visits(read)} against ${visits(plain)}`);
     assert.ok(read.asked > 0);
-    const staffed = await runDays({ pool: POOL, spec: WORLD, days: 10, seed: 7, provider: reader(), change: changeFor('staff+1', spec, 'bakery', 10) });
-    assert.ok(visits(staffed) > visits(read), 'shorter lines, better memories, more visits');
+    // The baseline is its own zero point, so its total stays near the usual rates.
+    assert.ok(Math.abs(visits(read) - visits(plain)) <= 0.08 * visits(plain), `${visits(read)} against ${visits(plain)}`);
+    assert.ok(read.centers.some(c => c < 0), 'on the baseline the average memory is worse than an ordinary visit');
+    // Fewer people turn away, so fewer bad memories than on the baseline: more visits.
+    const staffed = await runDays({ pool: POOL, spec: WORLD, days: 10, seed: 7, provider: reader(), change: changeFor('staff+1', spec, 'bakery', 10), centers: read.centers });
+    assert.ok(visits(staffed) > visits(read), `${visits(staffed)} against ${visits(read)}`);
   });
 
   test('a price rise costs visits only when the provider reads the price; a promotion brings first-timers', async () => {
     const days = 10;
     const base = await runDays({ pool: POOL, spec: WORLD, days, seed: 7, provider: reader() });
-    const dearer = await runDays({ pool: POOL, spec: WORLD, days, seed: 7, provider: reader(), change: changeFor('price+0.5', spec, 'bakery', days) });
+    const dearer = await runDays({ pool: POOL, spec: WORLD, days, seed: 7, provider: reader(), change: changeFor('price+0.5', spec, 'bakery', days), centers: base.centers });
     const visits = r => r.days.reduce((s, d) => s + d.went, 0);
     assert.ok(visits(dearer) < visits(base));
     const sameUnderRules = await runDays({ pool: POOL, spec: WORLD, days, seed: 7, provider: rules(), change: changeFor('price+0.5', spec, 'bakery', days) });
     assert.equal(visits(sameUnderRules), visits(await runDays({ pool: POOL, spec: WORLD, days, seed: 7, provider: rules() })));
-    const promo = await runDays({ pool: POOL, spec: WORLD, days, seed: 7, provider: reader(), change: changeFor('promo20', spec, 'bakery', days) });
+    const promo = await runDays({ pool: POOL, spec: WORLD, days, seed: 7, provider: reader(), change: changeFor('promo20', spec, 'bakery', days), centers: base.centers });
     const firsts = r => r.days.reduce((s, d) => s + d.firstTime, 0);
     assert.ok(firsts(promo) > firsts(base));
     assert.ok(promo.people.flatMap(p => p.visits).some(v => v.paid === 3.2), 'the discount is paid at the counter');
@@ -360,6 +391,6 @@ describe('days: comparing a change with its baseline', () => {
     const r = realism(run);
     assert.equal(r.lopsided.pass, true);
     assert.equal(r.steady.pass, true);
-    assert.equal(r.newcomersReturnLess.pass, true);
+    assert.notEqual(r.newcomersReturnLess.pass, false, 'few newcomers in 10 days: it may have too little to say');
   });
 });

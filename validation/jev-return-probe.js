@@ -64,6 +64,9 @@ export const CONDITIONS = [
   // Walked away after the same wait.
   { id: 'left10', who: 'returning', family: 'left', label: 'Waited 10 minutes yesterday, left without ordering', state: back(mem([visit(10, 'left')])) },
   { id: 'left20', who: 'returning', family: 'left', label: 'Waited 20 minutes yesterday, left without ordering', state: back(mem([visit(20, 'left')])) },
+  // Turned away at the door on seeing the line: the sentence the multi-day loop writes (§21b).
+  { id: 'balk9', who: 'returning', family: 'left', label: 'Found 9 people in line yesterday and left', state: back(mem([{ daysAgo: 1, wait: 0, outcome: 'left', ahead: 9 }])) },
+  { id: 'balk3', who: 'returning', family: 'left', label: 'Found 3 people in line yesterday and left', state: back(mem([{ daysAgo: 1, wait: 0, outcome: 'left', ahead: 3 }])) },
   // The same 15 minutes, ending fast or slow (peak-end).
   { id: 'end_plain15', who: 'returning', family: 'ending', label: 'Waited 15 minutes yesterday, served', state: back(mem([visit(15)])) },
   { id: 'end_fast15', who: 'returning', family: 'ending', label: '15 minutes: slow at first, quick at the end', state: back(mem([visit(15, 'served', { ending: 'fast' })])) },
@@ -128,6 +131,7 @@ export const TESTS = [
   { id: 'reads_bad', kind: 'check', title: 'A bad visit against a neutral sentence', type: 'diff', a: 'bad', b: 'weather', expect: 'lower', from: 'sanity' },
   { id: 'neutral', kind: 'check', title: 'A neutral sentence does nothing', type: 'diff', a: 'weather', b: 'nomemory', expect: 'same', from: 'PROTOTYPE §17' },
   { id: 'paraphrase', kind: 'check', title: 'Same fact, other words', type: 'diff', a: 'para20', b: 'wait20', expect: 'same', from: 'sanity' },
+  { id: 'turned_away', kind: 'check', title: 'Turned away at the door by a 9-person line, against an ordinary visit', type: 'diff', a: 'balk9', b: 'wait5', expect: 'lower', from: 'the loop\'s wording (§21b)' },
 
   { id: 'wait_slope', kind: 'gate', title: 'Longer last wait, less likely to return', type: 'slope', conds: ['wait0', 'wait5', 'wait10', 'wait20', 'wait30'], dose: [0, 5, 10, 20, 30], per: 10, unit: 'per 10 minutes', expect: 'lower', from: 'de Vries et al. 2018' },
   { id: 'wait_ends', kind: 'gate', title: 'A 30-minute wait against no line', type: 'diff', a: 'wait30', b: 'wait0', expect: 'lower', from: 'de Vries et al. 2018' },
@@ -148,6 +152,8 @@ export const TESTS = [
 
   { id: 'fade', kind: 'explore', title: 'A bad visit 4 weeks ago against yesterday', type: 'diff', a: 'bad_d28', b: 'bad_d1', expect: 'higher', from: 'open: how fast a memory fades' },
   { id: 'fade_week', kind: 'explore', title: 'A bad visit 1 week ago against yesterday', type: 'diff', a: 'bad_d7', b: 'bad_d1', expect: 'higher', from: 'open: how fast a memory fades' },
+  { id: 'turned_long', kind: 'explore', title: 'Turned away by 9 people against by 3', type: 'diff', a: 'balk9', b: 'balk3', expect: 'lower', from: 'does the line seen matter' },
+  { id: 'turned_vs_waited', kind: 'explore', title: 'Turned away at the door against waiting 20 minutes and leaving', type: 'diff', a: 'balk9', b: 'left20', expect: 'higher', from: 'which is the worse memory' },
   { id: 'adds_one', kind: 'explore', title: 'One 20-minute wait in the last three visits', type: 'diff', a: 'acc1_new', b: 'acc0', expect: 'lower', from: 'do bad visits add up' },
   { id: 'adds_three', kind: 'explore', title: 'Three 20-minute waits against one', type: 'diff', a: 'acc3', b: 'acc1_new', expect: 'lower', from: 'do bad visits add up' },
   { id: 'adds_recent', kind: 'explore', title: 'The 20-minute wait yesterday against 3 days ago', type: 'diff', a: 'acc1_new', b: 'acc1_old', expect: 'lower', from: 'recency within a list' },

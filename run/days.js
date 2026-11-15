@@ -18,12 +18,14 @@ export const MEMORY_VISITS = 3;      // visits one record shows (§20d: Jev adds
 export const HEARD_DAYS = 7;         // a remark is remembered for this many calendar days
 export const HEARD_SHOWN = 2;
 export const TIME_JITTER = 10;       // minutes either side of a person's usual time
+export const USUAL_MAX = 0.95;       // nobody comes every single morning: "5 days in 5" is 19 mornings in 20
 const HISTORY_DAYS = 4 * WEEK;       // "N times in the last 4 weeks"
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const logit = p => { const q = clamp(p, 0.002, 0.998); return Math.log(q / (1 - q)); };
 const sigmoid = x => 1 / (1 + Math.exp(-x));
 const round2 = x => Math.round(x * 100) / 100;
+const round4 = x => Math.round(x * 10000) / 10000;
 // A wait as a person remembers it: to the minute when short, to the nearest 5 minutes from 10 up.
 export const rememberedWait = m => { const x = Math.max(0, Number(m) || 0); return x < 1 ? 0 : x < 10 ? Math.round(x) : Math.round(x / 5) * 5; };
 // Day 5 is the Monday after day 4: three calendar days later.
@@ -50,7 +52,7 @@ export function normalizePool(raw) {
     title: String(r.title || ''), world: r.world || null, shop: r.shop || null,
     size: Math.round(num(r.size, 200, 1, 5000)), people,
     ordinaryWait: num(r.ordinaryWait, 5, 0, 120), trialPerWeek: num(r.trialPerWeek, 0.5, 0.01, WEEK),
-    walkPast: num(r.walkPast, 0.03, 0, 1), tellReach: Math.round(num(r.tellReach, 2, 0, 20)), habit,
+    walkPast: num(r.walkPast, 0.03, 0, 1), tellReach: num(r.tellReach, 0.3, 0, 20), habit,
     rules: { lossAversion: num(r.rules?.lossAversion, 2, 1, 5) }
   };
 }
@@ -90,7 +92,7 @@ export function buildPeople(pool, spec, seed = 7) {
       const rng = seedRng(seed, 'person', id);
       const knows = k < knowing;
       people.push({
-        id, persona: m.id, group: m.archetype, usual: role.usualPerWeek / WEEK, time: usualTime(spec.arrivals, rng),
+        id, persona: m.id, group: m.archetype, usual: Math.min(USUAL_MAX, role.usualPerWeek / WEEK), time: usualTime(spec.arrivals, rng),
         knows, via: null, established: knows,   // established: came before day 0, at their usual rate
         went: [],        // days they came
         visits: [],      // { day, wait, outcome, ahead, paid } at the shop
@@ -137,7 +139,11 @@ function visitCount(person, d) {
   return Math.round(before) + person.went.filter(x => d - x <= HISTORY_DAYS).length;
 }
 
-// Today's record for the morning question, and the same person on an ordinary day (§21b).
+// Three records for one person this morning (§21b):
+//   today      everything they know;
+//   plain      today without what the change adds (the changed price, a stamp card, a promotion): what they
+//              would know this morning had nothing been changed. Null when today has none of those;
+//   reference  the same person on an ordinary day: the same visits, each an ordinary one, and no remarks.
 export function recordsFor(person, d, ctx) {
   const been = person.established || person.went.length > 0;
   const history = been ? { visits: Math.max(1, visitCount(person, d)), weeks: 4 } : { visits: 0, via: person.via || 'has walked past it' };
@@ -145,20 +151,19 @@ export function recordsFor(person, d, ctx) {
   const memory = remembered.map(v => ({ daysAgo: daysBetween(v.day, d), wait: v.wait, outcome: v.outcome, ahead: v.ahead }));
   const heard = person.heard.filter(h => daysBetween(h.day, d) <= HEARD_DAYS).slice(-HEARD_SHOWN).reverse()
     .map(h => friendRemark(h.kind, ctx.shopName, { when: agoWords(daysBetween(h.day, d)) }));
-  const today = { history, memory, price: ctx.price };
+  const plain = { history, memory, price: ctx.refPrice };
+  if (heard.length) plain.heard = heard;
+  const today = { ...plain, price: ctx.price };
+  let changed = round2(ctx.price) !== round2(ctx.refPrice);
   // "It was $5.00 last week" until they have paid the new price.
-  if (person.lastPaid != null && round2(person.lastPaid) !== round2(ctx.price)) today.wasPrice = person.lastPaid;
-  if (ctx.card && person.card) today.card = { have: person.card.have, need: ctx.card.need, reward: ctx.card.reward };
-  if (heard.length) today.heard = heard;
-  if (ctx.promo && person.reached) { today.offers = [ctx.promo.text]; today.offerPrice = round2(ctx.price * (1 - ctx.promo.priceOff)); }
+  if (person.lastPaid != null && round2(person.lastPaid) !== round2(ctx.price)) { today.wasPrice = person.lastPaid; changed = true; }
+  if (ctx.card && person.card) { today.card = { have: person.card.have, need: ctx.card.need, reward: ctx.card.reward }; changed = true; }
+  if (ctx.promo && person.reached) { today.offers = [ctx.promo.text]; today.offerPrice = round2(ctx.price * (1 - ctx.promo.priceOff)); changed = true; }
   const reference = {
     history, price: ctx.refPrice,
     memory: remembered.map(v => ({ daysAgo: daysBetween(v.day, d), wait: ctx.ordinaryWait, outcome: 'served' }))
   };
-  // The loss-aversion rule needs Jev's answer with everything as today except the price.
-  const priceRise = round2(ctx.price) > round2(ctx.refPrice);
-  const unpriced = priceRise ? { ...today, price: ctx.refPrice, wasPrice: undefined, offerPrice: today.offers ? round2(ctx.refPrice * (1 - ctx.promo.priceOff)) : undefined } : null;
-  return { today, reference, unpriced };
+  return { today, plain: changed ? plain : null, reference, priceRise: round2(ctx.price) > round2(ctx.refPrice) };
 }
 
 // A person's usual chance today, before Jev moves it.
@@ -168,52 +173,74 @@ export function usualToday(person, pool) {
   return person.usual * habit;
 }
 
-// A person's chance today: their usual rate, moved by the odds between Jev's answer for today's record (`now`)
-// and for their reference record. With no answer (or the rule model) it is the usual rate. `unpriced` is Jev's
-// answer with everything as today except the price: when given, the part of the move that the price rise
-// caused is multiplied by `lossAversion` (rule; §20d found Jev shows none).
-export function movedChance({ usual, now = null, reference = null, unpriced = null, lossAversion = 1 }) {
-  if (now == null || reference == null) return clamp(usual, 0, 1);
-  let shift = logit(now) - logit(reference);
-  if (unpriced != null) {
-    const other = logit(unpriced) - logit(reference);
-    shift = other + lossAversion * (shift - other);
-  }
-  return sigmoid(logit(usual) + shift);
+// A person's chance today (§21b): their usual rate, moved on the odds scale by two things.
+//   env     how this morning's memories and remarks compare with an ordinary day (Jev: plain against
+//           reference), less `center`, the pool's average of the same on the baseline. So an average morning
+//           leaves the usual rate where it is, and only a better or worse one than average moves it.
+//   delta   what the change adds (Jev: today against plain), times `factor` (the loss-aversion rule for a
+//           price rise; §20d found Jev shows none).
+export function chanceOf({ usual, env = null, center = 0, delta = 0, factor = 1 }) {
+  const shift = (env == null ? 0 : env - center) + factor * delta;
+  return Math.abs(shift) < 1e-12 ? clamp(usual, 0, 1) : sigmoid(logit(usual) + shift);
 }
 
-// Asks Jev for everyone whose record differs from their reference, and returns each person's chance today.
+// The zero point for one morning: the `center` at which the people who have an `env` are expected to make
+// as many visits as at their usual rates. Their usual rates already allow for ordinary mornings, so the
+// baseline's average morning must leave the number of visits where it is. (Zeroing the average of `env`
+// itself would not: on the odds scale the same move changes a rare customer's chance more than it changes
+// a frequent one's.) jobs: [{ usual, env }]. Found by bisection; 0 when nobody has an `env`.
+export function centerOf(jobs) {
+  const mine = jobs.filter(j => j.env != null);
+  if (!mine.length) return 0;
+  const target = mine.reduce((s, j) => s + clamp(j.usual, 0, 1), 0);
+  const visitsAt = c => mine.reduce((s, j) => s + chanceOf({ usual: j.usual, env: j.env, center: c }), 0);
+  let lo = -8, hi = 8;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (visitsAt(mid) > target) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Asks Jev for everyone whose record differs from an ordinary day, and returns each person's `env` and `delta`
+// on the odds scale. A missing answer (or the rule model) leaves both at nothing.
 async function morning({ people, d, ctx, pool, spec, provider }) {
   const mindOf = id => spec.minds.find(m => m.id === id);
   const jobs = [], asks = [];
   for (const person of people) {
     if (!person.knows) continue;
-    const { today, reference, unpriced } = recordsFor(person, d, ctx);
+    const { today, plain, reference, priceRise } = recordsFor(person, d, ctx);
     const mind = mindOf(person.persona);
     const req = state => morningRequest({ spec, shopId: ctx.shopId, mind, state, id: `d${d}-${person.id}` });
-    const job = { person, usual: usualToday(person, pool), today: null, reference: null, unpriced: null };
-    const a = req(today), b = req(reference);
-    // Nothing differs from an ordinary day: the chance is the usual rate and Jev is not asked.
-    if (JSON.stringify(a.observation) !== JSON.stringify(b.observation)) {
-      job.today = asks.push(a) - 1; job.reference = asks.push(b) - 1;
-      if (unpriced && pool.rules.lossAversion !== 1) job.unpriced = asks.push(req(unpriced)) - 1;
+    const job = { person, usual: usualToday(person, pool), factor: priceRise ? pool.rules.lossAversion : 1, today: null, plain: null, reference: null };
+    const usualRecord = req(plain ?? today), ref = req(reference);
+    // Nothing remembered differs from an ordinary day: Jev is not asked about the memories.
+    if (JSON.stringify(usualRecord.observation) !== JSON.stringify(ref.observation)) {
+      job.plain = asks.push(usualRecord) - 1; job.reference = asks.push(ref) - 1;
+    }
+    if (plain) {
+      job.today = asks.push(req(today)) - 1;
+      if (job.plain == null) job.plain = asks.push(usualRecord) - 1;
     }
     jobs.push(job);
   }
   const answers = asks.length ? await provider.decideMany(asks, { spec }) : [];
   const p = i => (i == null ? null : Number.isFinite(answers[i]?.yesProb) ? answers[i].yesProb : null);
   for (const job of jobs) {
-    job.chance = movedChance({ usual: job.usual, now: p(job.today), reference: p(job.reference), unpriced: p(job.unpriced), lossAversion: pool.rules.lossAversion });
+    const now = p(job.today), usualAnswer = p(job.plain), ref = p(job.reference);
+    job.env = usualAnswer != null && ref != null ? logit(usualAnswer) - logit(ref) : null;
+    job.delta = now != null && usualAnswer != null ? logit(now) - logit(usualAnswer) : 0;
   }
   return { jobs, asked: asks.length };
 }
 
 // ---------- one run ----------
 
-// runDays({ pool, spec, days, seed, provider, change }) -> { days: [per-day numbers], people, asked, cost }.
+// runDays({ pool, spec, days, seed, provider, change, centers }) -> { days: [per-day numbers], people, asked, centers }.
 // `pool` and `spec` are raw or normalized. `provider` is any decision provider; with the rule model nobody
-// reads memory and everyone comes at their usual rate.
-export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 7, provider, change = null, onDay = null }) {
+// reads memory and everyone comes at their usual rate. `centers` is the baseline's `centers` for the same
+// seed, given when running a change; a baseline works out its own.
+export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 7, provider, change = null, centers = null, onDay = null }) {
   const pool = normalizePool(rawPool);
   const base = normalizeSpec(rawSpec);
   if (base.mode !== 'visit') throw new Error('The multi-day loop needs a visit world.');
@@ -221,7 +248,7 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
   const people = buildPeople(pool, base, seed);
   const byId = new Map(people.map(p => [p.id, p]));
   const refPrice = shop.price;
-  const out = [];
+  const out = [], ownCenters = [];
   let asked = 0;
 
   for (let d = 0; d < days; d++) {
@@ -245,8 +272,13 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
     // 2. The morning question.
     const { jobs, asked: n } = await morning({ people, d, ctx, pool, spec, provider });
     asked += n;
+    // The zero point, worked out on the baseline and reused by a change on the same seed (§21b).
+    const own = centerOf(jobs);
+    ownCenters.push(round4(own));
+    const center = centers ? (Number(centers[d]) || 0) : own;
     const arrivals = [];
     for (const job of jobs) {
+      job.chance = chanceOf({ usual: job.usual, env: job.env, center, delta: job.delta, factor: job.factor });
       const rng = seedRng(seed, 'go', job.person.id, d);
       const u = rng(), jitter = (rng() * 2 - 1) * TIME_JITTER;
       if (u >= job.chance) continue;
@@ -295,7 +327,9 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
       if (r.kind === 'good_experience') day.good++; else day.bad++;
       const group = people.filter(p => p.group === speaker.group && p !== speaker);
       const rng = seedRng(seed, 'tell', speaker.id, d, r.t);
-      for (let k = 0; k < pool.tellReach && group.length; k++) {
+      // tellReach may be a fraction: 0.3 means three remarks in ten reach one person.
+      const reach = Math.floor(pool.tellReach) + (rng() < pool.tellReach % 1 ? 1 : 0);
+      for (let k = 0; k < reach && group.length; k++) {
         const listener = group[Math.floor(rng() * group.length)];
         listener.heard.push({ day: d, kind: r.kind });
         if (!listener.knows) { listener.knows = true; listener.via = 'a friend mentioned it'; listener.knewOn = d + 1; }
@@ -307,7 +341,7 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
     onDay?.(day);
   }
   return {
-    days: out, asked,
+    days: out, asked, centers: ownCenters,
     people: people.map(p => ({ id: p.id, persona: p.persona, group: p.group, established: p.established, knows: p.knows, went: p.went, served: p.served, firstDay: p.firstDay ?? null, visits: p.visits }))
   };
 }
@@ -373,7 +407,7 @@ export async function compareDays({ pool, spec, days = 10, seeds = [7, 8, 9], pr
   for (const change of changes) {
     const arms = [];
     for (const b of baselines) {
-      const run = await runDays({ pool, spec, days, seed: b.seed, provider, change, onDay: d => onProgress?.({ seed: b.seed, arm: change.label, day: d }) });
+      const run = await runDays({ pool, spec, days, seed: b.seed, provider, change, centers: b.run.centers, onDay: d => onProgress?.({ seed: b.seed, arm: change.label, day: d }) });
       arms.push({ seed: b.seed, run, summary: summarize(run) });
     }
     const effects = {};

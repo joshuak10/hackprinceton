@@ -116,7 +116,7 @@ function fakeRows(effects, { repeats = 3, noise = 0.01 } = {}) {
 describe('return probe: analysis on made-up answers', () => {
   const HUMAN = {
     good: 0.2, bad: -0.25, weather: 0, nomemory: 0, para20: -0.1,
-    wait0: 0.03, wait10: -0.05, wait20: -0.1, wait30: -0.16, left10: -0.12, left20: -0.2,
+    wait0: 0.03, wait10: -0.05, wait20: -0.1, wait30: -0.16, left10: -0.12, left20: -0.2, balk9: -0.15, balk3: -0.08,
     end_plain15: -0.07, end_fast15: -0.04, end_slow15: -0.11,
     price_up: -0.08, price_down: 0.03, price_up1: -0.15, price_down1: 0.06,
     card_2of10: 0.02, card_8of10: 0.12, card_0of8: 0.01, card_2of10_free: 0.05,
@@ -130,7 +130,7 @@ describe('return probe: analysis on made-up answers', () => {
     const s = analyze(fakeRows(HUMAN));
     const verdicts = Object.fromEntries(s.tests.filter(t => t.kind !== 'explore').map(t => [t.id, t.verdict]));
     for (const [id, v] of Object.entries(verdicts)) assert.equal(v, 'pass', `${id}: ${v}`);
-    assert.deepEqual(s.tally.check, { total: 5, pass: 5, fail: 0, other: 0 });
+    assert.deepEqual(s.tally.check, { total: 6, pass: 6, fail: 0, other: 0 });
     assert.equal(s.tally.gate.total, TESTS.filter(t => t.kind === 'gate').length);
     assert.equal(s.tally.gate.pass, s.tally.gate.total);
     const wait = s.tests.find(t => t.id === 'wait_slope');

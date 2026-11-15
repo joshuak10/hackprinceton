@@ -20,8 +20,8 @@
   },
   "ordinaryWait": 5,
   "trialPerWeek": 0.75,
-  "walkPast": 0.04,
-  "tellReach": 2,
+  "walkPast": 0.02,
+  "tellReach": 0.3,
   "habit": [0.25, 0.62, 0.83, 0.93, 1],
   "rules": {"lossAversion": 2}
 }
