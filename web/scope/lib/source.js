@@ -73,12 +73,33 @@ export async function apiHealth() {
 // so one place's many runs cannot push another place's runs off the list.
 export async function apiBuildingRuns({ max = 18, title = null, notTitles = [] } = {}) {
   const metas = await getJson('/api/runs');
-  const candidates = metas.filter(m => m.status === 'done' && m.mode === 'visit' && (title ? m.title === title : !notTitles.includes(m.title)))
-    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, max * 2);
+  let candidates = metas.filter(m => m.status === 'done' && m.mode === 'visit' && (title ? m.title === title : !notTitles.includes(m.title)))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const specs = new Map();
+  const specOf = async meta => {
+    if (!specs.has(meta.runId)) specs.set(meta.runId, await getJson(`/api/runs/${encodeURIComponent(meta.runId)}/spec`).catch(() => null));
+    return specs.get(meta.runId);
+  };
+  const walled = spec => Boolean(spec && Array.isArray(spec.walls) && spec.walls.length);
+  if (!title) {
+    // No title means the building. Other walled worlds recorded on this machine (a waiting room drawn by hand, say)
+    // must not take its place just by being newer: when any recorded world came from a Matterport floor plan,
+    // only those worlds count. Each world is looked at once, by the newest run with its title.
+    const firstOf = new Map();
+    for (const m of candidates) if (!firstOf.has(m.title)) firstOf.set(m.title, m);
+    const scanned = [];
+    for (const [worldTitle, meta] of [...firstOf].slice(0, 16)) {
+      const spec = await specOf(meta);
+      if (walled(spec)) scanned.push({ worldTitle, matterport: String(spec.geo?.source || '').startsWith('matterport') });
+    }
+    const fromPlan = scanned.filter(w => w.matterport);
+    const keep = new Set((fromPlan.length ? fromPlan : scanned).map(w => w.worldTitle));
+    candidates = candidates.filter(m => keep.has(m.title));
+  }
   const out = [];
-  for (const meta of candidates) {
-    const spec = await getJson(`/api/runs/${encodeURIComponent(meta.runId)}/spec`).catch(() => null);
-    if (spec && Array.isArray(spec.walls) && spec.walls.length) out.push({ meta, spec });
+  for (const meta of candidates.slice(0, max * 2)) {
+    const spec = await specOf(meta);
+    if (walled(spec)) out.push({ meta, spec });
     if (out.length >= max) break;
   }
   return { runs: out, metas };

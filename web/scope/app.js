@@ -111,7 +111,10 @@ const rawSpec = runId => st.runs.find(r => r.meta.runId === runId)?.spec || null
 // the building takes the rest, so one place's runs never show under another.
 async function refreshRuns() {
   const c = st.caseInfo;
-  const filter = c?.runTitle ? { title: c.runTitle, max: 200 } : { notTitles: Object.values(st.cases).map(x => x.runTitle).filter(Boolean) };
+  // ?place=<a recorded world's exact title> opens that world's runs instead: any other walled world on this machine.
+  const place = params.get('place');
+  const filter = c?.runTitle ? { title: c.runTitle, max: 200 } : place ? { title: place, max: 200 }
+    : { notTitles: Object.values(st.cases).map(x => x.runTitle).filter(Boolean) };
   const { runs, metas } = await apiBuildingRuns(filter);
   st.runs = runs;
   st.metas = metas;
