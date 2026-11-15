@@ -1,5 +1,6 @@
-// Ask the room (docs/PROTOTYPE.md §17). Change the moment, ask every cast member, see who moves.
-import { points, refOf, grade, recomputeShare, summarize, byChange } from './maths.js';
+// Ask the room (docs/PROTOTYPE.md §17, §17b). Change the moment, ask every cast member, see who moves.
+// Two modes: at the counter (a person has just arrived) and the next morning (do they go back today?).
+import { points, refOf, grade, recomputeShare, summarize, byChange, morningChange, morningSummary, byMorningChange } from './maths.js';
 import { langButton } from '../scope/lib/i18n.js';
 
 const $ = id => document.getElementById(id);
@@ -19,8 +20,11 @@ const PRESETS = [
 const FIELDS = [['bio', 'Their situation'], ['personality', 'What they are like'], ['goal', 'What they want']];
 const FONTS = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650;12..96,750&family=IBM+Plex+Sans:wght@400;500;600&display=swap';
 
+// `scenario`, `asked`, `edits` and `result` belong to the at-the-counter mode; `morning` holds the same for the
+// next morning. Each mode keeps its own controls and its last answers.
 const st = {
   view: null, scenario: null, asked: null, edits: {}, result: null, open: null, busy: false, queued: null, sortByChange: true,
+  mode: 'counter', morning: { scenario: null, result: null },
   theme: new URLSearchParams(location.search).get('theme') || store.get('room-theme') || 'dark',
   world: new URLSearchParams(location.search).get('world') || ''
 };
@@ -45,6 +49,8 @@ const duration = ms => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 // everyone is never replaced by an ask for one person.
 async function ask(only = null) {
   if (st.busy) { st.queued = { only: st.queued && st.queued.only == null ? null : only }; return; }
+  const mode = st.mode, morning = mode === 'morning';
+  if (morning) only = null;                                          // the next morning is always asked of everyone
   st.busy = true;
   setStatus(only ? 'Asking one person…' : 'Asking everyone…');
   $('askBtn').setAttribute('aria-busy', 'true');
@@ -52,20 +58,28 @@ async function ask(only = null) {
   try {
     // One person is asked about the moment everyone last answered, whatever the controls say now.
     const one = Boolean(only && st.result && st.asked);
-    const body = { scenario: one ? st.asked : st.scenario, edits: st.edits };
+    const body = morning ? { scenario: st.morning.scenario } : { scenario: one ? st.asked : st.scenario, edits: st.edits };
     if (st.world) body.world = st.world;
     if (one) body.only = [only];
-    const result = await api('/api/room/ask', body);
+    const result = await api(morning ? '/api/room/morning' : '/api/room/ask', body);
     const ms = Math.round(performance.now() - started);
     setMode(result.live);
-    if (result.people.length && result.failed === result.people.length && st.result) {
+    const shown = st.mode === mode;                                  // the mode may have been switched while this was answered
+    // The next morning: someone who has never been inside may still answer from the record when the change is not
+    // in her record, so "nobody" there means no returning customer.
+    const nobody = morning ? result.share.now == null : result.failed === result.people.length;
+    if (result.people.length && nobody && (morning ? st.morning.result : st.result)) {
       // Nobody could answer: the last answers stay on screen, with the reason.
-      setAsked('');
-      setStatus(result.live
-        ? `Jev did not answer${result.error ? ` (${result.error})` : ''}. These are still the last answers.`
-        : 'That question has no saved answer, and there is no Jev key to ask it now. These are still the last answers.', true);
+      if (shown) {
+        setAsked('');
+        setStatus(result.live
+          ? `Jev did not answer${result.error ? ` (${result.error})` : ''}. These are still the last answers.`
+          : 'That question has no saved answer, and there is no Jev key to ask it now. These are still the last answers.', true);
+      }
     } else {
-      if (one) {
+      if (morning) {
+        st.morning.result = result;
+      } else if (one) {
         const fresh = result.people[0];
         st.result.people = st.result.people.map(p => (p.id === fresh.id ? fresh : p));
         recomputeShare(st.result);
@@ -73,9 +87,11 @@ async function ask(only = null) {
         st.result = result;
         st.asked = structuredClone(body.scenario);
       }
-      report(result, ms);
-      render();
-      if (!one) document.querySelector('.room').scrollTop = 0;      // a new answer for everyone starts at its headline
+      if (shown) {
+        report(result, ms);
+        render();
+        if (!one) document.querySelector('.room').scrollTop = 0;    // a new answer for everyone starts at its headline
+      }
     }
   } catch (err) {
     setStatus(err.message, true);
@@ -121,7 +137,6 @@ function buildControls() {
   const others = rivals();
   $('rivalLine').textContent = others.length ? `Also on offer: ${others.map(p => `${p.name}, about $${Math.round(p.price)}`).join('; ')}. Or: ${v.leaveLabel.toLowerCase()}.` : '';
   $('signLegend').textContent = `A sign on the door of ${home.name}`;
-  $('honest').textContent = `${v.cast.length} simulated people answering through Jev, a decision model, not checked against real customers. One person counts as moved at ${points(v.noisePerson ?? 0.15)} points; smaller shifts happen with no real change.`;
   const lines = $('lines');
   lines.replaceChildren();
   for (const p of v.places) {
@@ -178,11 +193,100 @@ function setPrice(next) {
 }
 
 function reset() {
-  st.scenario = structuredClone(st.view.defaults);
-  st.edits = {};
   st.open = null;
-  syncControls();
+  if (st.mode === 'morning') {
+    st.morning.scenario = structuredClone(st.view.morning.defaults);
+    syncMorning();
+  } else {
+    st.scenario = structuredClone(st.view.defaults);
+    st.edits = {};
+    syncControls();
+  }
   ask();
+}
+
+// ---------- the two modes (docs/PROTOTYPE.md §17b) ----------
+const first = name => name.split(' ')[0];
+const listOf = items => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+const dollars = x => `$${Number(x).toFixed(2)}`;
+const agoWords = d => (d === 1 ? 'yesterday' : d % 7 === 0 ? `${d / 7} ${d === 7 ? 'week' : 'weeks'} ago` : `${d} days ago`);
+const changeWords = d => (d === 0 ? 'the same' : `${d > 0 ? '+' : '−'}${Math.abs(d) < 1 ? `${Math.round(100 * Math.abs(d))}¢` : `$${Math.abs(d)}`}`);
+
+// What the page says it is, under the headline. The next morning's limits come from the return probe (§20d).
+function honestText() {
+  const v = st.view;
+  if (st.mode !== 'morning') return `${v.cast.length} simulated people answering through Jev, a decision model, not checked against real customers. One person counts as moved at ${points(v.noisePerson ?? 0.15)} points; smaller shifts happen with no real change.`;
+  return `${v.cast.length} simulated people answering through Jev, a decision model. This is one morning’s decision for each of them, not a simulated week. Jev’s percentages sit too close to the middle: someone who rarely comes is given about 1.5 times the chance their visit count implies. So read which way a bar moves and who reacts, not how high it stands. One person counts as moved at ${points(v.morning.noisePerson)} points.`;
+}
+
+function syncMode() {
+  const morning = st.mode === 'morning';
+  $('modeCounter').setAttribute('aria-pressed', String(!morning));
+  $('modeMorning').setAttribute('aria-pressed', String(morning));
+  $('counterControls').hidden = morning;
+  $('morningControls').hidden = !morning;
+  $('nowKey').textContent = morning ? 'goes today' : 'chooses the shop now';
+  $('honest').textContent = honestText();
+}
+
+// Each mode keeps its controls and its last answers. Those answers are shown at once and then asked again,
+// which sends Jev nothing new when they are already on record.
+function switchMode(mode) {
+  if (!st.view || mode === st.mode || (mode === 'morning' && !st.view.morning)) return;
+  st.mode = mode;
+  st.open = null;
+  $('people').replaceChildren();                    // the two modes draw a person's details differently
+  const url = new URL(location.href);
+  if (mode === 'morning') url.searchParams.set('mode', 'morning'); else url.searchParams.delete('mode');
+  history.replaceState(null, '', url);
+  syncMode();
+  setAsked('');
+  if (mode === 'morning' ? st.morning.result : st.result) render();
+  else { $('sumLine').textContent = 'Asking everyone…'; $('sumSub').textContent = ''; }
+  ask();
+}
+
+// One row of choices for the next morning: [value, label, title]. A click sets the value and asks at once.
+const MORNING_ROWS = [['mWait', 'wait'], ['mOutcome', 'outcome'], ['mWhen', 'daysAgo'], ['mPrice', 'priceChange'], ['mCard', 'card'], ['mRemark', 'remark'], ['mRating', 'rating'], ['mMessage', 'message']];
+function choiceRow(id, key, options) {
+  const box = $(id);
+  box.replaceChildren();
+  for (const [value, label, title] of options) {
+    const b = el('button', 'chip', label);
+    b.type = 'button';
+    b._value = value;
+    if (title) b.title = title;
+    b.addEventListener('click', () => {
+      if (st.morning.scenario[key] === value) return;
+      st.morning.scenario[key] = value;
+      syncMorning();
+      ask();
+    });
+    box.append(b);
+  }
+}
+
+function buildMorning() {
+  const m = st.view.morning, o = m.options, need = m.cardNeed;
+  choiceRow('mWait', 'wait', o.wait.map(v => [v, String(v), v === 0 ? 'No line: served right away' : `Waited about ${v} minutes in line`]));
+  choiceRow('mOutcome', 'outcome', o.outcome.map(v => [v, v === 'left' ? 'left without ordering' : 'was served']));
+  choiceRow('mWhen', 'daysAgo', o.daysAgo.map(v => [v, agoWords(v)]));
+  choiceRow('mPrice', 'priceChange', o.priceChange.map(v => [v, changeWords(v), v === 0 ? `${dollars(m.price)} today, and nothing said about last week` : `${dollars(m.price + v)} today; it was ${dollars(m.price)} last week`]));
+  choiceRow('mCard', 'card', [[null, 'none'], ...o.card.map(v => [v, `${v} of ${need}`, `${v} of ${need} stamps filled`])]);
+  choiceRow('mRemark', 'remark', [['', 'none'], ...o.remark.map(v => [v, v, m.remarks[v]])]);
+  choiceRow('mRating', 'rating', [[null, 'none'], ...o.rating.map(v => [v, v.toFixed(1), `${v.toFixed(1)} out of 5 stars from online reviews`])]);
+  choiceRow('mMessage', 'message', [['', 'none'], ...o.message.map(v => [v, `${Math.round(100 * m.dealOff)}% off today`, m.deal])]);
+  $('morningHint').textContent = `Anything added to a record is compared with a plain version of it, never with nothing: a deal with a message that gives only the opening hours, a friend’s remark with one about something else, a changed price with “the same as last week”, a card with ${m.compare.card} of ${need} stamps, a rating with ${m.compare.rating.toFixed(1)} stars.`;
+  syncMorning();
+}
+
+function syncMorning() {
+  const s = st.morning.scenario;
+  if (s.wait < 1) s.outcome = 'served';             // nobody leaves a line that was not there
+  for (const [id, key] of MORNING_ROWS) {
+    for (const b of $(id).children) b.setAttribute('aria-pressed', String(b._value === s[key]));
+  }
+  for (const b of $('mOutcome').children) b.disabled = b._value === 'left' && s.wait < 1;
 }
 
 // What is typed into a person's boxes is kept as it is typed, so either Ask button carries it.
@@ -194,20 +298,27 @@ function draft(id, key, value) {
 
 // ---------- results ----------
 function render() {
+  if (st.mode === 'morning') renderMorning(); else renderCounter();
+}
+
+function renderCounter() {
   const r = st.result;
   if (!r) return;
   const home = place(r.shop), sum = summarize(r);
   renderSummary(sum, home);
   $('tickKey').textContent = sum.withSign ? 'with a plain sign' : 'before';
   $('smallKey').textContent = `under ${points(sum.noisePerson)} points: too small to tell`;
+  drawPeople(st.sortByChange ? byChange(r.people, sum.id, sum.withSign) : r.people, (li, p) => updatePerson(li, p, sum, home));
+}
 
+// The list of people in the given order. A person's row is kept from one answer to the next.
+function drawPeople(shown, update) {
   const list = $('people');
-  const shown = st.sortByChange ? byChange(r.people, sum.id, sum.withSign) : r.people;
   const existing = new Map([...list.children].map(li => [li.dataset.id, li]));
   shown.forEach((p, i) => {
     const li = existing.get(p.id) || personNode(p);
     existing.delete(p.id);
-    updatePerson(li, p, sum, home);
+    update(li, p);
     if (list.children[i] !== li) list.insertBefore(li, list.children[i] || null);   // moved only when the order changed, so focus stays put
   });
   for (const li of existing.values()) li.remove();
@@ -268,6 +379,30 @@ function personNode(p) {
   return li;
 }
 
+// One person's bar: the chance now, a tick at the chance it is compared with, and the change between them in
+// color, or in grey when it is under the bar for one person. Returns the change in words.
+function drawMeter(li, now, was, sum) {
+  const fill = li.querySelector('.fill'), delta = li.querySelector('.delta'), tick = li.querySelector('.tick');
+  const pctEl = li.querySelector('.pct'), chg = li.querySelector('.chg');
+  const d = now - was, g = grade(d, sum.noise, sum.noisePerson);
+  fill.style.width = `${100 * Math.min(now, was)}%`;
+  delta.style.left = `${100 * Math.min(now, was)}%`;
+  delta.style.width = `${g === 'none' ? 0 : 100 * Math.abs(d)}%`;
+  delta.className = `delta ${g === 'small' ? 'small' : d > 0 ? 'up' : 'down'}`;
+  tick.style.left = `${100 * was}%`;
+  pctEl.textContent = pct(now);
+  chg.textContent = g === 'none' ? 'no change' : `${signed(d)} pts`;
+  chg.className = `chg ${g === 'none' ? '' : g}`;
+  if (g === 'small') chg.title = `Under ${points(sum.noisePerson)} points: one person’s answer can shift this much when nothing real changes.`; else chg.removeAttribute('title');
+  return g === 'none' ? 'no change' : `${d > 0 ? 'up' : 'down'} ${Math.abs(points(d))} points${g === 'small' ? ', too small to tell' : ''}`;
+}
+
+function noAnswer(li, p) {
+  const pctEl = li.querySelector('.pct'), chg = li.querySelector('.chg');
+  pctEl.textContent = 'n/a'; chg.textContent = 'no answer'; chg.className = 'chg failed'; chg.removeAttribute('title');
+  li.querySelector('.row').setAttribute('aria-label', `${p.name}: no answer. Show details.`);
+}
+
 function updatePerson(li, p, sum, home) {
   const id = sum.id, row = li.querySelector('.row');
   const name = li.querySelector('.name');
@@ -276,25 +411,13 @@ function updatePerson(li, p, sum, home) {
   const feel = li.querySelector('.feel');
   feel.textContent = p.personality || '';
   feel.title = p.bio || '';
-  const meter = li.querySelector('.meter'), fill = li.querySelector('.fill'), delta = li.querySelector('.delta'), tick = li.querySelector('.tick');
-  const pctEl = li.querySelector('.pct'), chg = li.querySelector('.chg');
+  const meter = li.querySelector('.meter');
   const ref = refOf(p, sum.withSign), ok = Boolean(p.now && ref);
   meter.classList.toggle('empty', !ok);
   if (!ok) {
-    pctEl.textContent = 'n/a'; chg.textContent = 'no answer'; chg.className = 'chg failed'; chg.removeAttribute('title');
-    row.setAttribute('aria-label', `${p.name}: no answer. Show details.`);
+    noAnswer(li, p);
   } else {
-    const now = clamp01(p.now[id]), was = clamp01(ref.probs[id]), d = now - was, g = grade(d, sum.noise, sum.noisePerson);
-    fill.style.width = `${100 * Math.min(now, was)}%`;
-    delta.style.left = `${100 * Math.min(now, was)}%`;
-    delta.style.width = `${g === 'none' ? 0 : 100 * Math.abs(d)}%`;
-    delta.className = `delta ${g === 'small' ? 'small' : d > 0 ? 'up' : 'down'}`;
-    tick.style.left = `${100 * was}%`;
-    pctEl.textContent = pct(now);
-    chg.textContent = g === 'none' ? 'no change' : `${signed(d)} pts`;
-    chg.className = `chg ${g === 'none' ? '' : g}`;
-    if (g === 'small') chg.title = `Under ${points(sum.noisePerson)} points: one person’s answer can shift this much when nothing real changes.`; else chg.removeAttribute('title');
-    const said = g === 'none' ? 'no change' : `${d > 0 ? 'up' : 'down'} ${Math.abs(points(d))} points${g === 'small' ? ', too small to tell' : ''}`;
+    const now = clamp01(p.now[id]), said = drawMeter(li, now, clamp01(ref.probs[id]), sum);
     row.setAttribute('aria-label', `${p.name}: ${pct(now)} likely to choose ${home.name}, ${said}. Show details.`);
   }
   const open = st.open === p.id;
@@ -353,6 +476,148 @@ function updateDetail(detail, p, sum, home, ref) {
   left.append(split);
 }
 
+// ---------- results: the next morning (docs/PROTOTYPE.md §17b) ----------
+function renderMorning() {
+  const r = st.morning.result;
+  if (!r) return;
+  const home = place(r.shop), sum = morningSummary(r);
+  renderMorningSummary(sum, home, r);
+  $('tickKey').textContent = 'the ordinary morning';
+  $('smallKey').textContent = `under ${points(sum.noisePerson)} points: too small to tell`;
+  drawPeople(st.sortByChange ? byMorningChange(r.people) : r.people, (li, p) => updateMorningPerson(li, p, sum, home));
+}
+
+// The plain sentences the comparison carries, in the headline's words.
+function plainWords(compare) {
+  const m = st.view.morning, out = [];
+  if (compare.price) out.push(`the price given as “${compare.price}”`);
+  if (compare.card) out.push(`a stamp card at ${m.compare.card} of ${m.cardNeed}`);
+  if (compare.remark) out.push('a friend’s remark about something else');
+  if (compare.rating) out.push(`a rating of ${m.compare.rating.toFixed(1)} stars`);
+  if (compare.message) out.push('a message from the shop with no offer');
+  return out;
+}
+
+function renderMorningSummary(sum, home, r) {
+  const big = $('sumLine'), sub = $('sumSub');
+  big.replaceChildren();
+  if (!sum.answered) { big.textContent = 'Nobody could answer.'; sub.textContent = ''; return; }
+  const who = sum.regulars === 1 ? 'this 1 returning customer' : `these ${sum.regulars} returning customers`;
+  const parts = [];
+  if (sum.unchanged) {
+    big.append(`The next morning ${home.name} gets `, el('b', null, pct(sum.to)), ` of ${who}.`);
+    const memory = r.people.find(p => p.returning)?.told.before.memory[0];
+    parts.push(`This is the ordinary morning${memory ? `: each of them remembers “${memory}”` : '.'}`);
+    parts.push('Change what they remember or what they are told today, and see who comes back.');
+  } else if (sum.flat && sum.movers.length) {
+    // The room's total hides it, so the people come first.
+    const named = sum.movers.slice(0, 4);
+    named.forEach((m, i) => {
+      if (i) big.append(', ');
+      big.append(el('b', m.d > 0 ? 'up' : 'down', `${first(m.p.name)} ${signed(m.d)}`));
+    });
+    const rest = sum.asked - named.length;
+    big.append(named.length < sum.movers.length ? ` and ${sum.movers.length - named.length} more moved.` : ' moved.');
+    if (named.length === sum.movers.length && rest > 0) big.append(` The other ${rest} did not.`);
+    parts.push(`${home.name} still gets about ${pct(sum.to)} of ${who} (${pct(sum.from)} on the ordinary morning).`);
+  } else {
+    const d = sum.to - sum.from;
+    big.append(`${home.name} gets `, el('b', sum.flat ? null : d > 0 ? 'up' : 'down', pct(sum.to)), ` of ${who}`);
+    big.append(sum.flat ? ', about the same as on the ordinary morning.' : `, ${d > 0 ? 'up' : 'down'} from ${pct(sum.from)}.`);
+    // The four largest by name, and how many more there are.
+    const list = dir => {
+      const all = sum.movers.filter(m => (m.d > 0) === dir), named = all.slice(0, 4).map(m => `${first(m.p.name)} (${signed(m.d)})`);
+      return all.length > named.length ? `${named.join(', ')} and ${all.length - named.length} more` : named.join(', ');
+    };
+    const lost = list(false), won = list(true);
+    if (lost) parts.push(`Less likely: ${lost}.`);
+    if (won) parts.push(`More likely: ${won}.`);
+    parts.push(!sum.movers.length ? `No one moved by ${points(sum.noisePerson)} points or more.` : sum.still ? `${sum.still} of ${sum.asked} did not move.` : `All ${sum.asked} moved.`);
+  }
+  const plain = plainWords(sum.compare);
+  if (plain.length) parts.push(`Each bar is compared with the ordinary morning plus ${listOf(plain)}, because any added sentence nudges the answers.`);
+  sub.textContent = parts.join(' ');
+}
+
+const NEVER_NOTE = 'Has never been inside, so the last visit, last week’s price and a stamp card do not apply.';
+
+function updateMorningPerson(li, p, sum, home) {
+  const row = li.querySelector('.row'), name = li.querySelector('.name');
+  const visits = p.returning ? `, ${p.visits} ${p.visits === 1 ? 'visit' : 'visits'} in ${st.view.morning.weeks} weeks` : '';
+  name.replaceChildren(p.name, el('span', 'age', String(p.age)), el('span', 'group', `${p.group}${visits}`));
+  if (!p.returning) name.append(el('span', 'never', 'never been'));
+  const feel = li.querySelector('.feel');
+  feel.textContent = p.personality || '';
+  feel.title = p.bio || '';
+  const meter = li.querySelector('.meter'), pctEl = li.querySelector('.pct'), chg = li.querySelector('.chg');
+  const skip = p.applies === false, ok = p.now != null && p.before != null;
+  // The page changed only things that are not in this person's record: say so, and draw no bar.
+  meter.classList.toggle('skip', skip);
+  meter.classList.toggle('empty', skip || !ok);
+  let why = meter.querySelector('.why');
+  if (skip && !why) { why = el('span', 'why', NEVER_NOTE); meter.append(why); }
+  if (!skip && why) why.remove();
+  if (skip) {
+    pctEl.textContent = ''; chg.textContent = 'does not apply'; chg.className = 'chg'; chg.removeAttribute('title');
+    row.setAttribute('aria-label', `${p.name}: ${NEVER_NOTE} Show details.`);
+  } else if (!ok) {
+    noAnswer(li, p);
+  } else {
+    const now = clamp01(p.now), said = drawMeter(li, now, clamp01(p.before), sum);
+    row.setAttribute('aria-label', `${p.name}: ${pct(now)} likely to go to ${home.name} today, ${said}. Show details.`);
+  }
+  const open = st.open === p.id;
+  row.setAttribute('aria-expanded', String(open));
+  li._detail?.wrap.remove();
+  li._detail = open ? morningDetail(p, sum, home) : null;
+  if (open) li.append(li._detail.wrap);
+}
+
+// One record as the person was told it, and the chance Jev gave for it.
+function toldColumn(title, told, chance, home) {
+  const col = el('div');
+  col.append(el('h3', null, title));
+  const box = el('div', 'told');
+  box.append(el('p', null, `${told.time[0].toUpperCase()}${told.time.slice(1)}. ${told.now}`));
+  for (const line of [told.history, ...told.memory, told.card]) if (line) box.append(el('p', null, line));
+  for (const line of [...told.heard, ...told.offers]) box.append(el('p', 'sign', line));
+  const cost = el('p', 'place');
+  cost.append(el('b', null, home.name), `: ${told.cost}${told.rating ? `; ${told.rating}` : ''}.`);
+  box.append(cost);
+  for (const other of told.others) {
+    const line = el('p', 'place');
+    line.append(el('b', null, other.name), `: ${other.cost}.`);
+    box.append(line);
+  }
+  col.append(box);
+  if (chance != null) {
+    const split = el('div', 'split'), bar = el('span', 'bar'), i = el('i');
+    i.style.width = `${100 * clamp01(chance)}%`;
+    bar.append(i);
+    split.append(el('span', 'lab', 'Goes today'), bar, el('span', 'val', pct(chance)));
+    col.append(split);
+  }
+  return col;
+}
+
+function morningDetail(p, sum, home) {
+  const wrap = el('div', 'detail pair');
+  const left = toldColumn('What they were told this morning', p.told.now, p.now, home);
+  if (p.partly) left.append(el('p', 'note', `${first(p.name)} has never been inside, so the last visit, last week’s price and a stamp card are not in this record. The bar shows what the rest did.`));
+  let right;
+  if (p.applies === false) {
+    right = el('div');
+    right.append(el('h3', null, 'What it is compared with'), el('p', 'note', `Nothing the page changed is in this record: ${first(p.name)} has never been inside, so there is no last visit, no last week’s price and no stamp card.`));
+  } else if (sum.unchanged) {
+    right = el('div');
+    right.append(el('h3', null, 'What it is compared with'), el('p', 'note', 'Nothing has been changed yet, so there is nothing to compare this with.'));
+  } else {
+    right = toldColumn('What it is compared with', p.told.before, p.before, home);
+  }
+  wrap.append(left, right);
+  return { wrap };
+}
+
 // ---------- start ----------
 async function start() {
   langButton($('langBtn'));
@@ -368,6 +633,8 @@ async function start() {
   $('sign').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } });
   $('resetBtn').addEventListener('click', reset);
   $('form').addEventListener('submit', e => { e.preventDefault(); ask(); });
+  $('modeCounter').addEventListener('click', () => switchMode('counter'));
+  $('modeMorning').addEventListener('click', () => switchMode('morning'));
   try {
     st.view = await api(`/api/room${st.world ? `?world=${encodeURIComponent(st.world)}` : ''}`);
   } catch (err) {
@@ -378,6 +645,16 @@ async function start() {
   st.scenario = structuredClone(st.view.defaults);
   setMode(st.view.live);
   buildControls();
+  // The next morning needs a pool file for the world (who comes how often). Without one the mode is not offered.
+  if (st.view.morning) {
+    st.morning.scenario = structuredClone(st.view.morning.defaults);
+    buildMorning();
+    if (new URLSearchParams(location.search).get('mode') === 'morning') st.mode = 'morning';
+  } else {
+    $('modeMorning').disabled = true;
+    $('modeMorning').title = 'This world has no pool file, so there is nobody to ask the next morning.';
+  }
+  syncMode();
   ask();
 }
 

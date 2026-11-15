@@ -73,3 +73,41 @@ export function byChange(people, id, withSign) {
   const size = p => Math.abs(changeOf(p, id, withSign) ?? 0);
   return people.map((p, i) => ({ p, i })).sort((a, b) => size(b.p) - size(a.p) || a.i - b.i).map(x => x.p);
 }
+
+// ---------- next morning (docs/PROTOTYPE.md §17b) ----------
+// Everything below works on the answer of POST /api/room/morning. A person's `before` and `now` are the chance
+// of going to the shop today: for the record it is compared with, and for the record the page set.
+
+// One person's change. Null when an answer is missing, or when the page changed only things that are not in
+// this person's record (someone who has never been inside has no last visit, no last week's price, no card).
+export function morningChange(p) {
+  return p.applies !== false && p.now != null && p.before != null ? p.now - p.before : null;
+}
+
+// What the headline needs. The shares are over the returning customers; `movers` are the people past the
+// one-person bar, largest change first, whoever they are.
+export function morningSummary(r) {
+  const noise = r.noise ?? 0.05, noisePerson = r.noisePerson ?? 0.10;
+  const moves = [];
+  for (const p of r.people) {
+    const d = morningChange(p);
+    if (d != null) moves.push({ p, d, grade: grade(d, noise, noisePerson) });
+  }
+  const movers = moves.filter(m => m.grade === 'up' || m.grade === 'down').sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+  const from = r.share.before, to = r.share.now;
+  const answered = from != null && to != null;
+  return {
+    noise, noisePerson, from, to, answered,
+    flat: answered ? Math.abs(points(to - from)) < points(noise) : null,
+    movers, still: moves.length - movers.length, asked: moves.length,
+    regulars: r.people.filter(p => p.returning && p.before != null && p.now != null).length,
+    unchanged: !r.changed,                             // the ordinary morning: there is no comparison to report
+    compare: r.compare || {}                           // the plain sentences the comparison carries
+  };
+}
+
+// Largest change first; people with the same change, or with none to show, keep the order of the cast.
+export function byMorningChange(people) {
+  const size = p => Math.abs(morningChange(p) ?? 0);
+  return people.map((p, i) => ({ p, i })).sort((a, b) => size(b.p) - size(a.p) || a.i - b.i).map(x => x.p);
+}

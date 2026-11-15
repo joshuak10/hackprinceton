@@ -4,9 +4,10 @@
 //   node run/room-seed.js            ask Jev whatever is not on record yet, then write the seed
 //   node run/room-seed.js --check    ask nothing; say how many answers are missing
 //
-// It asks every scenario below through askRoom, the same code the page's route uses, and keeps exactly the
-// answers those scenarios need. Answers already in the old seed or in data/room/record.json are reused, so a
-// second run costs nothing. Run it again after the cafe world, the cast or the engine's wording changes.
+// It asks every scenario below through askRoom and askMorning, the same code the page's routes use, and keeps
+// exactly the answers those scenarios need. Answers already in the old seed or in data/room/record.json are
+// reused, so a second run costs nothing. Run it again after the cafe world, its pool file, the cast or the
+// engine's wording changes.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadEnv, hasKey } from '../engine/env.js';
@@ -14,9 +15,11 @@ import { normalizeSpec } from '../engine/spec.js';
 import { buildJevRequest } from '../providers/jev.js';
 import { makeProvider } from '../providers/index.js';
 import { askRoom, recordProvider, defaultScenario } from './room.js';
+import { askMorning, defaultMorning, MORNING_OPTIONS } from './room-morning.js';
 
 const here = rel => fileURLToPath(new URL(rel, import.meta.url));
 const WORLD = here('../worlds/alder-pine-cafe.json');
+const POOL = here('../pools/alder-pine-cafe.json');
 const SEED = here('../web/room/seed-record.json');
 const LOCAL = here('../data/room/record.json');
 const APP = here('../web/room/app.js');
@@ -47,6 +50,25 @@ export function seedScenarios(rawSpec, presets = presetSigns()) {
   return list;
 }
 
+// The next morning (docs/PROTOTYPE.md §17b): the ordinary morning the mode opens on, every morning one click
+// away from it, and every last visit that happened yesterday (each wait, served or left). The 30-minute wait
+// that ended in leaving is also kept at each date, because that is the line of the demo script. Two or more
+// controls changed together are asked live.
+export function seedMornings(pool) {
+  const base = defaultMorning(pool), o = MORNING_OPTIONS, list = [{}];
+  for (const wait of o.wait) {
+    if (wait !== base.wait) list.push({ wait });
+    if (wait >= 1) list.push({ wait, outcome: 'left' });
+  }
+  for (const daysAgo of o.daysAgo) {
+    if (daysAgo === base.daysAgo) continue;
+    list.push({ daysAgo }, { wait: Math.max(...o.wait), outcome: 'left', daysAgo });
+  }
+  for (const priceChange of o.priceChange) if (priceChange !== 0) list.push({ priceChange });
+  for (const key of ['card', 'remark', 'rating', 'message']) for (const value of o[key]) list.push({ [key]: value });
+  return list;
+}
+
 function readRecord(file) {
   try { return Object.entries(JSON.parse(readFileSync(file, 'utf8'))).filter(([, v]) => v && v.answers); } catch { return []; }
 }
@@ -73,8 +95,15 @@ async function main() {
     failed += out.failed;
     asked += out.askedLive;
   }
+  const pool = JSON.parse(readFileSync(POOL, 'utf8'));
+  const mornings = seedMornings(pool);
+  for (const scenario of mornings) {
+    const out = await askMorning({ spec: raw, pool, scenario, provider });
+    failed += out.failed;
+    asked += out.askedLive;
+  }
   const missing = [...needed].filter(h => !record.has(h)).length;
-  console.log(`${scenarios.length} scenarios need ${needed.size} answers; ${asked} asked just now, ${missing} missing.`);
+  console.log(`${scenarios.length} moments at the counter and ${mornings.length} mornings need ${needed.size} answers; ${asked} asked just now, ${missing} missing.`);
   if (live) {
     const s = inner.stats();
     console.log(`Jev: ${s.requests} requests, ${s.inputTokens} input tokens, about $${s.estCostUSD.toFixed(4)}${s.firstError ? `; first error: ${s.firstError}` : ''}`);
