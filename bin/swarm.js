@@ -85,7 +85,7 @@ Usage: swarm <command> [options]
   serve [--port 4173]               Start the local viewer
   days <pool.json> [--days 10] [--seeds 3] [--seed 7] [--provider rules|jev]
        [--change staff+1,price+0.5,promo20,card10] [--out data/days/<name>.json]
-       [--baseline-from data/days/<earlier>.json]
+       [--baseline-from data/days/<earlier>.json] [--remember outcome]
                                     The same people over days (docs/PROTOTYPE.md §21): the baseline and
                                     each change on the same seeds. Unvalidated; with rules it is a dry run
   sanity [--model jev-latest]       Live Jev checks (makes a few hundred API calls)
@@ -150,7 +150,7 @@ const COMMANDS = {
   },
   'import-mesh': { min: 1, max: 1, flags: ['out', 'up'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
   serve: { min: 0, max: 0, flags: ['port'], run: cmdServe },
-  days: { min: 1, max: 1, flags: ['days', 'seeds', 'seed', 'provider', 'change', 'baseline-from', ...JEV_FLAGS, 'out', 'json'], run: cmdDays },
+  days: { min: 1, max: 1, flags: ['days', 'seeds', 'seed', 'provider', 'change', 'baseline-from', 'remember', ...JEV_FLAGS, 'out', 'json'], run: cmdDays },
   sanity: { min: 0, max: 0, flags: ['model'], run: cmdSanity }
 };
 
@@ -518,6 +518,11 @@ async function cmdDays([ref], flags) {
   let pool;
   try { pool = JSON.parse(readFileSync(file, 'utf8')); } catch (err) { throw new CliError(`${ref} is not valid JSON: ${err.message}`); }
   if (!pool.world) throw new CliError(`${ref} has no "world"`);
+  // --remember outcome: the conservative run, where only leaving without ordering is remembered (§21b).
+  if (flags.remember !== undefined) {
+    if (!['wait', 'outcome'].includes(flags.remember)) throw new CliError('--remember is wait or outcome');
+    pool = { ...pool, rules: { ...(pool.rules || {}), remember: flags.remember } };
+  }
   const { file: worldFile, raw } = readWorld(pool.world);
   const spec = checkedSpec(raw, shortPath(worldFile));
   const { compareDays, changeFor, renderDays } = await import('../run/days.js');
@@ -550,7 +555,7 @@ async function cmdDays([ref], flags) {
     writeFileSync(out, JSON.stringify({ createdAt: new Date().toISOString(), pool: shortPath(file), provider: providerName, providerStats, ...result }, null, 1));
   }
   if (flags.json) { printJson({ provider: providerName, providerStats, ...result }); return 0; }
-  for (const line of renderDays(result, { title: pool.title || spec.title, provider: providerName })) print(line);
+  for (const line of renderDays(result, { title: pool.title || spec.title, provider: providerName, remember: pool.rules?.remember })) print(line);
   print();
   print(`Provider: ${providerStatsLine(providerStats)}`);
   if (flags.out) print(`Wrote ${shortPath(resolve(flags.out))}`);

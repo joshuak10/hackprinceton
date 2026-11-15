@@ -53,7 +53,7 @@ export function normalizePool(raw) {
     size: Math.round(num(r.size, 200, 1, 5000)), people,
     ordinaryWait: num(r.ordinaryWait, 5, 0, 120), trialPerWeek: num(r.trialPerWeek, 0.5, 0.01, WEEK),
     walkPast: num(r.walkPast, 0.03, 0, 1), tellReach: num(r.tellReach, 0.3, 0, 20), habit,
-    rules: { lossAversion: num(r.rules?.lossAversion, 2, 1, 5) }
+    rules: { lossAversion: num(r.rules?.lossAversion, 2, 1, 5), remember: r.rules?.remember === 'outcome' ? 'outcome' : 'wait' }
   };
 }
 
@@ -212,7 +212,7 @@ async function morning({ people, d, ctx, pool, spec, provider }) {
     const { today, plain, reference, priceRise } = recordsFor(person, d, ctx);
     const mind = mindOf(person.persona);
     const req = state => morningRequest({ spec, shopId: ctx.shopId, mind, state, id: `d${d}-${person.id}` });
-    const job = { person, usual: usualToday(person, pool), factor: priceRise ? pool.rules.lossAversion : 1, today: null, plain: null, reference: null };
+    const job = { person, been: person.established || person.went.length > 0, usual: usualToday(person, pool), factor: priceRise ? pool.rules.lossAversion : 1, today: null, plain: null, reference: null };
     const usualRecord = req(plain ?? today), ref = req(reference);
     // Nothing remembered differs from an ordinary day: Jev is not asked about the memories.
     if (JSON.stringify(usualRecord.observation) !== JSON.stringify(ref.observation)) {
@@ -272,13 +272,15 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
     // 2. The morning question.
     const { jobs, asked: n } = await morning({ people, d, ctx, pool, spec, provider });
     asked += n;
-    // The zero point, worked out on the baseline and reused by a change on the same seed (§21b).
-    const own = centerOf(jobs);
-    ownCenters.push(round4(own));
-    const center = centers ? (Number(centers[d]) || 0) : own;
+    // The zero points, worked out on the baseline and reused by a change on the same seed (§21b): one for
+    // people who have been to the shop and one for people who have not. A friend's remark moves a newcomer
+    // far more than a regular, and one zero point for both would pull the regulars down to pay for it.
+    const own = [round4(centerOf(jobs.filter(j => j.been))), round4(centerOf(jobs.filter(j => !j.been)))];
+    ownCenters.push(own);
+    const used = centers ? centers[d] ?? [0, 0] : own;
     const arrivals = [];
     for (const job of jobs) {
-      job.chance = chanceOf({ usual: job.usual, env: job.env, center, delta: job.delta, factor: job.factor });
+      job.chance = chanceOf({ usual: job.usual, env: job.env, center: Number(used[job.been ? 0 : 1]) || 0, delta: job.delta, factor: job.factor });
       const rng = seedRng(seed, 'go', job.person.id, d);
       const u = rng(), jitter = (rng() * 2 - 1) * TIME_JITTER;
       if (u >= job.chance) continue;
@@ -311,7 +313,11 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
       if (servedLine) {
         // Peak-end (rule): the visit is remembered by its worst wait and that it ended in being served.
         const paid = round2(promo ? price * (1 - promo.priceOff) : price);
-        person.visits.push({ day: d, wait: rememberedWait(Math.max(...mine.map(l => l.wait))), outcome: 'served', ahead: null, paid });
+        // rules.remember 'outcome': a served visit is remembered as an ordinary one, whatever the wait, so
+        // only leaving without ordering is remembered. That is the part with a published direction and no
+        // unchecked size (§20d): a floor under the result.
+        const waited = pool.rules.remember === 'outcome' ? pool.ordinaryWait : rememberedWait(Math.max(...mine.map(l => l.wait)));
+        person.visits.push({ day: d, wait: waited, outcome: 'served', ahead: null, paid });
         person.served++; person.lastPaid = price;
         day.served++; day.waitSum += servedLine.wait;
         if (card) { person.card = person.card || { have: 0 }; person.card.have = person.card.have + 1 >= card.need ? 0 : person.card.have + 1; }
@@ -442,13 +448,14 @@ const signed = (k, x) => (k === 'cameBack' ? `${x >= 0 ? '+' : '−'}${Math.abs(
 const pass = v => (v == null ? 'not enough data' : v ? 'pass' : 'FAIL');
 
 // Plain-text lines for one compareDays result.
-export function renderDays(result, { title = '', provider = '' } = {}) {
+export function renderDays(result, { title = '', provider = '', remember = 'wait' } = {}) {
   const L = [];
   const seeds = result.seeds;
   L.push(`${title} · ${result.days} weekday mornings · seeds ${seeds[0]}..${seeds.at(-1)} · ${provider}`);
   L.push('Unvalidated: every usual rate in the pool is an assumption, and the size of the wait effect is unchecked');
   L.push('(docs/PROTOTYPE.md §20d, §21). Read a change against its baseline on the same seeds, not the levels.');
   if (provider !== 'jev') L.push('Rule model: nobody reads memory, so everyone comes at their usual rate. This is a dry run.');
+  if (remember === 'outcome') L.push('Conservative run: a served visit is remembered as ordinary; only leaving without ordering is remembered.');
   L.push('', `Baseline, average of ${seeds.length} seed${seeds.length === 1 ? '' : 's'}:`);
   for (const k of METRICS) {
     const xs = result.baselines.map(b => b.summary[k]).filter(x => x != null);

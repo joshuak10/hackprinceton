@@ -107,7 +107,8 @@ describe('days: the pool', () => {
   test('defaults fill in, values are clamped, and a pool with no people cannot run', () => {
     const p = normalizePool({ people: { ines: { usualPerWeek: 9, knows: 2 } } });
     assert.deepEqual(p.people.ines, { usualPerWeek: 5, knows: 1, weight: 1, newcomer: false, dayVisitor: false });
-    assert.deepEqual([p.size, p.ordinaryWait, p.rules.lossAversion, p.habit.length, p.tellReach], [200, 5, 2, 5, 0.3]);
+    assert.deepEqual([p.size, p.ordinaryWait, p.rules.lossAversion, p.rules.remember, p.habit.length, p.tellReach], [200, 5, 2, 'wait', 5, 0.3]);
+    assert.equal(normalizePool({ people: {}, rules: { remember: 'outcome' } }).rules.remember, 'outcome');
     assert.throws(() => normalizePool({}), /people/);
   });
 
@@ -269,10 +270,28 @@ describe('days: a run', () => {
     const fond = { name: 'fond', external: false, async decideMany(reqs) { return reqs.map(r => ({ provider: 'jev', yesProb: r.observation.memory?.some(m => /about 5 minutes/.test(m)) ? 0.5 : 0.7 })); }, stats() { return {}; } };
     const plain = await runDays({ pool: POOL, spec: WORLD, days: 6, seed: 7, provider: rules() });
     const run = await runDays({ pool: POOL, spec: WORLD, days: 6, seed: 7, provider: fond });
-    assert.ok(run.centers.slice(1).some(c => c > 0.3), 'the raw move is large');
+    assert.ok(run.centers.slice(1).some(c => c[0] > 0.3), 'the raw move is large');
     const visits = r => r.days.reduce((s, d) => s + d.went, 0);
     assert.ok(Math.abs(visits(run) - visits(plain)) <= 0.08 * visits(plain), `${visits(run)} against ${visits(plain)}`);
-    assert.deepEqual(plain.centers, [0, 0, 0, 0, 0, 0]);
+    assert.deepEqual(plain.centers, Array(6).fill([0, 0]));
+  });
+
+  test('regulars and people who have never been have separate zero points', async () => {
+    // This provider likes every real memory more than an ordinary one, so people who have been all move up.
+    const fond = { name: 'fond', external: false, async decideMany(reqs) { return reqs.map(r => ({ provider: 'jev', yesProb: r.observation.memory?.some(m => /about 5 minutes/.test(m)) ? 0.5 : 0.7 })); }, stats() { return {}; } };
+    const base = await runDays({ pool: POOL, spec: WORLD, days: 6, seed: 7, provider: fond });
+    assert.ok(base.centers.every(c => Array.isArray(c) && c.length === 2));
+    assert.ok(base.centers.slice(1).every(c => c[0] > 0.3), 'people who have been: zeroed at their own average');
+    assert.ok(base.centers.every(c => c[1] === 0), 'people who have never been have nothing to remember, and are left alone');
+  });
+
+  test('the conservative run remembers only leaving: a served visit is an ordinary one', async () => {
+    const run = await runDays({ pool: { ...POOL, rules: { remember: 'outcome' } }, spec: WORLD, days: 5, seed: 7, provider: rules() });
+    const visits = run.people.flatMap(p => p.visits);
+    assert.ok(visits.filter(v => v.outcome === 'served').every(v => v.wait === 5));
+    assert.ok(visits.some(v => v.outcome === 'left'));
+    const text = renderDays(await compareDays({ pool: POOL, spec: WORLD, days: 4, seeds: [7], provider: rules(), changes: [] }), { provider: 'rules', remember: 'outcome' }).join('\n');
+    assert.match(text, /Conservative run/);
   });
 
   test('each evening writes what happened into the person\'s record', async () => {
@@ -319,7 +338,7 @@ describe('days: a run', () => {
     assert.ok(read.asked > 0);
     // The baseline is its own zero point, so its total stays near the usual rates.
     assert.ok(Math.abs(visits(read) - visits(plain)) <= 0.08 * visits(plain), `${visits(read)} against ${visits(plain)}`);
-    assert.ok(read.centers.some(c => c < 0), 'on the baseline the average memory is worse than an ordinary visit');
+    assert.ok(read.centers.some(c => c[0] < 0), 'on the baseline the average memory is worse than an ordinary visit');
     // Fewer people turn away, so fewer bad memories than on the baseline: more visits.
     const staffed = await runDays({ pool: POOL, spec: WORLD, days: 10, seed: 7, provider: reader(), change: changeFor('staff+1', spec, 'bakery', 10), centers: read.centers });
     assert.ok(visits(staffed) > visits(read), `${visits(staffed)} against ${visits(read)}`);
