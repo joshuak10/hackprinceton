@@ -73,7 +73,7 @@ export async function cmdEnvironmentBuild(args, flags, {
   cwd = process.cwd(), out = stdout, err = stderr, build = buildEnvironment, serviceFactory = defaultService
 } = {}) {
   const backend = flags.backend ?? 'claude-code';
-  if (!['claude-code', 'codex', 'anthropic'].includes(backend)) throw new Error('--backend must be claude-code, codex or anthropic.');
+  if (!['claude-code', 'anthropic'].includes(backend)) throw new Error('--backend must be claude-code or anthropic.');
   if (flags.brief && args.length) throw new Error('Use a description or --brief FILE, not both.');
   let raw = flags.brief ? await readInput(flags.brief, cwd) : { description: args.join(' ') };
   if (flags.objectives !== undefined) raw = { ...raw, objectives: flags.objectives };
@@ -123,7 +123,7 @@ export async function cmdEnvironmentValidate([file], flags, { cwd = process.cwd(
 export async function cmdEnvironmentRun([file], flags, {
   cwd = process.cwd(), out = stdout, err = stderr, serviceFactory = defaultService
 } = {}) {
-  const provider = flags.provider || 'rules';
+  const provider = flags.provider || (process.env.TYPESAFE_API_KEY?.trim() ? 'jev' : 'rules');
   if (!['rules', 'jev'].includes(provider)) throw new Error('--provider must be rules or jev.');
   const seed = whole(flags.seed, 'seed', 7, 0x7fffffff);
   const maxRequests = whole(flags['max-requests'], 'max-requests', 2000, 20000);

@@ -37,7 +37,8 @@ async function entries(dir) {
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
 }
 function options(input) {
-  const provider = input.provider ?? 'rules';
+  // Jev decides for every agent when a key is set; the rule model is the fallback, and can always be asked for.
+  const provider = input.provider ?? (process.env.TYPESAFE_API_KEY?.trim() ? 'jev' : 'rules');
   if (!['rules', 'jev'].includes(provider)) throw fail(400, 'provider must be rules or jev.');
   const seed = input.seed ?? 7, maxRequests = input.maxRequests ?? 2000;
   if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) throw fail(400, 'seed must be an integer from 0 to 2147483647.');
@@ -170,7 +171,7 @@ export function createEnvironmentService({ root = process.cwd(), builder = build
   function build(input) {
     const brief = normalizeBrief(input.brief);
     const backend = input.backend ?? 'claude-code';
-    if (!['claude-code', 'codex', 'anthropic'].includes(backend)) throw fail(400, 'backend must be claude-code, codex or anthropic.');
+    if (!['claude-code', 'anthropic'].includes(backend)) throw fail(400, 'backend must be claude-code or anthropic.');
     if (input.model !== undefined && (typeof input.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(input.model))) throw fail(400, 'model must be a model identifier.');
     return launch('build', async ({ signal, onProgress, job }) => {
       const result = await builder(brief, { backend, model: input.model, signal, onProgress });

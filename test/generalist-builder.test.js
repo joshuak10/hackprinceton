@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
 import { access } from 'node:fs/promises';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import Ajv from 'ajv';
 import { buildEnvironment, normalizeBrief } from '../generalist/builder.js';
 import { ENVIRONMENT_SCHEMA } from '../generalist/spec.js';
@@ -21,7 +23,9 @@ const brief = { description: 'An insurance claims workflow.', guidelines: ['Neve
 function fakeSpawn(replies, { stalled = false, exitCode = 0, chunkSize = Infinity, stderr = '' } = {}) {
   const calls = [];
   function spawn(executable, args, options) {
-    const call = { executable, args, options, prompt: '', signals: [] };
+    const call = { executable, args, options, prompt: '', signals: [], instructions: '' };
+    // What the agent was told besides its goal: the file named after --append-system-prompt-file.
+    try { call.instructions = readFileSync(args[args.indexOf('--append-system-prompt-file') + 1], 'utf8'); } catch { /* not given */ }
     calls.push(call);
     const child = new EventEmitter();
     child.stdout = new PassThrough(); child.stderr = new PassThrough();
@@ -32,7 +36,13 @@ function fakeSpawn(replies, { stalled = false, exitCode = 0, chunkSize = Infinit
         done();
         if (stalled) return;
         queueMicrotask(() => {
-          const reply = replies[Math.min(calls.length - 1, replies.length - 1)];
+          let reply = replies[Math.min(calls.length - 1, replies.length - 1)];
+          // A reply with an environment (or raw text in `result`) stands for an agent that wrote environment.json
+          // and finished. Any other reply is the process's own output, passed through as it is.
+          if (reply && typeof reply === 'object' && !reply.is_error && (reply.structured_output || typeof reply.result === 'string')) {
+            writeFileSync(join(options.cwd, 'environment.json'), reply.structured_output ? JSON.stringify(reply.structured_output) : reply.result);
+            reply = { type: 'result', subtype: 'success', is_error: false, num_turns: 2, total_cost_usd: 0.01 };
+          }
           const bytes = Buffer.from(typeof reply === 'string' ? reply : JSON.stringify(reply));
           for (let at = 0; at < bytes.length; at += chunkSize) child.stdout.write(bytes.subarray(at, at + chunkSize));
           if (stderr) child.stderr.write(stderr);
@@ -91,7 +101,7 @@ test('invalid generated references are fed back and repaired within the bounded 
   await assert.rejects(buildEnvironment(brief, { maxAttempts: 2, generator: async () => ({ version: 1 }) }), err => err.code === 'BUILD_FAILED' && err.errors.length > 0);
 });
 
-test('headless backend fixes permissions, tools and settings and sends user data only on stdin', async () => {
+test('the headless agent gets a goal, one tool and none of the user\'s settings; the brief stays off the command line', async () => {
   const { spawn, calls } = fakeSpawn([{ type: 'result', subtype: 'success', structured_output: valid() }]);
   const result = await buildEnvironment({ ...brief, description: '$(touch do-not-run); --dangerously-skip-permissions' }, { spawn, executable: '/test/claude', model: 'test-model' });
   assert.equal(result.attempts, 1);
@@ -99,21 +109,27 @@ test('headless backend fixes permissions, tools and settings and sends user data
   assert.equal(call.executable, '/test/claude');
   assert.equal(call.options.shell, false);
   assert.notEqual(call.options.cwd, process.cwd());
-  for (const option of ['-p', '--safe-mode', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence']) assert.ok(call.args.includes(option));
-  assert.equal(call.args[call.args.indexOf('--tools') + 1], '');
+  for (const option of ['-p', '--safe-mode', '--strict-mcp-config', '--no-session-persistence']) assert.ok(call.args.includes(option));
+  assert.ok(!call.args.includes('--disable-slash-commands'), '/goal is a slash command');
+  assert.equal(call.args[call.args.indexOf('--tools') + 1], 'Write');
+  assert.equal(call.args[call.args.indexOf('--allowed-tools') + 1], 'Write');
   assert.equal(call.args[call.args.indexOf('--setting-sources') + 1], '');
-  assert.equal(call.args[call.args.indexOf('--permission-mode') + 1], 'dontAsk');
+  assert.equal(call.args[call.args.indexOf('--permission-mode') + 1], 'acceptEdits');
+  assert.equal(call.args[call.args.indexOf('--model') + 1], 'test-model');
   assert.ok(!call.args.includes('--dangerously-skip-permissions'));
   assert.ok(!call.args.some(arg => arg.includes('touch do-not-run')));
-  assert.match(call.prompt, /touch do-not-run/);
+  assert.match(call.prompt, /^\/goal The file .+environment\.json holds one complete Swarmscope environment/);
+  assert.doesNotMatch(call.prompt, /touch do-not-run/);
+  assert.match(call.instructions, /touch do-not-run/);
+  assert.deepEqual(result.builder.turns, 2);
   await assert.rejects(access(call.options.cwd), err => err.code === 'ENOENT');
 });
 
-test('the actual CLI output schema compiles with a draft-07 validator and enforces nested references', async () => {
+test('the schema the agent is given compiles with a draft-07 validator and enforces nested references', async () => {
   const { spawn, calls } = fakeSpawn([{ structured_output: valid() }]);
   await buildEnvironment(brief, { spawn });
-  const args = calls[0].args;
-  const schema = JSON.parse(args[args.indexOf('--json-schema') + 1]);
+  const parts = calls[0].instructions.split('\n\n');
+  const schema = JSON.parse(parts[parts.indexOf('Environment schema:') + 1]);
   assert.deepEqual(schema, ENVIRONMENT_SCHEMA, 'the generator and runtime share one canonical schema');
   assert.equal(schema.$schema, 'http://json-schema.org/draft-07/schema#');
   assert.ok(schema.definitions);
@@ -136,10 +152,11 @@ test('the actual CLI output schema compiles with a draft-07 validator and enforc
 });
 
 test('headless invalid JSON repairs; process failures do not retry or expose diagnostics', async () => {
-  const repaired = fakeSpawn(['not json', { result: JSON.stringify(valid()) }]);
+  const repaired = fakeSpawn([{ result: 'not json' }, { result: JSON.stringify(valid()) }]);
   const result = await buildEnvironment(brief, { spawn: repaired.spawn });
   assert.equal(result.attempts, 2);
-  assert.match(repaired.calls[1].prompt, /invalid JSON/);
+  assert.match(repaired.calls[1].instructions, /not valid JSON/);
+  assert.match(repaired.calls[1].prompt, /with every listed validation error fixed/);
   const failed = fakeSpawn(['secret-looking stdout'], { exitCode: 1 });
   await assert.rejects(buildEnvironment(brief, { spawn: failed.spawn }), err => err.code === 'BUILDER_FAILED' && !err.message.includes('secret-looking'));
   assert.equal(failed.calls.length, 1);
@@ -170,26 +187,6 @@ test('known Claude login failures are actionable and diagnostics never reach the
   }
   const unknown = fakeSpawn([''], { exitCode: 1, stderr: 'Transport-specific internal failure SECRET-123' });
   await assert.rejects(buildEnvironment(brief, { spawn: unknown.spawn }), error => error.code === 'BUILDER_FAILED' && !error.message.includes('SECRET-123') && !/auth|login/i.test(error.message));
-});
-
-test('schema preflight errors are classified before authentication and never suggest login', async () => {
-  const diagnostic = 'Error: --json-schema is not a valid JSON Schema: no schema with key or ref "https://json-schema.org/draft/2020-12/schema"';
-  for (const failure of [
-    { output: '', exitCode: 1, stderr: `${diagnostic}\nPrivate diagnostics SECRET-123` },
-    { output: { is_error: true, result: diagnostic + '\nPlease run /login. SECRET-123' }, exitCode: 0, stderr: '' },
-    { output: diagnostic, exitCode: 1, stderr: 'SECRET-123' }
-  ]) {
-    const { spawn, calls } = fakeSpawn([failure.output], failure);
-    await assert.rejects(buildEnvironment(brief, { spawn }), error => {
-      assert.equal(error.code, 'BUILDER_SCHEMA_INVALID');
-      assert.match(error.message, /schema before generation/);
-      assert.match(error.message, /draft-07/);
-      assert.doesNotMatch(error.message, /auth|login|SECRET-123/);
-      return true;
-    });
-    assert.equal(calls.length, 1, 'a CLI preflight failure is not a model repair attempt');
-    await assert.rejects(access(calls[0].options.cwd), err => err.code === 'ENOENT');
-  }
 });
 
 test('headless timeouts and cancellation terminate the child and remove its temporary workspace', async () => {

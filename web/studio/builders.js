@@ -1,13 +1,10 @@
 // Builder selection is separate from Jev/rules: it controls environment authoring only.
-export const BUILDER_BACKENDS = ['claude-code', 'codex', 'anthropic'];
-export const builderName = backend => backend === 'codex' ? 'Codex' : 'Claude';
+export const BUILDER_BACKENDS = ['claude-code', 'anthropic'];
+export const builderName = () => 'Claude';
 
 export function builderHelp(backend, health = {}) {
-  if (backend === 'codex') {
-    return 'Uses your local Codex sign-in. If needed, run codex login in a terminal. Generated definitions are validated before agents run.';
-  }
   if (backend === 'claude-code') {
-    return 'Uses your local Claude Code sign-in. If needed, run claude auth login in a terminal. Generated definitions are validated before agents run.';
+    return 'A headless Claude Code agent (claude -p) is given the goal of writing the environment. It uses your local Claude Code sign-in; if needed, run claude auth login in a terminal. The definition is validated before any agent runs.';
   }
   return (health.claude ? 'Anthropic API is configured.' : 'Requires ANTHROPIC_API_KEY in .env.local.') +
     ' Claude returns a validated environment definition.';

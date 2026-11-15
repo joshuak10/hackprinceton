@@ -1,7 +1,7 @@
 # General environment engine
 
 Swarmscope can model operational workflows without coding a new simulator for each domain.
-Users supply the environment, guidelines, objectives and constraints. Claude or Codex builds a
+Users supply the environment, guidelines, objectives and constraints. A headless Claude agent builds a
 declarative definition; Jev chooses actions for each actor; the runtime owns every state mutation and resource
 reservation. The existing spatial crowd engine remains separate and compatible.
 
@@ -67,30 +67,13 @@ node bin/swarm.js env-run data/my-warehouse.json --provider rules
 ### Builder backends
 
 The default `--backend claude-code` uses an installed, authenticated Claude Code CLI. It runs
-headlessly in a temporary directory, with tools, MCP servers, skills, hooks and project settings
-disabled. The model can write only structured output; it never edits this repository or executes
-generated code. `SWARM_CLAUDE_BIN` selects the executable, and `--model` or `SWARM_BUILDER_MODEL`
-selects a model. Without an override the CLI chooses its default. Provider credentials configured
+headlessly in a temporary directory as an agent with a goal (`claude -p` given `/goal ...`), with one tool,
+Write, and with MCP servers, skills, hooks and project settings disabled. It writes one file, the
+environment, which is then validated; it never edits this repository or executes generated code. `SWARM_CLAUDE_BIN` selects the executable, and `--model` or `SWARM_BUILDER_MODEL`
+selects a model. Without an override the agent runs on `sonnet`. Provider credentials configured
 only inside user settings must instead be supplied through the environment for this isolated job.
 
-`--backend codex` uses the installed, authenticated Codex CLI via `codex exec`. Use `codex login`
-if needed. It runs noninteractively in a temporary directory with a read-only sandbox; command
-execution, integrations, rules and user configuration are disabled. Some built-in tools may remain
-available within the sandbox. `SWARM_CODEX_BIN` selects its executable;
-`--model` or `SWARM_CODEX_MODEL` selects its model. Without an override the CLI chooses its default.
-`SWARM_BUILDER_MODEL` does not affect Codex.
-
-If Codex reports that the model needs a newer CLI, update the executable or point `SWARM_CODEX_BIN`
-to a current installation. If its default model is unavailable for your account, choose an
-available model in the drawer's Model field, pass `--model`, or set `SWARM_CODEX_MODEL`. These
-failures are reported separately from authentication problems. Restart the server after changing
-`.env.local` so it loads the new settings.
-
-Codex's strict output schema uses an `environment_json` string envelope around the generated
-definition. The builder unwraps it and validates the same canonical environment contract used by
-Claude, including references and mechanics. This transport does not change saved definitions,
-simulation behavior or the repair loop. The CLI and Studio record the selected backend in saved
-builder metadata; a null requested model means the CLI chose its default.
+The CLI and the environment page record the builder and its model in saved definitions.
 
 `--backend anthropic` uses `ANTHROPIC_API_KEY` and the existing compiler model default. The same
 Claude model override applies. `TYPESAFE_API_KEY` is needed only for Jev simulation, not for
@@ -158,7 +141,7 @@ active environment run; additional jobs receive a conflict response.
 | `GET environments` | `{ environments: [...] }` |
 | `GET environments/:id` | Full saved artifact, including spec, brief and builder metadata |
 | `POST environments` | `{ spec, brief? }` → saved artifact |
-| `POST environment-builds` | `{ brief, backend?, model? }` → async job; backend is `claude-code` (default), `codex` or `anthropic` |
+| `POST environment-builds` | `{ brief, backend?, model? }` → async job; backend is `claude-code` (default) or `anthropic` |
 | `GET environment-jobs/:id` | Job status: queued, running, done, error or cancelled; progress and result IDs |
 | `POST environment-jobs/:id/cancel` | `{}` → cancellation requested |
 | `GET environment-runs` | `{ runs: [...] }` |
@@ -201,9 +184,6 @@ HTTP behavior. They also compile the actual CLI schema with a draft-07 validator
 make no live model calls. Separately, on Nov 14, 2026, the full authenticated Claude Code 2.1.286
 builder generated and validated a tiny two-worker environment on its first attempt after the
 schema correction. Saving that definition and running it through the HTTP API with rules produced
-two completed tasks across three ticks and four recorded frames. The exact Codex builder path
-also generated and validated a two-worker, three-tick environment on its first attempt using
-Codex CLI 0.169.0-alpha.11.1 and `gpt-6-astra`, including the documented isolation flags and strict
-output envelope. A separate browser check built through Scope with Codex, ran the definition with
-rules, and verified two completed tasks, replay, agent inspection and restored builder/model
-selection after reloading the saved run. These checks do not verify Jev predictions.
+two completed tasks across three ticks and four recorded frames. The Codex builder that was checked the same way has since been removed. On the same day the
+headless agent with a goal built a theme park environment (64 seconds, first attempt) and Jev made
+1,143 decisions on it with no fallbacks; see `generalist/BUILDER.md`. These checks do not verify Jev predictions.

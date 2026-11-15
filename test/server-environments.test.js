@@ -69,29 +69,6 @@ test('HTTP build passes only approved arguments and never accepts executable pat
   assert.ok(!received.keys.includes('spawn'));
 });
 
-test('HTTP Codex builds preserve provider selection while executable and configuration overrides stay private', async t => {
-  let received;
-  const { get, post, finished } = await fixture(t, { builder: async (brief, options) => {
-    received = options;
-    const { data } = await get('/api/environment-examples');
-    return { brief, spec: data.examples[0].spec, builder: { backend: options.backend, model: options.model }, attempts: 1, warnings: [] };
-  } });
-  const started = await post('/api/environment-builds', {
-    brief: { description: 'A Codex environment' }, backend: 'codex', model: 'codex-fixture',
-    executable: '/untrusted/codex', codexExecutable: '/untrusted/codex', env: { CODEX_HOME: '/untrusted' }, args: ['--yolo']
-  });
-  assert.equal(started.status, 202, started.data.error);
-  const job = await finished(started.data.id);
-  assert.equal(job.status, 'done', job.error);
-  assert.equal(received.backend, 'codex');
-  assert.equal(received.model, 'codex-fixture');
-  assert.deepEqual(Object.keys(received).sort(), ['backend', 'model', 'onProgress', 'signal']);
-  const artifact = await get(`/api/environments/${job.environmentId}`);
-  assert.equal(artifact.data.source, 'codex');
-  assert.equal(artifact.data.builder.model, 'codex-fixture');
-  assert.equal((await post('/api/environment-builds', { brief: { description: 'Invalid backend' }, backend: 'arbitrary-shell' })).status, 400);
-});
-
 test('HTTP builder errors and cancellation are observable job states', async t => {
   let started = false;
   const { post, finished } = await fixture(t, { builder: (brief, { signal }) => {

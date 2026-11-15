@@ -65,25 +65,6 @@ test('builder output is validated, stores brief and provenance, and reports prog
   assert.ok(artifact.warnings.includes('Synthetic'));
 });
 
-test('Codex selection and model pass through the job service without replacing the Claude default', async t => {
-  const calls = [];
-  const { service } = await fixture(t, { builder: async (brief, options) => {
-    calls.push({ backend: options.backend, model: options.model });
-    return { spec, brief, builder: { backend: options.backend, model: options.model || null }, attempts: 1, warnings: [] };
-  } });
-  const codex = service.build({ brief: { description: 'Codex workflow' }, backend: 'codex', model: 'codex-fixture' });
-  const job = await finished(service, codex.id);
-  assert.equal(job.status, 'done', job.error);
-  const artifact = await service.getEnvironment(job.environmentId);
-  assert.equal(artifact.source, 'codex');
-  assert.equal(artifact.builder.backend, 'codex');
-  assert.equal(artifact.builder.model, 'codex-fixture');
-  const defaultJob = await finished(service, service.build({ brief: { description: 'Default workflow' } }).id);
-  assert.equal(defaultJob.status, 'done', defaultJob.error);
-  assert.equal((await service.getEnvironment(defaultJob.environmentId)).builder.model, null);
-  assert.deepEqual(calls, [{ backend: 'codex', model: 'codex-fixture' }, { backend: 'claude-code', model: undefined }]);
-});
-
 test('concurrent builds are refused and cancellation permits another build', async t => {
   const { service } = await fixture(t, { builder: (brief, { signal }) => new Promise((resolve, reject) => {
     if (signal.aborted) return reject(signal.reason);
