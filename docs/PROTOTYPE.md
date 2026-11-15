@@ -1318,3 +1318,33 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 - **The Claude Code advisor** (`.claude/commands/advise.md`) has the same rule and the `swarm days` command.
 - **The dashboard** does not use the rule yet: a typed question there does not change what is simulated.
 
+### 21e. The sushi restaurant is the real case (Nov 14)
+
+**Decision (Josh).** The café was a stand-in. The business the team interviewed is the sushi restaurant, so loyalty is studied there. The café's pool and results stay as the first check of the method.
+
+**What changed to fit a restaurant.**
+- **One business, several places.** A pool may give `places` (here the counter and the table), with a `name`, in place of `shop`. The morning question names the business once, at the average of its prices. People are not sent to one place: on arriving they choose the counter or the table as in any run. A visit is remembered from whichever place they waited at.
+- **Seats, not a line.** `seated: true` words a memory as "waited about 20 minutes for a seat at the sushi restaurant, then was seated", "…then left without eating", "found 5 people waiting for a seat … and left without eating", "no wait …, seated right away".
+- **A day is a Friday evening.** `daysPerWeek: 1`, `dayName: "Friday evening"`: one simulated day is one Friday, memories are a week apart, and "per week" numbers are per Friday. `regular: { visits: 2, days: 4 }`: a regular came on at least 2 of the last 4 Fridays.
+- **The pool** (`pools/sushi-restaurant.json`, 752 people) is written to fill the room as the one-evening world does: about 36 people a Friday in its group shares. Each kind of person's weight is 1 ÷ (share who already come × how often they come), so the many people who come rarely are in it. Sam and Tom are in town for one night and are left out. Every rate is an assumption.
+- **Changes:** `promo20`, `price+2`, `card10`, and `seats+2` (two more seats at the first place; `staff+N` is the same lever at a counter). A promotion lowers the price for everyone who comes and is told once as a message.
+
+**The memory check in dinner words** (`node validation/jev-return-probe.js --place sushi`; 359 questions asked 5 times, 1,795 requests, about 5 cents; 8 returning diners, 5 who have never been). 13 of 16 published effects pass, none goes the wrong way.
+
+| | The sushi restaurant | The café (§20d) |
+|---|---|---|
+| A very good against a very bad last visit | +31.4 points | +34.9 |
+| Last wait of 0, 5, 10, 20, 30 minutes | 67, 70, 68, 63, 59% | 69, 58, 51, 43, 40% |
+| A 30-minute wait against none | −8.4 | −28.9 |
+| Waited 20 minutes and left, against served | −27.6 | −10.0 |
+| Turned away at the door, against an ordinary visit | −42.3 | −24.5 |
+| A price rise of one step ($2; 50¢) | −1.2 | −4.3 |
+| 20% off today: people who have never been; regulars | +1.2 (unclear); 0.0 | +11.0; +7.9 |
+| A friend's good remark, people who have never been | +13.0 | +20.3 |
+| Stamps at 8 of 10 against 2 of 10 | +3.7 | +10.3 |
+
+- **Here, waiting for a seat is forgiven and going home unfed is not.** Thirty minutes for a seat costs 8 points; being turned away at the door costs 42.
+- **Price and the promotion do almost nothing,** which agrees with the dashboard's own test of the promotion (§18: no clear difference in people seated).
+- **The same fact in other words moved the answer by 9.7 points** ("stood waiting for a seat for around twenty minutes … before sitting down"). At the café it moved 1.2. So Jev is more sensitive to wording here, and differences under about 10 points between differently worded memories should not be read.
+- The head start on a stamp card and a friend's bad remark gave no clear response.
+

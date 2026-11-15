@@ -1,6 +1,7 @@
 # Swarmscope: new and returning customers over days (draft spec)
 
-> **Version:** v0.4 draft · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.5 draft · Nov 14, 2026 · HackPrinceton Fall 2026
+> **The real case is the sushi restaurant (v0.5, Josh).** The café in this spec was a stand-in. The multi-day loop is built ([docs/PROTOTYPE.md](docs/PROTOTYPE.md) §21) and now studies the sushi restaurant the team interviewed (§21e): a Friday evening is the day, seats replace the line, and its memory check found that being turned away, not the wait or the price, is what keeps diners from coming back. Ask the room and its "next morning" mode were removed. Sections below that describe the café, the weekend scope or the next-morning mode are out of date until revised.
 > **Scope:** item 1 of [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md) §9, "Repeat visits with memory", worked out in detail. **Built so far:** the morning question and the return probe (section 8, step 1; results in section 8b). The multi-day loop is not built. The engine contract, [docs/PROTOTYPE.md](docs/PROTOTYPE.md), still governs the code; when this is approved, its engine parts go there as a new section before any code.
 > **Before Sunday's submission:** only the return probe and the "next morning" mode in Ask the room (section 8, steps 1 and 2). The multi-day loop comes after the hackathon.
 > **Source:** two research passes on Nov 14. The first (one research agent) gathered the published effects in section 4. The second (three read-only agents: one read the engine code, one traced vendor benchmarks to their origin, one worked out capacity and margin, removed in v0.3) added sections 2b, 4b, 5b and 9b. Web sources are listed in section 11. The published figures were gathered from papers, abstracts and summaries and have not all been checked against the full papers. Treat each as "to confirm" until someone reads the source.
@@ -279,6 +280,7 @@ Added by the second pass:
 
 ## 12. Change log
 
+- **v0.5 draft · Nov 14, 2026.** The loop is built and moved to the sushi restaurant, the real case (header; docs/PROTOTYPE.md §21, §21e). The advisor knows when a question needs it (§21d). Ask the room and the next-morning mode were removed with the other pages.
 - **v0.4 draft · Nov 14, 2026.** The morning question and the return probe are built and run (section 8, step 1). Not yet reviewed by the team.
   - What the probe found, and five decisions for the loop (section 8b).
   - The morning question is yes or no, and a person's chance is their usual rate moved by Jev's answer (section 5).
