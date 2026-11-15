@@ -601,6 +601,22 @@ a.btn.quiet:hover { color: var(--text); }
 .persona dd { margin: 0; }
 .insp-sec { margin: 16px 0 6px; font-size: var(--fs-m); font-weight: 600; }
 .insp-note { margin-top: 14px; }
+/* Change their day and ask Jev again (§9c): one text box, three ready sentences, and what moved. */
+.ask-again { margin-top: 14px; padding: 2px 0 12px; border-top: 1px solid var(--line); }
+.ask-again form { display: flex; gap: 6px; margin-top: 8px; }
+.ask-again input {
+  flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--field); border-radius: var(--radius);
+  background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-s);
+}
+.ask-again .presets { display: flex; flex-wrap: wrap; gap: 2px 6px; margin: 6px 0 0 -10px; }
+.ask-again .ask-out { margin-top: 10px; }
+.ask-again .ask-said { color: var(--muted); font-size: var(--fs-s); }
+.ask-again .why { margin-top: 4px; font-weight: 600; }
+.ask-again .why.ask-none, .ask-again .why.ask-small { font-weight: 400; }
+.ask-again .hint { margin-top: 6px; }
+.ask-again .vt { margin-top: 8px; }
+.ask-again .vt.saved tbody th { white-space: normal; }
+.ask-again .vt thead th { white-space: normal; }
 .dec-item { border-top: 1px solid var(--line); padding: 10px 0; }
 .dec-item.future { opacity: 0.45; }
 .dec-item .dh { display: flex; justify-content: space-between; gap: 8px; font-size: var(--fs-s); color: var(--muted); }

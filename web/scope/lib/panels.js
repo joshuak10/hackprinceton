@@ -159,7 +159,7 @@ export function renderFeed(root, st, onPick) {
 // ---------- inspector ----------
 const STATE_WORDS = ['Walking', 'In a line', 'Being served', 'Deciding', 'Leaving', 'Driving'];
 
-function questionFor(d, nameOf) {
+export function questionFor(d, nameOf) {
   const place = nameOf(d.placeId);
   if (d.kind === 'line') return d.placeId === 'entry_drive' ? 'Turn into the lot?' : `Join the line at ${place}?`;
   if (d.kind === 'long') return d.placeId === 'search' ? 'Keep circling for a space?' : `Keep waiting at ${place}?`;
@@ -171,7 +171,8 @@ function questionFor(d, nameOf) {
 const BACK_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 // One person, in place of the ranking and the feed. The verdict and the counters stay visible above it.
-export function renderInspector(root, st, id, onBack) {
+// extra: a node kept across redraws, placed after the person's details (the ask-again box, §9c).
+export function renderInspector(root, st, id, onBack, extra = null) {
   const agent = st.agentsById.get(id);
   if (!agent) { root.hidden = true; return; }
   const keepFocus = root.contains(document.activeElement) && document.activeElement.classList.contains('back');
@@ -235,7 +236,7 @@ export function renderInspector(root, st, id, onBack) {
   }
 
   // Rule-model runs have no choices to show, so what the person did comes first.
-  root.replaceChildren(back, head, dl, ...(decisions.length ? [list, trace] : [trace, list]));
+  root.replaceChildren(back, head, dl, ...(extra ? [extra] : []), ...(decisions.length ? [list, trace] : [trace, list]));
   root.hidden = false;
   if (keepFocus) back.focus();
 }

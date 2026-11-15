@@ -105,6 +105,7 @@ const ROUTES = [
   ['POST', ['runs'], postRun],
   ['GET', ['runs', ':id', 'status'], getStatus],
   ['GET', ['runs', ':id', 'agents', ':agentId'], getAgent],
+  ['POST', ['runs', ':id', 'agents', ':agentId', 'ask'], postAskAgain],
   ['GET', ['runs', ':id', 'advice'], getAdvice],
   ['GET', ['runs', ':id', ':file'], getRunFile]
 ];
@@ -452,6 +453,30 @@ async function getAgent(ctx, req, res, { id, agentId }) {
   const agent = Array.isArray(agents) ? agents.find(a => a.id === n) : null;
   if (!agent) throw new HttpError(404, `Run ${id} has no agent ${n}.`);
   send(res, 200, { agent, decisions: await agentDecisions(join(runDir(ctx, id), 'decisions.jsonl'), n) });
+}
+
+// Ask Jev one of a person's recorded choices again, as recorded and with one more sentence about what has just
+// happened to them (§9c).
+// Body: { decision: "<choice id>", today: "<the sentence>" }. Two Jev requests; nothing is written.
+async function postAskAgain(ctx, req, res, { id, agentId }) {
+  if (!/^\d{1,9}$/.test(agentId)) throw new HttpError(400, 'The agent id must be a whole number.');
+  const body = await readJsonBody(req);
+  const { askAgain, cleanToday, TODAY_MIN, TODAY_MAX } = await lib('../run/ask-again.js');
+  const today = cleanToday(body.today);
+  if (today.length < TODAY_MIN || today.length > TODAY_MAX) throw new HttpError(400, `Write what has just happened to them in ${TODAY_MIN} to ${TODAY_MAX} characters.`);
+  if (typeof body.decision !== 'string' || !body.decision) throw new HttpError(400, 'Send { "decision": "<choice id>", "today": "<one sentence>" }.');
+  if (!hasKey('TYPESAFE_API_KEY')) throw new HttpError(501, 'Asking Jev again needs TYPESAFE_API_KEY in .env.local.');
+  const recorded = (await agentDecisions(join(runDir(ctx, id), 'decisions.jsonl'), Number(agentId))).find(d => d.id === body.decision);
+  if (!recorded) throw new HttpError(404, `Run ${id} has no choice ${body.decision} for agent ${agentId}.`);
+  if (!recorded.observation?.person) throw new HttpError(409, 'This choice was recorded without what the person was told, so it cannot be asked again.');
+  const spec = await readRunJson(ctx, id, 'spec').catch(() => null);
+  let result;
+  try {
+    result = await askAgain(recorded, today, { spec });
+  } catch (err) {
+    throw new HttpError(502, `Jev could not answer: ${err?.message || err}`);
+  }
+  send(res, 200, result);
 }
 
 async function allDecisions(file) {

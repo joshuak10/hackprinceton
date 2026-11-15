@@ -148,6 +148,16 @@ export async function apiCompile(description, { signal } = {}) {
   return body;
 }
 
+// One recorded choice asked again, as recorded and with one more sentence about the person's day (§9c).
+export async function apiAskAgain(runId, agentId, decision, today) {
+  const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/agents/${encodeURIComponent(agentId)}/ask`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, today })
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Asking again failed (${res.status}).`);
+  return body;
+}
+
 // The saved two-month results for a pool of diners (§21f): { pool, found, meta, results }.
 export const apiDays = pool => getJson(`/api/days?pool=${encodeURIComponent(pool)}`);
 

@@ -10,10 +10,13 @@ import { deriveRun } from './lib/incidents.js';
 import { createHeat, calibrate, advance } from './lib/heat.js';
 import { createRenderer, readPalette, FRUSTRATION } from './lib/render.js';
 import { createTimeline } from './lib/timeline.js';
-import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, el } from './lib/panels.js';
+import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, questionFor, el } from './lib/panels.js';
+import { targetChoice } from './lib/ask-again.js';
+import { createAskPanel } from './lib/ask-panel.js';
+import { clockText } from './lib/frames.js';
 import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
-import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiDays } from './lib/source.js';
+import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiDays, apiAskAgain } from './lib/source.js';
 import { LOYALTY, suggestionWords, savedResult, loyaltyRows, loyaltyWords, regularWords, captionWords, cautionWords, missingWords } from './lib/loyalty.js';
 import {
   chooseRun, findTest, findOfferTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords,
@@ -210,6 +213,7 @@ function setBundle(bundle) {
   st.selectedAgent = null;
   $('inspector').hidden = true;
   $('sideBody').hidden = false;
+  $('verdict').hidden = false;
   rebuildHeat();
 
   const geo = bundle.geometry, meta = bundle.meta;
@@ -639,7 +643,7 @@ function renderPanels() {
   };
   renderCounters($('counters'), ps);
   updateFloorCounts();
-  if (st.selectedAgent != null) { renderInspector($('inspector'), inspectorState(), st.selectedAgent, closeInspector); return; }
+  if (st.selectedAgent != null) { drawInspector(st.selectedAgent); return; }
   renderRank($('rank'), ps, id => {
     const n = st.run.nodes.get(id);
     if (n) { if ((n.floor || 0) !== st.floor) setFloor(n.floor || 0); flyTo(n.x, n.y, 1.8); }
@@ -652,6 +656,24 @@ function inspectorState() {
     agentsById: st.agentsById, personas: st.personas, decisions: st.bundle.decisions, nodeName: st.nodeName,
     visibleAgents: st.allAgents || agentsAt(st.F, st.t), archNames: st.archNames, t: st.t, clockStart: st.bundle.meta.clockStart
   };
+}
+// The person view, with the box that asks Jev one of their choices again with a sentence about what just happened (§9c).
+// The box is one node kept across redraws, so typing in it survives the replay moving on.
+const askPanel = createAskPanel({ onAsk: (decision, today) => apiAskAgain(st.bundle.meta.runId, st.selectedAgent, decision, today) });
+askPanel.input.addEventListener('focus', () => pause());
+function drawInspector(id) {
+  const meta = st.bundle.meta;
+  const d = targetChoice(st.bundle.decisions, id, st.t);
+  const recordedHere = Boolean(st.live) && providerWords(meta) !== 'Sample data';
+  askPanel.update({
+    key: d ? `${meta.runId}/${id}/${d.id}` : null, decision: d,
+    when: d ? clockText(meta.clockStart, d.t) : '', question: d ? questionFor(d, st.nodeName) : '',
+    why: !d ? '' : !recordedHere ? 'Asking again needs a run recorded by the Swarmscope engine on this computer.'
+      : !st.live.jev ? 'Asking again needs a Jev key on the server.' : ''
+  });
+  const typing = document.activeElement === askPanel.input, at = typing ? [askPanel.input.selectionStart, askPanel.input.selectionEnd] : null;
+  renderInspector($('inspector'), inspectorState(), id, closeInspector, askPanel.node);
+  if (typing) { askPanel.input.focus(); askPanel.input.setSelectionRange(at[0], at[1]); }
 }
 // Run details: the recorded runs of this place (a changed room says so), and the other places the display opens.
 function drawDrawer() {
@@ -769,7 +791,10 @@ function selectAgent(id, { focus = false, returnTo = null } = {}) {
   st.selectedAgent = id;
   st.inspectorReturn = returnTo;
   $('sideBody').hidden = true;
-  renderInspector($('inspector'), inspectorState(), id, closeInspector);
+  // A person takes the whole side panel: the verdict steps aside while they are open, so their choices and the
+  // ask-again box are in view without scrolling.
+  $('verdict').hidden = true;
+  drawInspector(id);
   if (focus) $('inspector').querySelector('.back')?.focus();
   st.dirty = true;
 }
@@ -778,6 +803,7 @@ function closeInspector() {
   st.selectedAgent = null;
   $('inspector').hidden = true;
   $('sideBody').hidden = false;
+  $('verdict').hidden = false;
   st.dirty = true;
   if (st.bundle) renderPanels();
   if (had) (st.inspectorReturn || $('rankMode').querySelector('button')).focus();

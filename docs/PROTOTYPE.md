@@ -485,6 +485,37 @@ The owner's view: try one change on simulated customers and see whether it helpe
 
 **Screens.** A 13-inch laptop, Chrome full screen, about 1280×832 and up. Light theme by default; dark is a toggle. No mobile layout. This overrides the 390 px target in §9 for this display only.
 
+### 9c. Tell Jev what just happened, and ask again (Nov 15)
+
+**Why.** A judge has to see that a person's answer comes from who they are and how their evening is going, and that nobody wrote a rule for it. Reading a recorded choice shows one example. Changing the person's evening in your own words and watching the answer move shows it cannot have been written ahead of time.
+
+**What the viewer does.** Open a person (a dot on the map, or "See this person" from an incident). Under their details is "Tell Jev what just happened, and ask again", with their choice at the time on the slider ("Their choice at 7:03 pm: Join the line at Table?"), a text box and three ready sentences. On Ask again the box shows:
+- the sentence, and a headline such as "“Join the line at Table?” Yes: 36% without your sentence, 57% with it. More likely by 21 points.";
+- how they feel, from Jev's frustration answer: "Feeling mildly annoyed without it, frustrated with it.";
+- a small table: that evening (the recorded answer), asked again, with your sentence;
+- one line saying both were asked just now and that a few points either way is noise.
+
+A change of 15 points or more is stated plainly, 5 to 14 is "a change this small can be chance", under 5 is "no real change". While a person is open the verdict panel steps aside, so the person has the whole side panel.
+
+**What is asked.** `POST /api/runs/:id/agents/:agentId/ask` with `{ decision, today }` reads that choice from the run's `decisions.jsonl` and sends Jev two requests: the recorded one unchanged, and the same one with `Just now: <sentence>.` added to `now`, what the person is told is happening. Nothing else differs, and the options go in the same order in both (`shuffle: false`), so the order cannot be what moves the answer. The recorded answer is returned for reference; the comparison is between the two asked now, because Jev does not answer the same question the same way twice. Two requests, well under a tenth of a cent. Nothing is written. It needs a run recorded by the engine and a Jev key.
+
+**Where the sentence goes** was checked first (Nov 15, 36 requests). Added to who the person is ("Today: …" at the end of `about`), most sentences moved the answer by under 10 points. Added to `now`, the same sentences moved it more and in the same direction, so `now` is used. For Julian Reyes ("Tenth anniversary tonight. The babysitter leaves at nine."), facing a 40-minute line at the table, 40% to join:
+
+| Sentence | In `about` | In `now` | Feeling |
+|---|---|---|---|
+| The babysitter texted that she can stay as late as they like | +7 | +20 | mildly annoyed either way |
+| In no hurry tonight and happy to wait | +20 | +27 | mildly annoyed to calm |
+| Has to be home in half an hour | −16 | −18 | mildly annoyed to frustrated |
+| Had an awful day and has no patience left | −1 | −5 | mildly annoyed to frustrated |
+| Found a twenty dollar bill on the sidewalk | +4 | +4 | no change |
+
+- **It reads the person.** The babysitter sentence moves Julian by 20 points and Ana Ferreira, a nurse who lives upstairs and has no babysitter, by 3.
+- **It ignores what does not matter.** The twenty-dollar bill moves nobody by more than 4 points.
+- **Feeling moves even when the choice does not.** "An awful day" takes Ana from calm to very frustrated (0.6 to 2.5 on Jev's five-step scale) while her chance of joining a 15-minute line falls 7 points.
+- One run of each, on two people, with jev-1.14.0. Sizes are not validated.
+
+**Code.** `run/ask-again.js` (the two requests), `server/server.js` (`postAskAgain`), `web/scope/lib/ask-again.js` (which choice, and the words), `web/scope/lib/ask-panel.js` (the box, one node kept across redraws so typing survives the replay), `web/scope/app.js` (`drawInspector`). Test: `test/ask-again.test.js`.
+
 ## 10. Compile, schema, slash command, MCP
 
 - `worlds/SCHEMA.md`: the world format for humans and Claude. Every field with type, range and default, both modes, how to write a good cast (10–20 people with concrete situations, constraints, loyalties, who they listen to, app or not), how to set patience and `needs`/`tags`, and one compact example per mode. `worlds/schema.json`: the same as JSON Schema (draft 2020-12), used as the Claude tool input schema.
