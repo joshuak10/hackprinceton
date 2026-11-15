@@ -1369,3 +1369,19 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 - **Two more seats seat four more people every Friday** and turn fewer away, on every seed. Over eight Fridays the number of regulars did not clearly change.
 - **One seed's baseline grew 27%** and fails the steadiness check, so changes in how many people came are the weakest numbers here. Seated, turned away and the wait come from the evening itself and do not depend on it.
 
+**Two months, all four changes** (`--change promo20,seats+2,faster15,sorry`, 8 Fridays, 3 seeds, 11,206 Jev requests, about 43 cents; results in `data/days/sushi-all.json`). Per Friday, baseline → change; "unclear" where the seeds disagree.
+
+| | Baseline | 20% off, first Friday | Two more seats | Meals 15% quicker | Card for people turned away |
+|---|---|---|---|---|---|
+| People seated | 23 | 24 | 28 (+4) | 25 (+2) | unclear |
+| Turned away or gave up | 9 | 12 (+2 to +3) | 7 (−2 to −3) | 8 (−1 to −2) | unclear |
+| Average wait for a seat | 8.1 min | 9.2 | 6.2 | 7.6 | 8.3 |
+| First-time visitors | 1 | 6 (+4 to +5) | 1 | 1 | 1 |
+| Regulars (2 of the last 4 Fridays) | 24 | unclear | unclear | unclear | 26 (+0 to +5, unclear) |
+| Bad remarks | 23 | 27 | 15 (−6 to −9) | 21 | 25 |
+
+- **No change clearly made more regulars over eight Fridays.** The card comes closest (+2 on average, 0 to +5), but not on every seed. The pool's regulars come every week anyway; the turned-away diners the card reaches are mostly occasional diners, and the room is still full when they come back.
+- **Seats beat speed.** Two more seats seat about 4 more diners every Friday and cut bad word of mouth by a third; meals 15% quicker seat about 2.
+- **The promotion stays the worst:** it brings first-timers on one Friday, mostly to be turned away.
+- One seed's baseline grew 22% and fails the steadiness check; seated, turned away and the wait come from each evening and are the firmer numbers.
+
