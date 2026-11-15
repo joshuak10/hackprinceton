@@ -32,11 +32,22 @@ export async function runEnvironment(raw, { provider = new RulesProvider(), seed
   const resources = new Map(spec.resources.map(resource => [resource.id, { ...resource, used: 0, peak: 0 }]));
   const roleById = new Map(spec.roles.map(role => [role.id, role]));
   const actionById = new Map(spec.actions.map(action => [action.id, action]));
-  const agents = spec.roles.flatMap(role => Array.from({ length: role.count }, (_, index) => ({
-    id: `${role.id}_${index + 1}`, role: role.id, name: `${role.name} ${index + 1}`, goal: role.goal,
-    state: role.initialState, attributes: clone(role.state), status: 'idle', action: null, busyUntil: null,
-    completedActions: 0, decisionIndex: 0
-  })));
+  // A role with `arrive` turns up over time: its actors are spread evenly over the window, each at a seeded
+  // tick inside its own share of it, and an actor is offered nothing before that tick.
+  const arrivalTick = (role, index, jitter) => {
+    const span = role.arrive.to - role.arrive.from + 1;
+    return role.arrive.from + Math.min(span - 1, Math.floor(span * (index + jitter()) / role.count));
+  };
+  const agents = spec.roles.flatMap(role => {
+    const jitter = seedRng(seed, 'environment-arrival', role.id);
+    return Array.from({ length: role.count }, (_, index) => ({
+      id: `${role.id}_${index + 1}`, role: role.id, name: `${role.name} ${index + 1}`, goal: role.goal,
+      state: role.initialState, attributes: clone(role.state), status: 'idle', action: null, busyUntil: null,
+      completedActions: 0, decisionIndex: 0, ...(role.arrive ? { arrivesAt: arrivalTick(role, index, jitter) } : {})
+    }));
+  });
+  // Someone who has not turned up yet is not in the frames, is not counted in what others are told, and is not asked.
+  const here = agent => (agent.arrivesAt ?? 0) <= tick;
   const events = [], decisions = [], frames = [];
   const byAction = Object.fromEntries(spec.actions.map(action => [action.id, 0]));
   let completedActions = 0, blockedDecisions = 0, rejectedCompletions = 0, idleAgentTicks = 0, tick = 0;
@@ -85,7 +96,7 @@ export async function runEnvironment(raw, { provider = new RulesProvider(), seed
     }
     settleStatus(agent);
   };
-  const capture = () => frames.push({ tick, world: clone(world), resources: resourceView(), agents: agents.map(agent => ({
+  const capture = () => frames.push({ tick, world: clone(world), resources: resourceView(), agents: agents.filter(here).map(agent => ({
     id: agent.id, role: agent.role, state: agent.state, status: agent.status, action: agent.action
   })) });
   const stats = () => {
@@ -124,7 +135,7 @@ export async function runEnvironment(raw, { provider = new RulesProvider(), seed
       if (tick < spec.ticks) {
         // Random priority prevents a fixed role/ID from monopolizing a shared resource every tick.
         const priority = seedRng(seed, 'environment-priority', tick);
-        const ready = agents.filter(agent => !agent.action && agent.status !== 'terminal')
+        const ready = agents.filter(agent => !agent.action && agent.status !== 'terminal' && here(agent))
           .map(agent => ({ agent, priority: priority() })).sort((a, b) => a.priority - b.priority);
         const batch = [];
         let batchBytes = 0;
@@ -144,7 +155,7 @@ export async function runEnvironment(raw, { provider = new RulesProvider(), seed
               guidelines: spec.guidelines,
               actor: { name: agent.name, role: roleById.get(agent.role).name, goal: agent.goal, state: agent.state, attributes: clone(agent.attributes) },
               world: clone(world), resources: resourceView(),
-              population: agents.reduce((counts, other) => { counts[other.state] = (counts[other.state] ?? 0) + 1; return counts; }, {}),
+              population: agents.filter(here).reduce((counts, other) => { counts[other.state] = (counts[other.state] ?? 0) + 1; return counts; }, {}),
               actions: options.map(action => ({ id: action.id, label: action.label, to: action.to, duration: action.duration, effects: clone(action.effects), resources: clone(action.resources) }))
             }
           };

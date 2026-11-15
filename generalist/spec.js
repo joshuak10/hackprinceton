@@ -123,6 +123,8 @@ export function validateEnvironment(raw) {
     if (values.some(value => typeof value !== 'number')) errors.push(`metrics.${metric.id}: aggregate metrics require numeric state keys`);
   }
   for (const role of spec.roles) {
+    if (role.arrive && role.arrive.from > role.arrive.to) errors.push(`roles.${role.id}.arrive: from must not be after to`);
+    if (role.arrive && role.arrive.to >= spec.ticks) errors.push(`roles.${role.id}.arrive: to must be before the last tick (${spec.ticks})`);
     if (!spec.actions.some(action => (!action.roles.length || action.roles.includes(role.id)) && action.from.includes(role.initialState))) {
       warnings.push(`roles.${role.id}: no action leaves its initial state; its actors start terminal`);
     }

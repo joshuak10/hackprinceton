@@ -29,9 +29,9 @@ export function normalizeBundle(b) {
   return bundle;
 }
 
-// The places the display offers: the building, and the sushi restaurant (?case=sushi, reached from Run details).
-// The parking mock still exists (mockgen/), but is not offered here (v0.27).
-const CASE_IDS = ['building', 'sushi'];
+// The places the display offers (?case=<id>): the building, the parking lot sample and the sushi restaurant. They
+// are picked from the card under the prompt box, or from Run details. The parking lot is sample data only.
+const CASE_IDS = ['building', 'parking', 'sushi'];
 
 export async function loadCases() {
   const mock = await getJson('mock/index.json').catch(() => ({ cases: {} }));
@@ -67,13 +67,16 @@ export async function apiHealth() {
   }
 }
 
-// Recorded runs of one place (visit mode with walls), newest first, as { runs: [{ meta, spec }], metas }.
+// Recorded runs of one place (visit mode with walls), newest first, as { runs: [{ meta, spec }], metas, worlds }.
 // `metas` is every finished run's meta.json, including each run's test link (meta.link, §9b).
-// `title` keeps only runs of the world with that title (a case's runTitle); `notTitles` leaves those worlds out,
-// so one place's many runs cannot push another place's runs off the list.
+// `title` keeps only runs of the world with that title (a case's runTitle, or a world opened with ?place=); without
+// it the runs are the building's. `notTitles` are the worlds of the cases that have a title: they are never the
+// building's, so one place's many runs cannot push another place's runs off the list.
+// `worlds` says which recorded walled worlds are which, as { building: [...], others: [...] } of
+// { title, placeName }: `others` are neither a titled case nor the building, and open with ?place=<title>.
 export async function apiBuildingRuns({ max = 18, title = null, notTitles = [] } = {}) {
   const metas = await getJson('/api/runs');
-  let candidates = metas.filter(m => m.status === 'done' && m.mode === 'visit' && (title ? m.title === title : !notTitles.includes(m.title)))
+  const visits = metas.filter(m => m.status === 'done' && m.mode === 'visit')
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   const specs = new Map();
   const specOf = async meta => {
@@ -81,28 +84,32 @@ export async function apiBuildingRuns({ max = 18, title = null, notTitles = [] }
     return specs.get(meta.runId);
   };
   const walled = spec => Boolean(spec && Array.isArray(spec.walls) && spec.walls.length);
-  if (!title) {
-    // No title means the building. Other walled worlds recorded on this machine (a waiting room drawn by hand, say)
-    // must not take its place just by being newer: when any recorded world came from a Matterport floor plan,
-    // only those worlds count. Each world is looked at once, by the newest run with its title.
-    const firstOf = new Map();
-    for (const m of candidates) if (!firstOf.has(m.title)) firstOf.set(m.title, m);
-    const scanned = [];
-    for (const [worldTitle, meta] of [...firstOf].slice(0, 16)) {
-      const spec = await specOf(meta);
-      if (walled(spec)) scanned.push({ worldTitle, matterport: String(spec.geo?.source || '').startsWith('matterport') });
-    }
-    const fromPlan = scanned.filter(w => w.matterport);
-    const keep = new Set((fromPlan.length ? fromPlan : scanned).map(w => w.worldTitle));
-    candidates = candidates.filter(m => keep.has(m.title));
+  // Other walled worlds recorded on this machine (a waiting room drawn by hand, say) must not take the building's
+  // place just by being newer: when any recorded world came from a Matterport floor plan, only those worlds are the
+  // building. Each world is looked at once, by the newest run with its title.
+  const firstOf = new Map();
+  for (const m of visits) if (!notTitles.includes(m.title) && !firstOf.has(m.title)) firstOf.set(m.title, m);
+  const scanned = [];
+  for (const [worldTitle, meta] of [...firstOf].slice(0, 16)) {
+    const spec = await specOf(meta);
+    if (!walled(spec)) continue;
+    scanned.push({
+      title: worldTitle, placeName: typeof spec.placeName === 'string' ? spec.placeName : null,
+      matterport: String(spec.geo?.source || '').startsWith('matterport')
+    });
   }
+  const fromPlan = scanned.filter(w => w.matterport);
+  const building = fromPlan.length ? fromPlan : scanned;
+  const keep = new Set(building.map(w => w.title));
+  const candidates = visits.filter(m => (title ? m.title === title : keep.has(m.title)));
   const out = [];
   for (const meta of candidates.slice(0, max * 2)) {
     const spec = await specOf(meta);
     if (walled(spec)) out.push({ meta, spec });
     if (out.length >= max) break;
   }
-  return { runs: out, metas };
+  const named = w => ({ title: w.title, placeName: w.placeName });
+  return { runs: out, metas, worlds: { building: building.map(named), others: scanned.filter(w => !keep.has(w.title)).map(named) } };
 }
 
 // One run's metrics, fetched once: a test and a changed room's comparison need them for a handful of runs.

@@ -941,6 +941,12 @@ export const EXACT = {
   "Your price": "你的价格",
   "your room": "你的房间",
   "Your room": "你的房间",
+  "This screen shows one place at a time. Pick another from the list below. A question does not change who comes in or what they do yet.": "这个页面一次显示一个地点。可以从下面的列表中换一个。提出的问题暂时不会改变来的人和他们的行为。",
+  "This is sample data, so it cannot be simulated again. You can still replay it.": "这是示例数据，无法重新模拟。你仍然可以回放它。",
+  "Places": "地点",
+  "Build a new environment": "创建新环境",
+  "Food hall and market": "美食广场和市集",
+  "Monday evening in the emergency department waiting room": "周一晚上的急诊科候诊室",
 };
 
 export const PATTERNS = [

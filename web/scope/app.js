@@ -1,7 +1,8 @@
 // Swarmscope scope display: wiring. One state object; derive → draw → panels.
 // The page opens straight into the building: the latest Jev run if there is one, otherwise the latest
 // rule-model run, paused at the start (docs/PROTOTYPE.md §9b). ?case=sushi opens the sushi restaurant instead
-// (§18); Run details links to it under "Other places".
+// (§18), ?case=parking the parking lot sample, and ?place=<title> another walled world recorded on this machine.
+// The card under the prompt box lists them all; Run details links to the cases under "Other places".
 // URL params for reproducible views: ?case=sushi&run=<run id>&t=40&floor=0&theme=dark&autoplay=1&test=new
 //   test=new ignores tests recorded earlier, so the "before a test" state can be shown again.
 import { prepareFrames, frameIndex, frameAt, agentsAt } from './lib/frames.js';
@@ -41,7 +42,8 @@ const st = {
   theme: params.get('theme') || store.get('scope-theme') || 'light',
   live: null, config: {}, question: '', fly: null, lastPanels: -1, dirty: true,
   rankMode: store.get('scope-rank') === 'now' ? 'now' : 'total',
-  test: null, testing: null, sessionTests: new Set(), loading: false, room: null
+  test: null, testing: null, sessionTests: new Set(), loading: false, room: null,
+  worlds: { building: [], others: [], buildingName: '' }
 };
 
 // ---------- theme ----------
@@ -107,17 +109,29 @@ function showNotice(text) {
 
 // ---------- recorded runs ----------
 const rawSpec = runId => st.runs.find(r => r.meta.runId === runId)?.spec || null;
+// A case that is sample data only (the parking lot): not the building, and no recorded world of its own.
+const sampleOnly = c => Boolean(c && c.id !== 'building' && !c.runTitle);
+// ?place=<a recorded world's exact title> opens that world's runs in place of the building's: any other walled
+// world on this machine. A case with runs or a sample of its own keeps them.
+const placeParam = () => (st.caseInfo?.runTitle || sampleOnly(st.caseInfo) ? null : params.get('place'));
 // A place's runs: a case with a runTitle (the sushi restaurant) takes every run of the world with that title, and
-// the building takes the rest, so one place's runs never show under another.
+// the building takes the rest, so one place's runs never show under another. A sample has no runs.
+// st.worlds keeps which recorded walled worlds are the building's and which are other places (the card's list).
 async function refreshRuns() {
   const c = st.caseInfo;
-  // ?place=<a recorded world's exact title> opens that world's runs instead: any other walled world on this machine.
-  const place = params.get('place');
-  const filter = c?.runTitle ? { title: c.runTitle, max: 200 } : place ? { title: place, max: 200 }
-    : { notTitles: Object.values(st.cases).map(x => x.runTitle).filter(Boolean) };
-  const { runs, metas } = await apiBuildingRuns(filter);
+  const notTitles = Object.values(st.cases).map(x => x.runTitle).filter(Boolean);
+  const place = placeParam();
+  const filter = sampleOnly(c) ? { notTitles, max: 0 } : c?.runTitle ? { title: c.runTitle, max: 200, notTitles }
+    : place ? { title: place, max: 200, notTitles } : { notTitles };
+  const { runs, metas, worlds } = await apiBuildingRuns(filter);
   st.runs = runs;
-  st.metas = metas;
+  st.metas = sampleOnly(c) ? [] : metas;
+  // The building's name for the list, where another place is on screen: the world its page would open with.
+  const titles = new Set(worlds.building.map(w => w.title));
+  const newest = metas.filter(m => m.status === 'done' && m.mode === 'visit' && titles.has(m.title))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 18);
+  const pick = chooseRun(newest.map(meta => ({ meta })));
+  st.worlds = { ...worlds, buildingName: pick ? placeName(worlds.building.find(w => w.title === pick.meta.title)) : '' };
 }
 // The world of the run on screen as the engine takes it, without a tested change: the server's copy, or the packed
 // engine run's own (the sushi restaurant's file). Null for sample data, which cannot be run again.
@@ -441,16 +455,48 @@ async function newRun(provider, question) {
   }
 }
 
+// ---------- the places the card under the prompt box can open ----------
+// Every place this page can show: the cases (?case=<id>), the other walled worlds recorded on this machine
+// (?place=<title>), and last the page that builds a new environment. The place on screen is marked and is not a link.
+function placeItems() {
+  const cases = Object.values(st.cases);
+  const { building, others } = st.worlds;
+  // ?place= names a recorded world: one of the cases' worlds, the building's, or another place. When nothing was
+  // recorded under that title the page shows the building's sample, which is none of the places listed.
+  const place = placeParam();
+  const opened = st.runs.length ? place : null;
+  const openedCase = opened ? (cases.find(c => c.runTitle === opened)?.id || (building.some(w => w.title === opened) ? 'building' : null)) : null;
+  const onCase = place ? openedCase : st.caseId;
+  const onWorld = opened && !openedCase ? opened : null;
+  // A link keeps the theme and the language the address asked for.
+  const carry = ['theme', 'lang'].filter(k => params.get(k)).map(k => `${k}=${encodeURIComponent(params.get(k))}`);
+  const href = query => `./?${[query, ...carry].join('&')}`;
+  const item = (label, query, current, sample) => ({ label, href: href(query), current, note: current ? 'On screen' : sample ? 'Sample data' : '' });
+  const items = cases.map(c => {
+    const current = c.id === onCase;
+    // The building goes by the name above its map. Without a recorded run it opens its sample.
+    const label = c.id !== 'building' ? c.placeName || c.label : current ? st.place : st.worlds.buildingName || c.placeName || c.label;
+    return item(label, `case=${encodeURIComponent(c.id)}`, current, sampleOnly(c) || (c.id === 'building' && !building.length));
+  });
+  const worlds = onWorld && !others.some(w => w.title === onWorld) ? [...others, { title: onWorld, placeName: st.place }] : others;
+  for (const w of worlds) items.push(item(placeName(w), `place=${encodeURIComponent(w.title)}`, w.title === onWorld, false));
+  items.push({ label: 'Build a new environment', href: '/scope/?mode=environment' });
+  return items;
+}
+
 $('askForm').addEventListener('submit', e => {
   e.preventDefault();
   if (!st.bundle) return;
   const text = $('askIn').value.trim();
   const cancel = () => { hideCard($('askCard')); $('askIn').focus(); };
+  const places = { heading: 'Places', items: placeItems() };
   if (!baseWorld() || !st.live) {
     const sample = providerWords(st.bundle.meta) === 'Sample data';
     showCard($('askCard'), {
       title: sample ? 'This page is showing sample data' : 'This page is showing a recorded run',
-      lines: [`A new simulation needs the Swarmscope engine, which is not running here. You can still replay the ${sample ? 'sample' : 'run'}.`],
+      lines: [sample && st.live ? 'This is sample data, so it cannot be simulated again. You can still replay it.'
+        : `A new simulation needs the Swarmscope engine, which is not running here. You can still replay the ${sample ? 'sample' : 'run'}.`],
+      places,
       onCancel: cancel
     });
     return;
@@ -458,9 +504,10 @@ $('askForm').addEventListener('submit', e => {
   showCard($('askCard'), {
     title: `Simulate ${st.place} again?`,
     lines: [
-      'This screen runs one place for now. A question does not change who comes in or what they do yet.',
+      'This screen shows one place at a time. Pick another from the list below. A question does not change who comes in or what they do yet.',
       text ? `Your question will show above the map: “${text}”` : null
     ],
+    places,
     actions: [
       { label: 'Run it again', solid: true, onClick: () => newRun('rules', text) },
       ...(st.live.jev ? [{ label: 'Run it with Jev', onClick: () => newRun('jev', text) }] : [])

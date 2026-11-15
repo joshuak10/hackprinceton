@@ -29,7 +29,12 @@
     },
     "role": {
       "type": "object", "additionalProperties": false, "required": ["id", "name", "goal", "count", "initialState"],
-      "properties": {"id": {"$ref": "#/definitions/id"}, "name": {"type": "string", "minLength": 1, "maxLength": 160}, "goal": {"type": "string", "minLength": 1, "maxLength": 2000}, "count": {"type": "integer", "minimum": 1, "maximum": 500}, "initialState": {"$ref": "#/definitions/id"}, "state": {"$ref": "#/definitions/state"}}
+      "properties": {"id": {"$ref": "#/definitions/id"}, "name": {"type": "string", "minLength": 1, "maxLength": 160}, "goal": {"type": "string", "minLength": 1, "maxLength": 2000}, "count": {"type": "integer", "minimum": 1, "maximum": 500}, "initialState": {"$ref": "#/definitions/id"}, "state": {"$ref": "#/definitions/state"}, "arrive": {"$ref": "#/definitions/arrive"}}
+    },
+    "arrive": {
+      "type": "object", "additionalProperties": false, "required": ["from", "to"],
+      "description": "Optional. The role's actors turn up over these ticks instead of all at tick 0: the runtime spreads them evenly from tick from to tick to (seeded) and offers an actor nothing before its own tick. Leave it out for actors who are present from the start.",
+      "properties": {"from": {"type": "integer", "minimum": 0, "maximum": 999}, "to": {"type": "integer", "minimum": 0, "maximum": 999}}
     },
     "requirement": {
       "type": "object", "additionalProperties": false, "required": ["scope", "key", "op", "value"],

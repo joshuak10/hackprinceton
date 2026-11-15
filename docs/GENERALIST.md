@@ -100,7 +100,7 @@ are rejected rather than silently interpreted.
 | `version`, `title`, `description`, `ticks` | Contract version 1, scenario and finite duration; describe the real-world meaning of a tick explicitly |
 | `guidelines`, `assumptions` | Agent-facing guidance and declared modeling assumptions |
 | `world` | Shared scalar state visible to all agents |
-| `roles` | Actor counts, names, goals, starting workflow state and initial scalar attributes |
+| `roles` | Actor counts, names, goals, starting workflow state and initial scalar attributes. Optional `arrive: { from, to }`: the role's actors turn up over those ticks (spread evenly, seeded) and are offered nothing before their own tick; without it every actor is present from tick 0 |
 | `resources` | Shared resources with enforced capacity |
 | `actions` | Role/state eligibility, conditions, duration, resource claims, destination state and effects |
 | `metrics` | Numeric world/agent attributes aggregated with sum, mean, minimum or maximum |
