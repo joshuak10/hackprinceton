@@ -556,7 +556,7 @@ export function createRenderer(canvas) {
       return f == null ? pal.faint : FRUSTRATION[Math.max(0, Math.min(4, Math.round(f)))];
     }
     // New or returning customer (§21g): the same two colours whatever the person is doing.
-    if (st.colorBy === 'customer') return st.isNew(a.id) ? pal['a-queue'] : pal['a-serve'];
+    if (st.colorBy === 'customer') return st.isNew(a.id) ? pal['c-new'] : pal['c-returning'];
     if (st.colorBy === 'archetype') {
       const k = st.archIndex.get(st.agentArch.get(a.id)) ?? 0;
       return pal['g-' + ((k % 5) + 1)];

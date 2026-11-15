@@ -422,7 +422,7 @@ async function showOwner(test, change) {
   const day = String(saved.meta?.dayName || 'Day').split(' ')[0];
   renderPeriodChart($('periodView'), {
     bars: dayBars(result, st.owner.n), labels: Array.from({ length: st.owner.n }, (_, i) => `${day} ${i + 1}`),
-    names: ['Today', title], title: `${period.label.charAt(0).toUpperCase()}${period.label.slice(1)} at ${st.place.charAt(0).toLowerCase()}${st.place.slice(1)}`
+    names: ['Today', title], title: `${period.label.charAt(0).toUpperCase()}${period.label.slice(1)} at ${inSentence(st.place)}`
   });
 }
 
@@ -563,6 +563,14 @@ async function newRun(provider) {
     p.done();
     busy(false);
   }
+}
+
+// A place name inside a sentence: a common name loses its capital ("Sushi restaurant" -> "sushi restaurant"), a proper
+// name keeps it ("MTea Princeton"): one with a capital after its first letter, or more than one capitalized word.
+function inSentence(name) {
+  const s = String(name ?? '');
+  const proper = /^\S+[A-Z]/.test(s) || s.split(/\s+/).filter(w => /^[A-Z]/.test(w)).length > 1;
+  return proper ? s : s.charAt(0).toLowerCase() + s.slice(1);
 }
 
 // ---------- a new place from the prompt ----------
@@ -1119,7 +1127,7 @@ function renderLegend() {
     : st.colorBy === 'frustration'
       ? [[FRUSTRATION[0], 'Calm'], [FRUSTRATION[1], 'Annoyed'], [FRUSTRATION[2], 'Frustrated'], [FRUSTRATION[4], 'Furious']]
       : st.colorBy === 'customer'
-        ? [['var(--a-serve)', 'Returning customers'], ['var(--a-queue)', 'New customers']]
+        ? [['var(--c-returning)', 'Returning customers'], ['var(--c-new)', 'New customers']]
       : st.colorBy === 'archetype'
         ? (st.bundle?.spec.archetypes || []).slice(0, 5).map((a, i) => [`var(--g-${i + 1})`, a.name])
         : [['var(--a-walk)', 'Walking'], ['var(--a-queue)', 'In a line'], ['var(--a-serve)', 'Being served'], ['var(--a-leave)', 'Leaving']];

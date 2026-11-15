@@ -8,7 +8,7 @@ export function readPalette() {
   const v = name => cs.getPropertyValue(name).trim();
   const names = ['--ground', '--room', '--room-edge', '--mesh', '--hatch', '--wall', '--label', '--muted', '--faint', '--text', '--accent',
     '--asphalt', '--stall', '--parked', '--store', '--panel', '--line-2', '--i-decision', '--i-congestion', '--i-complaint',
-    '--heat-1', '--heat-2', '--heat-3', '--heat-blend', '--g-1', '--g-2', '--g-3', '--g-4', '--g-5', ...STATE_VAR];
+    '--heat-1', '--heat-2', '--heat-3', '--heat-blend', '--g-1', '--g-2', '--g-3', '--g-4', '--g-5', '--c-returning', '--c-new', ...STATE_VAR];
   const p = {};
   for (const n of names) p[n.slice(2)] = v(n);
   p.ramp = makeRamp(p['heat-1'], p['heat-2'], p['heat-3']);

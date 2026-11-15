@@ -16,11 +16,11 @@
       "source": "synthetic"
     },
     "sushi": {
-      "label": "Sushi restaurant",
+      "label": "MTea Princeton",
       "question": "On a Friday evening, who waits for one of the eight seats, who gives up and eats somewhere else, and which change would seat more of them?",
       "file": "mock/sushi-restaurant.json",
-      "place": "Sushi restaurant",
-      "placeName": "Sushi restaurant",
+      "place": "MTea Princeton",
+      "placeName": "MTea Princeton",
       "source": "drawn",
       "runTitle": "Friday dinner at an eight-seat sushi restaurant (drawn from a sketch)",
       "suggestion": "promotion",

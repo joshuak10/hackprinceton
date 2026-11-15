@@ -73,30 +73,41 @@ export function createOwner(root, { onPeriod, onChange, onDetails, onPromo }) {
 // bars: dayBars(); labels: ["Friday 1", …]; names: ["Today", "With two more seats"].
 export function renderPeriodChart(root, { bars, labels, names, title }) {
   const max = Math.max(1, ...[...bars.base, ...bars.after].map(d => d.returning + d.fresh + d.away));
-  const bar = (d, cls) => {
+  // Top to bottom: turned away, new, returning. A segment under half a person is left out, so the 2px gaps and the
+  // rounded top (the first child) fall on segments that are drawn.
+  const bar = (d, cls, name, label) => {
     const b = el('div', `pc-bar ${cls}`);
     for (const [k, v] of [['away', d.away], ['fresh', d.fresh], ['returning', d.returning]]) {
+      if (!(v >= 0.5)) continue;
       const s = el('i', `pc-${k}`);
       s.style.height = `${(100 * v) / max}%`;
       b.append(s);
     }
-    b.title = `${Math.round(d.returning)} returning, ${Math.round(d.fresh)} new, ${Math.round(d.away)} turned away`;
+    b.title = `${label}, ${name.charAt(0).toLowerCase()}${name.slice(1)}: ${Math.round(d.returning)} returning and ${Math.round(d.fresh)} new customers seated, ${Math.round(d.away)} turned away or gave up`;
     return b;
   };
   const plot = el('div', 'pc-plot');
   bars.base.forEach((d, i) => {
     const day = el('div', 'pc-day');
     const pair = el('div', 'pc-pair');
-    pair.append(bar(d, 'before'), bar(bars.after[i], 'after'));
+    pair.append(bar(d, 'before', names[0], labels[i]), bar(bars.after[i], 'after', names[1], labels[i]));
     day.append(pair, el('p', 'pc-day-label', labels[i]));
     plot.append(day);
   });
+  // What the colors mean, and on the right which bar of each pair is which: outlined is today, solid is the change.
   const legend = el('div', 'pc-legend');
   for (const [cls, text] of [['pc-returning', 'Returning customers seated'], ['pc-fresh', 'New customers seated'], ['pc-away', 'Turned away or gave up']]) {
-    const s = el('span');
+    const s = el('span', 'pc-key');
     s.append(el('i', cls), document.createTextNode(text));
     legend.append(s);
   }
+  const sides = el('span', 'pc-side');
+  for (const [cls, text] of [['before', names[0]], ['after', names[1]]]) {
+    const s = el('span');
+    s.append(el('i', cls), document.createTextNode(text));
+    sides.append(s);
+  }
+  legend.append(sides);
   root.replaceChildren(
     el('h2', null, title),
     el('p', 'hint', `Each pair of bars is one evening: ${names[0].toLowerCase()} on the left, ${names[1].charAt(0).toLowerCase()}${names[1].slice(1)} on the right.`),
