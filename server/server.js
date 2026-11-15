@@ -101,6 +101,8 @@ const ROUTES = [
   ['POST', ['validate'], postValidate],
   ['POST', ['compile'], postCompile],
   ['GET', ['days'], getDays],
+  ['POST', ['days', 'try'], postDaysTry],
+  ['GET', ['days', 'try'], (ctx, req, res) => send(res, 200, ctx.trying ? { running: true, ...ctx.trying } : { running: false })],
   ['GET', ['runs'], getRuns],
   ['POST', ['runs'], postRun],
   ['GET', ['runs', ':id', 'status'], getStatus],
@@ -402,6 +404,30 @@ async function readRunJson(ctx, id, name) {
   try { return JSON.parse(await readFile(join(runDir(ctx, id), name + '.json'), 'utf8')); } catch (err) {
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') throw new HttpError(404, `Run ${id} has no ${name}.json.`);
     throw err;
+  }
+}
+
+// A change typed by the owner (§21h): { pool: "pools/<name>.json", text: "three more seats" }. It is read as one of
+// the loop's levers, or as something customers are told, run with Jev over the saved baselines' days and seeds,
+// and saved in data/days beside them. One at a time; it takes about a minute and costs about ten cents.
+async function postDaysTry(ctx, req, res) {
+  const body = await readJsonBody(req);
+  if (!hasKey('TYPESAFE_API_KEY')) throw new HttpError(501, 'Trying a change needs TYPESAFE_API_KEY in .env.local.');
+  if (ctx.trying) throw new HttpError(409, 'A change is already being tried. Wait for it to finish.');
+  const { tryChange } = await lib('../run/try-change.js');
+  ctx.trying = { done: 0, total: 0 };
+  try {
+    send(res, 200, await tryChange({
+      root: join(ctx.worldsDir, '..'), dir: ctx.daysDir, pool: body.pool, text: body.text,
+      onProgress: p => { if (ctx.trying) Object.assign(ctx.trying, p); }
+    }));
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    if (['BAD_TEXT', 'BAD_POOL'].includes(err.code)) throw new HttpError(400, err.message);
+    if (err.code === 'NO_BASELINES') throw new HttpError(409, err.message);
+    throw new HttpError(502, `The run did not finish: ${err?.message || err}`);
+  } finally {
+    ctx.trying = null;
   }
 }
 

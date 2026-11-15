@@ -511,6 +511,14 @@ a.btn.quiet:hover { color: var(--text); }
 .owner-label { width: 34px; color: var(--muted); font-size: var(--fs-s); }
 .owner-seg { flex: 1; display: flex; }
 .owner-seg button { flex: 1; min-width: 0; padding: 0 6px; }
+.owner-try { display: flex; gap: 8px; margin: 10px 0 0 46px; }
+.owner-try input {
+  flex: 1; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--field); border-radius: var(--radius);
+  background: var(--panel); color: var(--text); font: inherit;
+}
+.owner-try input:disabled { color: var(--muted); }
+.verdict .owner-try .btn { margin-top: 0; height: 36px; }
+.verdict .owner-progress { margin-top: 16px; }
 .verdict .owner-headline { margin-top: 26px; }
 .owner-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
 .owner-col { padding: 16px 16px 6px; border: 1px solid var(--line); border-radius: var(--radius); }

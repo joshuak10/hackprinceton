@@ -158,6 +158,17 @@ export async function apiAskAgain(runId, agentId, decision, today, pool = null) 
   return body;
 }
 
+// A change in the owner's own words, run with Jev over the saved days (§21h). Takes about a minute.
+export async function apiTryChange(pool, text) {
+  const res = await fetch('/api/days/try', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pool, text }) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `The change could not be tried (${res.status}).`);
+  return body;
+}
+
+// How far a typed change's run has got: { running, done, total } in evenings.
+export const apiTryProgress = () => getJson('/api/days/try');
+
 // The saved two-month results for a pool of diners (§21f): { pool, found, meta, results }.
 export const apiDays = pool => getJson(`/api/days?pool=${encodeURIComponent(pool)}`);
 

@@ -5,12 +5,25 @@
 
 // The changes an owner can try, the saved result each one shows (matched by its label), and the days command's name.
 export const OWNER_CHANGES = [
-  { id: 'seats', short: 'More seats', name: 'two more seats', match: /more seat/i, flag: 'seats+2' },
-  { id: 'faster', short: 'Faster meals', name: 'meals 15% quicker', match: /quicker|faster/i, flag: 'faster15' },
-  { id: 'card', short: 'Sorry card', name: 'a card for people turned away', match: /turned away/i, flag: 'sorry' }
+  { id: 'seats', short: 'More seats', name: 'two more seats', match: /^2 more seats?\b/i, flag: 'seats+2' },
+  { id: 'faster', short: 'Faster meals', name: 'meals 15% quicker', match: /\b15% quicker\b/i, flag: 'faster15' },
+  { id: 'card', short: 'Sorry card', name: 'a card for people turned away', match: /^A card for people turned away/i, flag: 'sorry' }
 ];
-export const ownerChange = id => OWNER_CHANGES.find(c => c.id === id) || OWNER_CHANGES[0];
-export const resultFor = (saved, id) => (saved?.results || []).find(r => ownerChange(id).match.test(r?.label || '')) || null;
+// A change is one of the suggestions (by id), or what the owner typed: { label, text, understood } (§21h), where
+// `label` is the saved result's label.
+const lowerFirst = s => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+export function ownerChange(change) {
+  if (change && typeof change === 'object') {
+    // `words` is what the text box holds; `name` goes into a sentence, so the owner's words are quoted there.
+    const words = lowerFirst(String(change.text || '').replace(/[.!?\s]+$/, ''));
+    return { id: 'typed', short: '', words, name: `“${words}”`, label: change.label, understood: change.understood || '', flag: null };
+  }
+  return OWNER_CHANGES.find(c => c.id === change) || OWNER_CHANGES[0];
+}
+export function resultFor(saved, change) {
+  const c = ownerChange(change), results = saved?.results || [];
+  return (c.id === 'typed' ? results.find(r => r?.label === c.label) : results.find(r => c.match.test(r?.label || ''))) || null;
+}
 
 // "Friday evening" -> "Friday"; a place open every day has no day name.
 const dayWord = meta => (meta?.daysPerWeek === 1 && meta.dayName ? String(meta.dayName).split(/\s+/)[0] : null);

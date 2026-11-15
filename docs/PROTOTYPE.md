@@ -1488,3 +1488,28 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 - The replay on the map for 1 Friday is one recorded evening, not the first evening of the loop, so its live counts (hidden by default) differ a little from the panel.
 
 **Code.** `run/days-saved.js` (`daySeries`, `mealMinutes`), `web/scope/lib/owner.js` (periods, totals, words; no DOM), `web/scope/lib/owner-panel.js` (the panel and the chart), `web/scope/app.js` (`showOwner`, `ownerLayout`), `web/scope/lib/render.js` (`colorBy: 'customer'`). Tests: `test/owner.test.js`, `test/server-days.test.js`.
+
+### 21h. A change in the owner's own words (Nov 15)
+
+**Decision (Ryan).** The change being tried must not be a fixed list. Under the three suggestions is a text box that starts as the suggestion's words ("two more seats"). The owner types what they want and presses Enter, and the two months are run again with Jev for that change.
+
+**How a sentence is read** (`parseChange` in `run/try-change.js`). Words that name a lever the loop has become that lever, with the number in the sentence:
+
+| Typed | Run as |
+|---|---|
+| "three more seats", "add 4 stools at the counter" | `seats+3`, `seats+4` |
+| "make meals 20% faster", "faster turnover" | `faster20`, `faster15` |
+| "raise prices by $3", "cut the price by 2 dollars" | `price+3`, `price-2` |
+| "10% off on Fridays", "run a promotion" | `promo10`, `promo20` |
+| "a stamp card: buy 9 get the next free" | `card10` |
+| "a sorry card for people we turn away" | `sorry` |
+
+Anything else is run as **something customers are told**: "take phone numbers and text people when their seat is ready". The sentence is given, as a message from the restaurant, to the people who already know the place each morning and to everyone who comes that evening, and Jev weighs it for each of them. Nothing about the room changes, and nobody new is recruited (`promo.audience: 'customers'` in `run/days.js`; a promotion still reaches a share of the street). The panel says how the sentence was read ("Read as: every price up by $3.").
+
+**The run.** `POST /api/days/try` with `{ pool, text }` runs the change over the days and seeds of the newest saved baselines for that pool, the three runs side by side, and saves `data/days/try-<label>.json` in the format of the days command, so `GET /api/days` serves it like any other result. A change already saved returns at once. One at a time; `GET /api/days/try` gives `{ running, done, total }` in evenings, which the panel shows.
+- It takes about three minutes and about ten cents with Jev (measured Nov 15: 164, 186 and 219 seconds). The panel says so while it runs.
+- It needs saved baselines on the computer; without them it says to run the days command once.
+
+**Checked once each, live** (8 Fridays, 3 runs): "three more seats", $1,575 more revenue and 45 more customers seated over two months; "raise prices by $3", $493 more revenue with customers seated about the same; "take phone numbers and text people when their seat is ready", $245 more revenue and 7 more customers seated. Sizes are not validated.
+
+**Code.** `run/try-change.js` (`parseChange`, `changeFromText`, `tryChange`), `server/server.js` (`postDaysTry`), `web/scope/lib/owner.js` (`ownerChange`, `resultFor` for a typed change), `web/scope/lib/owner-panel.js` (the text box), `web/scope/app.js` (`tryTyped`). Test: `test/try-change.test.js`.

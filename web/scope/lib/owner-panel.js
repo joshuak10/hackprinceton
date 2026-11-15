@@ -17,19 +17,44 @@ const seg = (label, items, selected, onPick) => {
   return g;
 };
 
-// root: the panel at the top of the side panel. onPeriod(n), onChange(id), onDetails(), onPromo().
-export function createOwner(root, { onPeriod, onChange, onDetails, onPromo }) {
+// root: the panel at the top of the side panel. onPeriod(n), onChange(id), onTry(text), onDetails(), onPromo().
+export function createOwner(root, { onPeriod, onChange, onTry, onDetails, onPromo }) {
   return {
     // periods: [{ n, label }]; changes: [{ id, short }]; rows from figureRows; missing: { text, command } when the
     // change has no saved result here. promo: label of the quiet step to the promotion test, or ''.
-    show({ periods, n, changes, change, title, headline, rows, caution, missing = null, details = false, promo = '' }) {
+    // tryText: what the text box holds (the change in words). busy: the sentence being run, or ''. error: why the
+    // last try failed. understood: how a typed sentence was read.
+    show({ periods, n, changes, change, title, headline, rows, caution, missing = null, details = false, promo = '', tryText = '', busy = '', error = '', understood = '' }) {
       const had = root.contains(document.activeElement) ? document.activeElement.textContent : null;
       const head = el('div', 'owner-head');
       head.append(el('p', 'owner-label', 'Over'), seg('Period', periods.map(p => ({ id: p.n, label: p.label })), n, onPeriod));
       const pick = el('div', 'owner-head');
       pick.append(el('p', 'owner-label', 'Try'), seg('Change to try', changes.map(c => ({ id: c.id, label: c.short })), change, onChange));
 
-      const parts = [head, pick];
+      // The change in the owner's own words: it starts as the suggestion, and Enter runs whatever is typed.
+      const form = el('form', 'owner-try');
+      form.autocomplete = 'off';
+      const input = el('input');
+      input.type = 'text';
+      input.maxLength = 160;
+      input.value = busy || tryText;
+      input.disabled = Boolean(busy);
+      input.setAttribute('aria-label', 'The change to try, in your own words');
+      input.placeholder = 'Type a change, for example: three more seats';
+      const go = el('button', 'btn small', 'Try it');
+      go.type = 'submit';
+      go.disabled = Boolean(busy);
+      form.append(input, go);
+      form.addEventListener('submit', e => { e.preventDefault(); if (input.value.trim()) onTry(input.value.trim()); });
+
+      const parts = [head, pick, form];
+      if (busy) {
+        parts.push(el('h2', 'owner-headline', 'Running two months with Jev…'), el('p', 'hint', 'The same customers, the same Fridays, with your change. This takes about three minutes and costs about ten cents.'), el('progress', 'owner-progress'), el('p', 'hint owner-progress-line', 'Starting.'));
+        root.replaceChildren(...parts);
+        return;
+      }
+      if (error) parts.push(el('p', 'hint warn', error));
+      if (understood) parts.push(el('p', 'hint', `Read as: ${understood}.`));
       if (missing) {
         parts.push(el('h2', null, missing.text), el('p', 'hint', 'Run it once (a few minutes, about 10 cents with Jev) and reload:'), el('pre', 'cmd', missing.command));
       } else {
