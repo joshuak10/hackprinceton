@@ -351,6 +351,11 @@ export function memoryWords(m, shopName = 'the shop') {
   if (typeof r.text === 'string' && r.text.trim()) return `${when}: ${r.text.trim().replace(/[.\s]+$/, '')}.`;
   const wait = Math.max(0, Number(r.wait) || 0);
   const left = r.outcome === 'left';
+  // Turned away on seeing the line (§21b): they did not wait, so the memory is the line they saw.
+  const ahead = Math.round(Number(r.ahead) || 0);
+  if (left && wait < 1 && ahead > 0) {
+    return `${when}: found ${ahead === 1 ? '1 person' : `${ahead} people`} in line at ${shopName} and left without ordering.`;
+  }
   const parts = [];
   if (wait < 1) parts.push(left ? `no line at ${shopName}` : `no line at ${shopName}, served right away`);
   else {
