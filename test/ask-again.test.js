@@ -3,8 +3,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { targetChoice, askRows, askWords, rowWords, everyoneRows, sizeOf } from '../web/scope/lib/ask-again.js';
-import { askAgain, cleanToday, withToday, eveningWords } from '../run/ask-again.js';
+import { targetChoice, askRows, askWords, rowWords, everyoneRows, elsewhereWords, brief, sizeOf } from '../web/scope/lib/ask-again.js';
+import { askAgain, together, cleanToday, withToday, eveningWords, REPEATS } from '../run/ask-again.js';
 
 const person = { name: 'Julian Reyes', about: 'Tenth anniversary tonight. The babysitter leaves at nine.' };
 const LINE = {
@@ -34,7 +34,7 @@ describe('ask again', () => {
       { label: 'Comes back next week', again: '29%', changed: '45%', change: '+16', size: 'clear' }
     ]);
     const w = askWords(result, { backLabel: 'Comes back next Friday' });
-    assert.equal(w.headline, 'Comes back next Friday: 29% without your sentence, 45% with it. More likely by 16 points.');
+    assert.equal(w.headline, 'Stays to eat here tonight: 56% without your sentence, 68% with it. More likely by 12 points.', 'the headline is tonight');
     assert.equal(w.feeling, 'Feels impatient without it, touched with it.');
     const small = askWords({ tonight: pair(0.57, 0.50), back: null });
     assert.equal(small.headline, 'Stays to eat here tonight: 57% without your sentence, 50% with it. A small change, and it can be chance.');
@@ -52,6 +52,11 @@ describe('ask again', () => {
     assert.deepEqual(rows.map(r => [r.name, r.again, r.changed, r.change, r.size, r.feeling]), [
       ['Priya', '63%', '41%', '−22', 'clear', 'impatient to worried'], ['Dana', '69%', '72%', '+3', 'none', 'impatient']
     ]);
+    assert.equal(elsewhereWords(rows, 'Dana', 'none'), 'It mattered most to Priya (film at 7:30): 63% without it, 41% with it.');
+    assert.equal(elsewhereWords(rows, 'Dana', 'clear'), '', 'not said when the person who is open moved');
+    assert.equal(elsewhereWords(rows, 'Priya', 'none'), '', 'nobody else moved');
+    assert.equal(brief('Brought her two children after a swim meet. The younger one is hungry.'), 'Brought her two children after a swim meet');
+    assert.equal(brief('Has a film starting at 7:30 a few blocks away and has not eaten since breakfast.', 40), 'Has a film starting at 7:30 a few…');
   });
 
   test('the two versions differ only in the last sentence, and the evening becomes a memory', async () => {
@@ -73,14 +78,19 @@ describe('ask again', () => {
       } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
     const out = await askAgain(LINE, 'The host brings sparkling wine', { apiKey: 'test-key', fetch, spec, pool, agent: { served: 0, waitTotal: 0 } });
-    assert.equal(sent.length, 4, 'tonight twice and next week twice');
-    assert.deepEqual(out.tonight, { again: { yes: 0.55, feeling: 'impatient', frustration: 1 }, changed: { yes: 0.7, feeling: 'touched', frustration: 1 } });
+    assert.equal(sent.length, 2 * REPEATS + 2, 'tonight three times each way, next week once each way');
+    assert.deepEqual([out.tonight.again.yes, out.tonight.again.feeling, out.tonight.again.asks], [0.55, 'impatient', REPEATS]);
+    assert.deepEqual([out.tonight.changed.yes.toFixed(2), out.tonight.changed.feeling, out.tonight.changed.spread], ['0.70', 'touched', 0]);
     assert.deepEqual([out.back.again.yes, out.back.changed.yes], [0.3, 0.45]);
     assert.equal(out.back.memory, 'found people waiting for a seat at the sushi restaurant and left without eating');
     const texts = sent.map(b => JSON.stringify(b));
-    assert.equal(texts[1].replace('Just now: The host brings sparkling wine.', 'Just now: Nothing else has happened.'), texts[0], 'tonight: only the last sentence differs');
-    assert.equal(texts[3].replace('The host brings sparkling wine.', 'Nothing else happened that evening.'), texts[2], 'next week: only the last sentence differs');
-    assert.ok(texts[0].includes('stay to eat here tonight'), 'asked whether they stay, so good news about a seat cannot read as a no');
+    const tonight = texts.filter(t => t.includes('stay to eat here tonight')), back = texts.filter(t => !t.includes('stay to eat here tonight'));
+    const plain = tonight.find(t => t.includes('Just now: Nothing else has happened.')), wine = tonight.find(t => t.includes('sparkling wine'));
+    assert.equal(wine.replace('Just now: The host brings sparkling wine.', 'Just now: Nothing else has happened.'), plain, 'tonight: only the last sentence differs');
+    const usual = back.find(t => t.includes('Nothing else happened that evening.')), warm = back.find(t => t.includes('sparkling wine'));
+    assert.equal(warm.replace('The host brings sparkling wine.', 'Nothing else happened that evening.'), usual, 'next week: only the last sentence differs');
+    assert.deepEqual(together([{ yes: 0.5, feeling: 'sad' }, { yes: 0.6, feeling: 'hurt' }, { yes: 0.7, feeling: 'calm' }]).feeling, null, 'three different words is no answer');
+    assert.equal(together([{ yes: 0.5, feeling: 'sad' }, { yes: 0.6, feeling: 'sad' }, { yes: 0.7, feeling: 'hurt' }]).feeling, 'sad');
 
     const alone = await askAgain(LINE, 'The host brings sparkling wine', { apiKey: 'test-key', fetch });
     assert.equal(alone.back, null, 'without a pool of diners only tonight is asked');

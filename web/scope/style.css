@@ -624,6 +624,8 @@ a.btn.quiet:hover { color: var(--text); }
 .ask-again .ask-sub { display: block; color: var(--faint); font-size: var(--fs-xs); font-weight: 400; }
 .ask-again .ask-all-head { margin-top: 14px; font-weight: 600; }
 .ask-again .ask-out > .btn { margin-top: 10px; }
+.ask-again .vt tr.quiet th, .ask-again .vt tr.quiet td { color: var(--faint); }
+.ask-again .vt.saved thead td:first-child { width: 50%; }
 .dec-item { border-top: 1px solid var(--line); padding: 10px 0; }
 .dec-item.future { opacity: 0.45; }
 .dec-item .dh { display: flex; justify-content: space-between; gap: 8px; font-size: var(--fs-s); color: var(--muted); }

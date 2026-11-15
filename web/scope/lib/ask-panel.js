@@ -2,8 +2,10 @@
 // that the inspector keeps across its redraws, so what is typed, and the last answer, stay while the replay runs.
 // The words come from ask-again.js; asking is done by the caller (onAsk, onAskAll).
 import { el } from './panels.js';
-import { ASK_PRESETS, askRows, askWords, rowWords, everyoneRows } from './ask-again.js';
+import { ASK_PRESETS, askRows, askWords, rowWords, everyoneRows, elsewhereWords } from './ask-again.js';
 
+// A small table. head: column titles (the first is the row title's, usually ''). rows: arrays of cells, each a
+// string or { text, sub, cls }; a row may carry a class as rows[i].cls.
 const table = (head, rows) => {
   const t = el('table', 'vt saved');
   const thead = el('thead'), hr = el('tr');
@@ -15,9 +17,8 @@ const table = (head, rows) => {
   thead.append(hr);
   const tbody = el('tbody');
   for (const cells of rows) {
-    const tr = el('tr');
+    const tr = el('tr', cells.cls || null);
     cells.forEach((cell, i) => {
-      // A cell is a string, or { text, sub, cls }.
       const c = typeof cell === 'object' && cell ? cell : { text: cell };
       if (i === 0) {
         const th = el('th', null, c.text);
@@ -36,7 +37,7 @@ const table = (head, rows) => {
 // onAskAll(sentence) -> Promise<[{ name, about, result }]>: the same sentence asked of one of each kind of diner
 export function createAskPanel({ onAsk, onAskAll }) {
   const node = el('div', 'ask-again');
-  const S = { key: null, decision: null, busy: false, result: null, error: '', asked: '', all: null, allBusy: false, allError: '', backLabel: undefined };
+  const S = { key: null, decision: null, name: '', busy: false, result: null, error: '', asked: '', all: null, allBusy: false, allError: '' };
 
   const title = el('h3', 'insp-sec', 'Tell Jev what just happened, and ask again');
   const which = el('p', 'hint');
@@ -63,32 +64,32 @@ export function createAskPanel({ onAsk, onAskAll }) {
 
   function drawOut() {
     go.disabled = S.busy;
-    if (S.busy) { out.replaceChildren(el('p', 'hint', 'Asking Jev: once as it is, once with your sentence…')); return; }
+    if (S.busy) { out.replaceChildren(el('p', 'hint', 'Asking Jev, with your sentence and without it…')); return; }
     if (S.error) { out.replaceChildren(el('p', 'hint warn', S.error)); return; }
     if (!S.result) { out.replaceChildren(); return; }
-    const opts = { backLabel: S.backLabel };
-    const words = askWords(S.result, opts);
+    const words = askWords(S.result);
     if (!words) { out.replaceChildren(el('p', 'hint warn', 'Jev did not answer.')); return; }
-    const rows = askRows(S.result, opts).map(rowWords);
-    const everyone = el('button', 'btn small', S.allBusy ? 'Asking every diner…' : 'Ask every diner the same');
-    everyone.type = 'button';
-    everyone.disabled = S.allBusy;
-    everyone.addEventListener('click', askAll);
+    const row = rowWords(askRows(S.result)[0]);
+    const list = S.all ? everyoneRows(S.all) : null;
+    const elsewhere = list ? elsewhereWords(list, S.name, words.size) : '';
     const parts = [
       el('p', 'ask-said', `“${S.asked}”`),
       el('p', `why ask-${words.size}`, words.headline),
       words.feeling ? el('p', 'ask-feel', words.feeling) : null,
-      table(['', 'Without it', 'With your sentence', 'Change'], rows.map(r => [r.label, r.again, r.changed, { text: r.change, cls: 'delta' + (r.size === 'clear' ? ' strong' : '') }])),
-      el('p', 'hint', words.note),
-      onAskAll ? everyone : null
+      elsewhere ? el('p', 'why ask-clear', elsewhere) : null,
+      table(['', 'Without it', 'With your sentence', 'Change'], [[row.label, row.again, row.changed, { text: row.change, cls: 'delta' + (row.size === 'clear' ? ' strong' : '') }]]),
+      el('p', 'hint', words.note)
     ];
+    if (S.allBusy) parts.push(el('p', 'hint', 'Asking every kind of diner the same…'));
     if (S.allError) parts.push(el('p', 'hint warn', S.allError));
-    if (S.all) {
-      const list = everyoneRows(S.all);
+    if (list) {
       parts.push(
-        el('p', 'ask-all-head', 'The same sentence, one of each diner: stays to eat here tonight'),
-        table(['', 'Without', 'With', 'Feels'], list.map(r => [{ text: r.name, sub: r.about }, r.again, { text: `${r.changed} (${r.change})`, cls: 'delta' + (r.size === 'clear' ? ' strong' : '') }, r.feeling])),
-        el('p', 'hint', 'Each is asked at their own moment in the evening. Who moves, and who does not, depends on who they are.')
+        el('p', 'ask-all-head', 'The same sentence, every kind of diner'),
+        table(['', 'Stays tonight', 'Feels'], list.map(r => Object.assign(
+          [{ text: r.name, sub: r.about }, { text: `${r.again} to ${r.changed}`, cls: 'delta' + (r.size === 'clear' ? ' strong' : '') }, r.feeling],
+          { cls: r.size === 'none' ? 'quiet' : null }
+        ))),
+        el('p', 'hint', 'Each is asked at their own moment in the evening. Grey rows moved less than two asks of the same question can differ.')
       );
     }
     out.replaceChildren(...parts.filter(Boolean));
@@ -99,7 +100,7 @@ export function createAskPanel({ onAsk, onAskAll }) {
     if (S.busy || !S.decision) return;
     if (text.length < 3) { Object.assign(S, { error: 'Write a few words about what happened first.', result: null, all: null }); drawOut(); return; }
     const key = S.key;
-    Object.assign(S, { busy: true, error: '', result: null, asked: text, all: null, allError: '' });
+    Object.assign(S, { busy: true, error: '', result: null, asked: text, all: null, allBusy: false, allError: '' });
     drawOut();
     try {
       const result = await onAsk(S.decision.id, text);
@@ -111,10 +112,10 @@ export function createAskPanel({ onAsk, onAskAll }) {
     } finally {
       if (S.key === key) { S.busy = false; drawOut(); }
     }
+    // Then every kind of diner, without another click: a sentence that does not concern this person may concern another.
+    if (S.key === key && S.result && onAskAll) askAll(key, text);
   }
-  async function askAll() {
-    if (S.allBusy || !S.asked) return;
-    const key = S.key, text = S.asked;
+  async function askAll(key, text) {
     Object.assign(S, { allBusy: true, allError: '' });
     drawOut();
     try {
@@ -122,9 +123,9 @@ export function createAskPanel({ onAsk, onAskAll }) {
       if (S.key !== key || S.asked !== text) return;
       S.all = list;
     } catch (err) {
-      if (S.key === key) S.allError = err?.message || 'The other diners could not be asked.';
+      if (S.key === key && S.asked === text) S.allError = err?.message || 'The other diners could not be asked.';
     } finally {
-      if (S.key === key) { S.allBusy = false; drawOut(); }
+      if (S.key === key && S.asked === text) { S.allBusy = false; drawOut(); }
     }
   }
   form.addEventListener('submit', e => { e.preventDefault(); ask(); });
@@ -133,14 +134,13 @@ export function createAskPanel({ onAsk, onAskAll }) {
     node,
     input,
     // decision: the moment to ask about (targetChoice), or null to hide the box. key: person and moment.
-    // when: "7:03 pm". situation: what they were told was happening. why: shown in place of the form when asking
-    // is not possible. backLabel: "Comes back next Friday".
-    update({ key, decision, when = '', situation = '', why = '', backLabel }) {
+    // name: the person's name. when: "7:03 pm". situation: what they were told was happening.
+    // why: shown in place of the form when asking is not possible.
+    update({ key, decision, name = '', when = '', situation = '', why = '' }) {
       node.hidden = !decision;
       if (!decision) { S.key = null; S.decision = null; return; }
-      S.backLabel = backLabel;
       if (S.key !== key) {
-        Object.assign(S, { key, decision, busy: false, result: null, error: '', asked: '', all: null, allBusy: false, allError: '' });
+        Object.assign(S, { key, decision, name, busy: false, result: null, error: '', asked: '', all: null, allBusy: false, allError: '' });
         input.value = '';
         drawOut();
       }

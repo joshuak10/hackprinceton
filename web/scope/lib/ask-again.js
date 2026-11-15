@@ -4,11 +4,11 @@
 // versions differ only in the last sentence, the viewer's or a neutral one. This file says what moved.
 // ask-panel.js builds the DOM.
 
-// Sentences that fit anyone, for one click: a kindness, a slight, and a pull from elsewhere.
+// Sentences that fit anyone, for one click: news that splits the room, a kindness, and a slight.
 export const ASK_PRESETS = [
+  'The host says tables are now an hour, but anyone eating alone can sit at the counter now',
   'The host apologises warmly and brings something on the house',
-  'The host snaps that anyone who cannot wait should eat elsewhere',
-  'A text arrives: they are needed at home in half an hour'
+  'The host snaps that anyone who cannot wait should eat elsewhere'
 ];
 
 // Two asks of the same version differ by a few points: on Nov 15, some 20 repeats of unchanged versions stayed
@@ -38,11 +38,11 @@ export function askRows(result, { backLabel = 'Comes back next week' } = {}) {
   return [row('tonight', 'Stays to eat here tonight', result?.tonight), row('back', backLabel, result?.back)].filter(Boolean);
 }
 
-// What the sentence did, in words: { size, headline, feeling, note }. The headline follows the answer that moved most.
+// What the sentence did, in words: { size, headline, feeling, note }. The headline is tonight's answer.
 export function askWords(result, opts = {}) {
   const rows = askRows(result, opts);
   if (!rows.length) return null;
-  const lead = rows.reduce((best, r) => (Math.abs(r.change) > Math.abs(best.change) ? r : best), rows[0]);
+  const lead = rows[0];
   const pair = `${pct(lead.again)} without your sentence, ${pct(lead.changed)} with it`, n = Math.abs(lead.change);
   const headline = lead.size === 'clear' ? `${lead.label}: ${pair}. ${lead.change > 0 ? 'More' : 'Less'} likely by ${n} points.`
     : lead.size === 'small' ? `${lead.label}: ${pair}. A small change, and it can be chance.`
@@ -51,7 +51,7 @@ export function askWords(result, opts = {}) {
   const feeling = fa && fb ? (fa === fb ? `Feels ${fb} either way.` : `Feels ${fa} without it, ${fb} with it.`) : '';
   return {
     size: lead.size, headline, feeling,
-    note: 'All of it was asked just now. The two versions differ only in their last sentence: yours, or “nothing else has happened”. A few points either way is noise.'
+    note: 'Asked just now, three times each way. The two versions differ only in their last sentence: yours, or “nothing else has happened”. A few points either way is noise.'
   };
 }
 
@@ -66,8 +66,22 @@ export function everyoneRows(list) {
     if (!r) return null;
     const fa = result.tonight.again.feeling, fb = result.tonight.changed.feeling;
     return {
-      name, about: about || '', again: pct(r.again), changed: pct(r.changed), change: signed(r.change), points: r.change, size: r.size,
-      feeling: fa && fb && fa !== fb ? `${fa} to ${fb}` : fb || ''
+      name, about: brief(about), again: pct(r.again), changed: pct(r.changed), change: signed(r.change), points: r.change, size: r.size,
+      feeling: fa && fb && fa !== fb ? `${fa} to ${fb}` : fb || fa || ''
     };
   }).filter(Boolean).sort((a, b) => Math.abs(b.points) - Math.abs(a.points));
+}
+
+// Who a person is, in a few words: the first sentence of their situation, cut at a word.
+export function brief(about, max = 64) {
+  const first = String(about || '').split(/(?<=[.!?])\s/)[0].replace(/[.!?]+$/, '');
+  return first.length <= max ? first : `${first.slice(0, max).replace(/\s+\S*$/, '')}…`;
+}
+
+// When the sentence hardly moved the person who is open, say who it did move: the first of the others past
+// 10 points. rows: everyoneRows(list). Returns a sentence, or '' when the open person moved or nobody did.
+export function elsewhereWords(rows, openName, openSize) {
+  if (openSize === 'clear') return '';
+  const other = (rows || []).find(r => r.name !== openName && r.size === 'clear');
+  return other ? `It mattered most to ${other.name} (${other.about.charAt(0).toLowerCase()}${other.about.slice(1)}): ${other.again} without it, ${other.changed} with it.` : '';
 }

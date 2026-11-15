@@ -660,7 +660,7 @@ function inspectorState() {
 // The person view, with the box that asks Jev one of their choices again with a sentence about what just happened (§9c).
 // The box is one node kept across redraws, so typing in it survives the replay moving on.
 const askPanel = createAskPanel({
-  onAsk: (decision, today) => apiAskAgain(st.bundle.meta.runId, st.selectedAgent, decision, today, st.caseInfo?.pool || null),
+  onAsk: (decision, today) => apiAskAgain(st.bundle.meta.runId, st.selectedAgent, decision, today),
   onAskAll: askEveryone
 });
 // The same sentence asked of one of each kind of diner, each at their own moment at the time on the slider. The
@@ -688,8 +688,7 @@ function drawInspector(id) {
   const recordedHere = Boolean(st.live) && providerWords(meta) !== 'Sample data';
   askPanel.update({
     key: d ? `${meta.runId}/${id}/${d.id}` : null, decision: d,
-    when: d ? clockText(meta.clockStart, d.t) : '', situation: d?.observation?.now || '',
-    backLabel: st.caseInfo?.pool ? `Comes back next ${String(st.loyalty.saved?.meta?.dayName || 'week').split(' ')[0]}` : undefined,
+    name: st.agentsById.get(id)?.personaName || '', when: d ? clockText(meta.clockStart, d.t) : '', situation: d?.observation?.now || '',
     why: !d ? '' : !recordedHere ? 'Asking again needs a run recorded by the Swarmscope engine on this computer.'
       : !st.live.jev ? 'Asking again needs a Jev key on the server.' : ''
   });

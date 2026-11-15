@@ -11,6 +11,9 @@ import { morningRequest } from './morning.js';
 import { normalizePool, rememberedWait } from './days.js';
 
 export const TODAY_MIN = 3, TODAY_MAX = 240;
+// Each version of tonight's question is asked this many times: the answer is their mean, and the feeling is the
+// word most of them gave. One ask of the feeling flipped between words for the same unchanged question (judged Nov 15).
+export const REPEATS = 3;
 const NEUTRAL_NOW = 'Nothing else has happened';
 const NEUTRAL_EVENING = 'Nothing else happened that evening';
 
@@ -46,7 +49,7 @@ const view = d => ({
  * @param {{ spec?: object, agent?: object, pool?: object, fetch?: Function, apiKey?: string, model?: string }} opts
  *   agent: the run's record of the person; pool: the place's pool of diners (raw), for the come-back question.
  * @returns {Promise<{ decision, today, now, tonight: { again, changed }, back: { again, changed, memory } | null, model }>}
- *   again / changed: { yes, feeling, frustration }; `back` has yes only.
+ *   again / changed: { yes, asks, spread, feeling, frustration }, from REPEATS asks; `back` has yes only, asked once.
  */
 export async function askAgain(recorded, today, { spec = null, agent = null, pool = null, fetch, apiKey = process.env.TYPESAFE_API_KEY, model } = {}) {
   const sentence = cleanToday(today);
@@ -60,7 +63,8 @@ export async function askAgain(recorded, today, { spec = null, agent = null, poo
     r.observation.now = withToday(req.observation.now, text);
     return r;
   };
-  const requests = [{ ...tonight(NEUTRAL_NOW), id: `${req.id}-again` }, { ...tonight(sentence), id: `${req.id}-changed` }];
+  const tonightPair = [{ ...tonight(NEUTRAL_NOW), id: `${req.id}-again` }, { ...tonight(sentence), id: `${req.id}-changed` }];
+  const backPair = [];
 
   // A week later: the same person, remembering this evening as it went, with and without the sentence.
   let memory = null;
@@ -73,17 +77,34 @@ export async function askAgain(recorded, today, { spec = null, agent = null, poo
       state: { history: { visits: Math.max(1, Number(agent.served) || 0), weeks: 4 }, memory: [{ daysAgo: 7, text: `${base}. ${bare(text)}` }] }
     });
     memory = base;
-    requests.push({ ...back(NEUTRAL_EVENING), id: `${req.id}-back-again` }, { ...back(sentence), id: `${req.id}-back-changed` });
+    backPair.push({ ...back(NEUTRAL_EVENING), id: `${req.id}-back-again` }, { ...back(sentence), id: `${req.id}-back-changed` });
   }
 
-  const provider = new JevProvider({ apiKey, shuffle: false, ...(fetch ? { fetch } : {}), ...(model ? { model } : {}) });
-  const answers = await provider.decideMany(requests, { spec });
-  const [a, b, c, d] = answers.map(view);
-  if (a.yes == null || b.yes == null) throw Object.assign(new Error(answers[0]?.error || answers[1]?.error || 'Jev did not answer.'), { code: 'NO_ANSWER' });
+  // A provider answers an identical request once and reuses it, so each repeat has a provider of its own.
+  const provider = () => new JevProvider({ apiKey, shuffle: false, ...(fetch ? { fetch } : {}), ...(model ? { model } : {}) });
+  const rounds = await Promise.all(Array.from({ length: REPEATS }, (_, k) => provider().decideMany(k === 0 ? [...tonightPair, ...backPair] : tonightPair, { spec })));
+  const column = i => rounds.map(r => r[i]).filter(Boolean).map(view);
+  const a = together(column(0)), b = together(column(1));
+  if (a.yes == null || b.yes == null) throw Object.assign(new Error(rounds[0][0]?.error || rounds[0][1]?.error || 'Jev did not answer.'), { code: 'NO_ANSWER' });
+  const c = backPair.length ? view(rounds[0][2]) : null, d = backPair.length ? view(rounds[0][3]) : null;
   return {
-    decision: recorded.id, today: sentence, now: requests[1].observation.now,
+    decision: recorded.id, today: sentence, now: tonightPair[1].observation.now,
     tonight: { again: a, changed: b },
     back: memory && c?.yes != null && d?.yes != null ? { again: { yes: c.yes }, changed: { yes: d.yes }, memory } : null,
-    model: answers[1]?.model || answers[0]?.model || null
+    model: rounds[0][1]?.model || rounds[0][0]?.model || null
+  };
+}
+
+// Several asks of one version as one answer: the mean chance, how far the asks were apart, and the feeling most of
+// them gave (null when no word was given twice).
+export function together(views) {
+  const ys = views.map(v => v.yes).filter(Number.isFinite), fr = views.map(v => v.frustration).filter(Number.isFinite);
+  const mean = xs => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
+  const counts = new Map();
+  for (const v of views) if (v.feeling) counts.set(v.feeling, (counts.get(v.feeling) || 0) + 1);
+  const [word, n] = [...counts].sort((x, y) => y[1] - x[1])[0] || [null, 0];
+  return {
+    yes: mean(ys), asks: ys.length, spread: ys.length ? Math.max(...ys) - Math.min(...ys) : null,
+    feeling: n >= 2 || views.length === 1 ? word : null, frustration: mean(fr)
   };
 }
