@@ -7,11 +7,11 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanQueries, findScan, planBrief, compileFitoutHeadless } from '../compile/scanned.js';
+import { scanQueries, findScan, nameFits, planBrief, compileFitoutHeadless } from '../compile/scanned.js';
 import { extractFloorplan } from '../builder/matterport.js';
 import { validateWorld } from '../engine/spec.js';
 import { scanModelId } from '../web/scope/lib/engine.js';
-import { foundLine, noScanLine } from '../web/scope/lib/scan.js';
+import { foundLine, noScanLine, fitoutFailure } from '../web/scope/lib/scan.js';
 import { startServer } from '../server/server.js';
 
 const RAW = JSON.parse(readFileSync(new URL('./fixtures/matterport/sample-model.json', import.meta.url), 'utf8'));
@@ -34,10 +34,23 @@ function fitoutFrom(brief) {
 }
 
 describe('the searches for a description', () => {
-  test('named searches come first, in the order the words appear, then the generic shells', () => {
+  test('kind by kind in the order the words appear: the typed words, then the general searches; shells last', () => {
     const qs = scanQueries('A tiny ramen bar next to a coffee shop');
-    assert.deepEqual(qs.map(q => q.query), ['restaurant', 'food', 'bar', 'lounge', 'cafe', 'coffee', 'bakery', 'store', 'shop', 'market', 'retail']);
+    assert.deepEqual(qs.map(q => q.query), ['ramen', 'restaurant', 'food', 'bar', 'lounge', 'coffee shop', 'cafe', 'coffee', 'bakery', 'shop', 'store', 'market', 'retail']);
+    assert.deepEqual(qs.filter(q => q.typed).map(q => q.query), ['ramen', 'bar', 'coffee shop', 'shop']);
     assert.ok(qs.filter(q => q.strength === 'shell').every(q => q.query === 'retail'));
+  });
+  test('a dentist office is searched as a clinic before an office', () => {
+    assert.deepEqual(scanQueries('A dentist office').map(q => q.query), ['dentist', 'medical', 'dental', 'clinic', 'pharmacy', 'office', 'bank', 'lobby']);
+  });
+  test('typed words are searched singular and without accents', () => {
+    assert.deepEqual(scanQueries('Two Cafés and the bakeries').map(q => q.query), ['cafe', 'bakery', 'coffee', 'retail']);
+  });
+  test('a phrase of two or more words needs its first word in the name', () => {
+    assert.equal(nameFits('urgent care', 'After School Care'), false);
+    assert.equal(nameFits('urgent care', 'Urgent Care Center'), true);
+    assert.equal(nameFits('coffee shop', 'Coffee Lounge'), true);
+    assert.equal(nameFits('restaurant', '1st Floor'), true, 'one word: Matterport matched it on more than the name');
   });
   test('words that name no kind of place give no searches', () => {
     assert.deepEqual(scanQueries('A rooftop party under the stars'), []);
@@ -72,7 +85,27 @@ describe('choosing a scan', () => {
     const none = await findScan('A walk-in clinic on Monday', fake({}));
     assert.equal(none.found, null);
     assert.match(none.reason, /No scan/);
-    assert.deepEqual(none.tried.map(t => t.query), ['medical', 'dental', 'clinic', 'pharmacy', 'office']);
+    assert.deepEqual(none.tried.map(t => t.query), ['clinic', 'medical', 'dental', 'pharmacy', 'office']);
+  });
+
+  test('a search with many results is checked deeper than its top few', async () => {
+    const models = Array.from({ length: 40 }, (_, i) => ({ id: `scan${String(i).padStart(4, '0')}`, name: 'Office' }));
+    const fetched = [];
+    const out = await findScan('An office lobby', {
+      search: async ({ query, limit }) => ({ total: 919, models: query === 'office' ? models.slice(0, limit) : [] }),
+      fetchGeometry: async ({ modelId }) => { fetched.push(modelId); return modelId === 'scan0019' ? MODEL : { model: { id: modelId, floors: [], rooms: [] } }; }
+    });
+    assert.equal(out.found?.modelId, 'scan0019');
+    assert.equal(fetched.length, 20, 'checked in groups of five, stopping after the group with the usable scan');
+  });
+
+  test('"urgent care" does not take a scan named only for "care"', async () => {
+    const out = await findScan('An urgent care clinic', {
+      search: async ({ query }) => ({ total: 1, models: query === 'urgent care' ? [{ id: 'careScan01', name: 'After School Care' }] : query === 'medical' ? [{ id: 'medScan001', name: 'Medical Office' }] : [] }),
+      fetchGeometry: async () => MODEL
+    });
+    assert.equal(out.found.modelId, 'medScan001');
+    assert.equal(out.tried[0].probed, 0);
   });
 });
 
@@ -185,5 +218,8 @@ describe('the page', () => {
     assert.equal(foundLine({ name: 'Office - 2,600SF', rooms: 1, areaM2: 240, strength: 'shell', query: 'office' }), 'No scan of this kind of place; using an empty office space: 1 room, 240 m²');
     assert.match(noScanLine({ reason: 'No Matterport keys on this server.' }), /No Matterport access/);
     assert.match(noScanLine({ reason: 'The words do not name a kind of place' }), /Not a kind of place/);
+    assert.match(fitoutFailure('Claude could not fit out the scanned building: Claude Code build timed out after 420000 ms.'), /ran out of time/);
+    assert.match(fitoutFailure('Claude could not fit out the scanned building: Could not fit out the scan in 3 attempts. Last problems:\n- x'), /three tries/);
+    assert.equal(fitoutFailure('Claude could not fit out the scanned building: HTTP 500'), 'The scan could not be used (HTTP 500).');
   });
 });

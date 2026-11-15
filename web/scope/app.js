@@ -14,7 +14,7 @@ import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector,
 import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
 import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiScan, apiDays } from './lib/source.js';
-import { foundLine, noScanLine, buildNote } from './lib/scan.js';
+import { foundLine, noScanLine, buildNote, fitoutFailure } from './lib/scan.js';
 import { LOYALTY, suggestionWords, savedResult, loyaltyRows, loyaltyWords, regularWords, captionWords, cautionWords, missingWords } from './lib/loyalty.js';
 import {
   chooseRun, findTest, findOfferTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords,
@@ -530,9 +530,10 @@ async function buildPlace(text) {
       try {
         ({ spec } = await apiCompile(text, { scan: found }));
       } catch (err) {
-        // The scan could not be fitted out: draw the place instead, and say so.
+        // The scan could not be fitted out: draw the place instead, and say why.
+        console.warn('[build] the scan could not be fitted out:', err.message);
         p.set(0, 'The scanned building could not be fitted out, so Claude draws the place');
-        p.note(buildNote(null));
+        p.note(`${fitoutFailure(err.message)} ${buildNote(null)}`);
       }
     }
     if (!spec) {

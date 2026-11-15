@@ -33,3 +33,13 @@ export function buildNote(found) {
     ? 'Claude is placing the counters, doors people use and the people who come inside the real, measured walls. The walls are from the scan; what happens inside is invented. Two or three minutes.'
     : 'Claude draws the floor plan and writes the people from your words. This takes two or three minutes.';
 }
+
+/** Why a scan could not be used, in one short sentence from the server's error. */
+export function fitoutFailure(message) {
+  const m = String(message ?? '');
+  if (/timed out/i.test(m)) return 'Claude ran out of time fitting out the scan.';
+  if (/attempt/i.test(m)) return 'Claude could not place everything inside the scan\'s walls in three tries.';
+  if (/no door to the outside|walked to/i.test(m)) return 'The scan has no way in that people can walk through.';
+  const first = m.replace(/^Claude could not fit out the scanned building:\s*/, '').split('\n')[0].trim();
+  return first ? `The scan could not be used (${first.length > 120 ? `${first.slice(0, 119)}…` : first}).` : 'The scan could not be used.';
+}

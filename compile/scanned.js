@@ -46,71 +46,110 @@ export const KINDS = [
     queries: ['office', 'bank', 'lobby'], shells: ['office'], area: [50, 3000] },
   { kind: 'school', words: /\b(schools?|library|libraries|classrooms?|daycare|tutoring|campus|lecture)\b/i,
     queries: ['school', 'library'], shells: ['office'], area: [60, 3000] },
-  { kind: 'venue', words: /\b(gallery|museum|church|theat(er|re)|event space|venue|arcade|studio)\b/i,
-    queries: ['gallery', 'studio', 'event'], shells: ['retail'], area: [50, 3000] }
+  // Not "studio" or "theater" as general searches: they find studio apartments and houses with a home theater.
+  { kind: 'venue', words: /\b(gallery|museum|church|theat(er|re)|event space|venue|arcade)\b/i,
+    queries: ['gallery', 'museum', 'event'], shells: ['retail'], area: [50, 3000] }
 ];
 
 // Names that are someone's home, not a place a crowd visits.
 const HOME_NAME = /\b(apartments?|apt|condos?|townho\w*|homes?|houses?|residen\w*|bed(room)?s?|\d+\s?(bd|br|ba)|villa|loft)\b/i;
 
-/**
- * The searches to try for a description, most specific first: scans named for the kind of place, then the generic
- * shells that kind can live in. Kinds are ordered by where their word first appears in the description.
- */
-export function scanQueries(description) {
-  const text = String(description ?? '');
-  const hits = KINDS.map(k => ({ k, at: text.search(k.words) })).filter(h => h.at >= 0).sort((a, b) => a.at - b.at);
-  const out = [], seen = new Set();
-  const add = (query, kind, strength) => { if (!seen.has(query)) { seen.add(query); out.push({ query, kind: kind.kind, strength, area: kind.area }); } };
-  for (const { k } of hits) for (const q of k.queries) add(q, k, 'named');
-  for (const { k } of hits) for (const q of k.shells) add(q, k, 'shell');
-  return out;
+// A word from the description as a search: lower case, no accents, each word singular ("Dentists" → "dentist",
+// "bakeries" → "bakery", "café" → "cafe").
+const singular = w => w.replace(/ies$/, 'y').replace(/([^su])s$/, '$1');
+const asQuery = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/\s+/).map(singular).join(' ');
+
+// Every phrase in the text that the kind's words match, in the order they appear.
+function typedPhrases(text, re) {
+  const all = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+  return [...text.matchAll(all)].map(m => ({ phrase: asQuery(m[0]), at: m.index }));
 }
 
 /**
- * Look for a scanned building to hold the described place. Tries each query in order, probes up to `perQuery`
- * models of each (one Matterport request each) and stops at the first query with a usable floor: at least four
- * walls, a doorway, a door to the outside, and a floor area that fits the kind of place. Among those, the first in
- * Matterport's order wins. `found.raw` is the model's raw geometry, for compileFitoutHeadless.
+ * The searches to try for a description, most specific first. Kinds go in the order their words first appear
+ * ("a dentist office" is a clinic before it is an office), and for each kind:
+ * 1. the description's own words for it ("urgent care", "ramen", "laundromat"), since a scan named for exactly that
+ *    is the best match (`typed: true`);
+ * 2. that kind's general searches ("medical", "restaurant").
+ * Then 3, the generic shells those kinds can live in (an empty retail or office space). Searches 1 and 2 are
+ * `strength: 'named'`, 3 is `'shell'`.
+ */
+export function scanQueries(description) {
+  const text = String(description ?? '');
+  const typed = KINDS.flatMap(k => typedPhrases(text, k.words).map(t => ({ ...t, k }))).sort((a, b) => a.at - b.at);
+  const kinds = [...new Set(typed.map(t => t.k))];
+  const out = [], seen = new Set();
+  const add = (query, kind, strength, own = false) => {
+    if (!query || seen.has(query)) return;
+    seen.add(query);
+    out.push({ query, kind: kind.kind, strength, area: kind.area, ...(own ? { typed: true } : {}) });
+  };
+  for (const k of kinds) {
+    for (const t of typed.filter(x => x.k === k)) add(t.phrase, k, 'named', true);
+    for (const q of k.queries) add(q, k, 'named');
+  }
+  for (const k of kinds) for (const q of k.shells) add(q, k, 'shell');
+  return out;
+}
+
+// Matterport matches any one word of a search, so "urgent care" also returns "After School Care". For a phrase of
+// two or more words, a scan counts only if its name has the phrase's first word ("urgent", "coffee", "post").
+export function nameFits(query, name) {
+  const words = String(query ?? '').split(/\s+/).filter(Boolean);
+  if (words.length < 2) return true;
+  return asQuery(String(name ?? '')).includes(words[0]);
+}
+
+/**
+ * Look for a scanned building to hold the described place. Tries each query in order and checks up to `perQuery`
+ * of its results (one Matterport request each, `batch` at a time), at most `maxProbes` in all. It stops at the first
+ * query with a usable floor: at least four walls, a doorway, a door to the outside, and a floor area that fits the
+ * kind of place. Among those, the first in Matterport's order wins. `found.raw` is the model's raw geometry, for
+ * compileFitoutHeadless. A query with hundreds of results ("office": 919) is checked 25 deep, not just at the top.
  */
 export async function findScan(description, {
-  search = searchModels, fetchGeometry = fetchModelGeometry, perQuery = 6, maxProbes = 18, maxQueries = 6, signal = null
+  search = searchModels, fetchGeometry = fetchModelGeometry, perQuery = 25, maxProbes = 60, maxQueries = 10, batch = 5, signal = null
 } = {}) {
   const queries = scanQueries(description).slice(0, maxQueries);
   const tried = [];
   if (!queries.length) return { found: null, tried, reason: 'The words do not name a kind of place that Matterport scans are searched for.' };
   let probes = 0;
+  const probe = async m => { try { return await fetchGeometry({ modelId: m.id }); } catch { return null; } };
   for (const q of queries) {
+    if (probes >= maxProbes) break;
     signal?.throwIfAborted();
     let res;
-    try { res = await search({ query: q.query, limit: Math.max(perQuery * 2, 10) }); } catch (err) {
+    try { res = await search({ query: q.query, limit: Math.min(100, perQuery * 2) }); } catch (err) {
       tried.push({ query: q.query, error: String(err?.message ?? err).slice(0, 160) });
       continue;
     }
     const entry = { query: q.query, strength: q.strength, total: res.total, probed: 0, usable: 0 };
     tried.push(entry);
-    const models = res.models.filter(m => !HOME_NAME.test(m.name)).slice(0, perQuery);
-    for (const m of models) {
-      if (probes >= maxProbes) break;
+    const models = res.models.filter(m => !HOME_NAME.test(m.name) && nameFits(q.query, m.name)).slice(0, Math.min(perQuery, maxProbes - probes));
+    for (let i = 0; i < models.length; i += batch) {
       signal?.throwIfAborted();
-      probes++; entry.probed++;
-      let raw;
-      try { raw = await fetchGeometry({ modelId: m.id }); } catch { continue; }
-      const floors = floorSummaries(raw).filter(f => f.usable && f.exteriorDoors >= 1 && f.areaM2 >= q.area[0] && f.areaM2 <= q.area[1]);
-      if (!floors.length) continue;
-      entry.usable++;
-      // The floor with the most rooms: more rooms give the fit-out more to work with.
-      const f = floors.reduce((a, b) => (b.rooms > a.rooms ? b : a));
-      return {
-        found: {
-          modelId: m.id, name: m.name, query: q.query, kind: q.kind, strength: q.strength,
-          floor: f.floor, floorLabel: f.label, rooms: f.rooms, areaM2: f.areaM2, widthM: f.widthM, depthM: f.depthM,
-          doors: f.doors, exteriorDoors: f.exteriorDoors, raw
-        },
-        tried, reason: null
-      };
+      const group = models.slice(i, i + batch);
+      const raws = await Promise.all(group.map(probe));
+      probes += group.length; entry.probed += group.length;
+      for (let j = 0; j < group.length; j++) {
+        const raw = raws[j];
+        if (!raw) continue;
+        const floors = floorSummaries(raw).filter(f => f.usable && f.exteriorDoors >= 1 && f.areaM2 >= q.area[0] && f.areaM2 <= q.area[1]);
+        if (!floors.length) continue;
+        entry.usable++;
+        // The floor with the most rooms: more rooms give the fit-out more to work with.
+        const f = floors.reduce((a, b) => (b.rooms > a.rooms ? b : a));
+        const m = group[j];
+        return {
+          found: {
+            modelId: m.id, name: m.name, query: q.query, kind: q.kind, strength: q.strength, typed: Boolean(q.typed),
+            floor: f.floor, floorLabel: f.label, rooms: f.rooms, areaM2: f.areaM2, widthM: f.widthM, depthM: f.depthM,
+            doors: f.doors, exteriorDoors: f.exteriorDoors, raw
+          },
+          tried, reason: null
+        };
+      }
     }
-    if (probes >= maxProbes) break;
   }
   return { found: null, tried, reason: 'No scan of this kind of place has walls, doors and a size that fits.' };
 }
