@@ -41,14 +41,29 @@ export const CAST = {
 
 const visit = (wait, outcome = 'served', extra = {}) => ({ daysAgo: 1, wait, outcome, ...extra });
 const REF_MEMORY = [visit(5)];
-const CARD = { need: 10, reward: 'a free coffee' };
+// The words and prices of the place being asked about. The café's are the default; `--place sushi` asks the
+// same conditions about the sushi restaurant, in its words (docs/PROTOTYPE.md §21e).
+export const CAFE_WORDS = {
+  good: S => `no line at ${S}, the barista remembered the usual order, and the coffee was excellent`,
+  bad: S => `waited about 30 minutes in line at ${S}, the order came out wrong, and nobody apologized`,
+  para: S => `stood in line for around twenty minutes at ${S} before being served`,
+  open: 'open 7 am to 3 pm today, as usual.', price: 5, step: 0.5, reward: 'a free coffee', when: 'yesterday'
+};
+export const SUSHI_WORDS = {
+  good: S => `no wait at ${S}, the chef remembered the usual order, and the fish was excellent`,
+  bad: S => `waited about 30 minutes for a seat at ${S}, the order came out wrong, and nobody apologized`,
+  para: S => `stood waiting for a seat for around twenty minutes at ${S} before sitting down`,
+  open: 'open 6 to 8:30 pm tonight, as usual.', price: 35, step: 2, reward: 'a free roll', when: 'last week'
+};
+let W = CAFE_WORDS;
+const CARD = { need: 10, get reward() { return W.reward; } };
 
 // A returning customer: their visit count, the reference memory (served after 5 minutes yesterday), and `over`.
 const back = (over = () => ({})) => (p, S) => ({ history: { visits: p.visits, weeks: 4 }, memory: REF_MEMORY, ...over(S) });
 // Someone who has never been inside.
 const fresh = (over = () => ({})) => (p, S) => ({ history: { visits: 0, via: 'has walked past it' }, ...over(S) });
 // Someone whose only visit was 4 days ago.
-const once = first => () => ({ history: { visits: 1 }, memory: [{ daysAgo: 4, first: true, wait: 5, outcome: 'served', ...first }] });
+const once = first => () => ({ history: { visits: 1 }, memory: [{ daysAgo: 4, first: true, wait: 5, outcome: 'served', ...first() }] });
 
 const mem = records => () => ({ memory: records });
 const said = text => S => ({ memory: [{ daysAgo: 1, text: text(S) }] });
@@ -72,11 +87,11 @@ export const CONDITIONS = [
   { id: 'end_fast15', who: 'returning', family: 'ending', label: '15 minutes: slow at first, quick at the end', state: back(mem([visit(15, 'served', { ending: 'fast' })])) },
   { id: 'end_slow15', who: 'returning', family: 'ending', label: '15 minutes: quick at first, stalled at the end', state: back(mem([visit(15, 'served', { ending: 'slow' })])) },
   // Does it read a memory at all, and does a sentence about nothing move it?
-  { id: 'good', who: 'returning', family: 'reads', label: 'A very good last visit', state: back(said(S => `no line at ${S}, the barista remembered the usual order, and the coffee was excellent`)) },
-  { id: 'bad', who: 'returning', family: 'reads', label: 'A very bad last visit', state: back(said(S => `waited about 30 minutes in line at ${S}, the order came out wrong, and nobody apologized`)) },
+  { id: 'good', who: 'returning', family: 'reads', label: 'A very good last visit', state: back(said(S => W.good(S))) },
+  { id: 'bad', who: 'returning', family: 'reads', label: 'A very bad last visit', state: back(said(S => W.bad(S))) },
   { id: 'weather', who: 'returning', family: 'reads', label: 'A sentence about the weather', state: back(said(() => 'it rained on Maple Street in the morning and cleared up by noon')) },
   { id: 'nomemory', who: 'returning', family: 'reads', label: 'No memory, visit count only', state: back(mem([])) },
-  { id: 'para20', who: 'returning', family: 'reads', label: 'The 20-minute wait in other words', state: back(said(S => `stood in line for around twenty minutes at ${S} before being served`)) },
+  { id: 'para20', who: 'returning', family: 'reads', label: 'The 20-minute wait in other words', state: back(said(S => W.para(S))) },
   // How fast a bad memory fades.
   { id: 'bad_d1', who: 'returning', family: 'fade', label: 'Waited 30 minutes and left, yesterday', state: back(mem([{ daysAgo: 1, wait: 30, outcome: 'left' }])) },
   { id: 'bad_d7', who: 'returning', family: 'fade', label: 'Waited 30 minutes and left, 1 week ago', state: back(mem([{ daysAgo: 7, wait: 30, outcome: 'left' }])) },
@@ -87,37 +102,37 @@ export const CONDITIONS = [
   { id: 'acc1_old', who: 'returning', family: 'adds', label: 'Last 3 visits: 5, 5, 20 (3 days ago)', state: back(mem(days([5, 5, 20]))) },
   { id: 'acc3', who: 'returning', family: 'adds', label: 'Last 3 visits: 20, 20, 20 minutes', state: back(mem(days([20, 20, 20]))) },
   // The price against the remembered price.
-  { id: 'price_same', who: 'returning', family: 'price', label: '$5.00, the same as last week', state: back(() => ({ price: 5, wasPrice: 5 })) },
-  { id: 'price_up', who: 'returning', family: 'price', label: '$5.50, up 50 cents', state: back(() => ({ price: 5.5, wasPrice: 5 })) },
-  { id: 'price_down', who: 'returning', family: 'price', label: '$4.50, down 50 cents', state: back(() => ({ price: 4.5, wasPrice: 5 })) },
-  { id: 'price_up1', who: 'returning', family: 'price', label: '$6.00, up 1 dollar', state: back(() => ({ price: 6, wasPrice: 5 })) },
-  { id: 'price_down1', who: 'returning', family: 'price', label: '$4.00, down 1 dollar', state: back(() => ({ price: 4, wasPrice: 5 })) },
+  { id: 'price_same', who: 'returning', family: 'price', label: '$5.00, the same as last week', state: back(() => ({ price: W.price, wasPrice: W.price })) },
+  { id: 'price_up', who: 'returning', family: 'price', label: '$5.50, up 50 cents', state: back(() => ({ price: W.price + W.step, wasPrice: W.price })) },
+  { id: 'price_down', who: 'returning', family: 'price', label: '$4.50, down 50 cents', state: back(() => ({ price: W.price - W.step, wasPrice: W.price })) },
+  { id: 'price_up1', who: 'returning', family: 'price', label: '$6.00, up 1 dollar', state: back(() => ({ price: W.price + 2 * W.step, wasPrice: W.price })) },
+  { id: 'price_down1', who: 'returning', family: 'price', label: '$4.00, down 1 dollar', state: back(() => ({ price: W.price - 2 * W.step, wasPrice: W.price })) },
   // A stamp card.
   { id: 'card_2of10', who: 'returning', family: 'card', label: 'Stamp card: 2 of 10', state: back(() => ({ card: { ...CARD, have: 2 } })) },
   { id: 'card_8of10', who: 'returning', family: 'card', label: 'Stamp card: 8 of 10', state: back(() => ({ card: { ...CARD, have: 8 } })) },
   { id: 'card_0of8', who: 'returning', family: 'card', label: 'Stamp card: 0 of 8 (8 to go)', state: back(() => ({ card: { ...CARD, need: 8, have: 0 } })) },
   { id: 'card_2of10_free', who: 'returning', family: 'card', label: 'Stamp card: 2 of 10, both given free (8 to go)', state: back(() => ({ card: { ...CARD, have: 2, free: 2 } })) },
   // A message from the shop, with and without a deal.
-  { id: 'msg_plain', who: 'returning', family: 'promo', label: 'Message: open as usual', state: back(S => ({ offers: [`${S}: open 7 am to 3 pm today, as usual.`] })) },
-  { id: 'promo20', who: 'returning', family: 'promo', label: 'Message: 20% off today', state: back(S => ({ offers: [`${S}: 20% off everything today.`], offerPrice: 4 })) },
+  { id: 'msg_plain', who: 'returning', family: 'promo', label: 'Message: open as usual', state: back(S => ({ offers: [`${S}: ${W.open}`] })) },
+  { id: 'promo20', who: 'returning', family: 'promo', label: 'Message: 20% off today', state: back(S => ({ offers: [`${S}: 20% off everything today.`], offerPrice: W.price * 0.8 })) },
   // A friend's remark.
-  { id: 'heard_good', who: 'returning', family: 'heard', label: 'A friend: it was good and quick', state: back(S => ({ heard: [friendRemark('good_experience', S)] })) },
-  { id: 'heard_bad', who: 'returning', family: 'heard', label: 'A friend: long line there', state: back(S => ({ heard: [friendRemark('long_line', S)] })) },
-  { id: 'heard_other', who: 'returning', family: 'heard', label: 'A friend: about something else', state: back(() => ({ heard: [friendRemark('the farmers market on Oak Street was busy')] })) },
+  { id: 'heard_good', who: 'returning', family: 'heard', label: 'A friend: it was good and quick', state: back(S => ({ heard: [friendRemark('good_experience', S, { when: W.when })] })) },
+  { id: 'heard_bad', who: 'returning', family: 'heard', label: 'A friend: long line there', state: back(S => ({ heard: [friendRemark('long_line', S, { when: W.when })] })) },
+  { id: 'heard_other', who: 'returning', family: 'heard', label: 'A friend: about something else', state: back(() => ({ heard: [friendRemark('the farmers market on Oak Street was busy', null, { when: W.when })] })) },
 
   // People who have never been inside.
   { id: 'new_ref', who: 'newcomer', family: 'new', label: 'Never been; has walked past (the reference)', state: fresh() },
   { id: 'new_rating35', who: 'newcomer', family: 'rating', label: 'Rated 3.5 stars', state: fresh(() => ({ rating: 3.5 })) },
   { id: 'new_rating40', who: 'newcomer', family: 'rating', label: 'Rated 4.0 stars', state: fresh(() => ({ rating: 4 })) },
   { id: 'new_rating45', who: 'newcomer', family: 'rating', label: 'Rated 4.5 stars', state: fresh(() => ({ rating: 4.5 })) },
-  { id: 'new_heard_good', who: 'newcomer', family: 'heard', label: 'A friend: it was good and quick', state: fresh(S => ({ heard: [friendRemark('good_experience', S)] })) },
-  { id: 'new_heard_bad', who: 'newcomer', family: 'heard', label: 'A friend: long line there', state: fresh(S => ({ heard: [friendRemark('long_line', S)] })) },
-  { id: 'new_heard_other', who: 'newcomer', family: 'heard', label: 'A friend: about something else', state: fresh(() => ({ heard: [friendRemark('the farmers market on Oak Street was busy')] })) },
-  { id: 'new_msg_plain', who: 'newcomer', family: 'promo', label: 'Message: open as usual', state: fresh(S => ({ offers: [`${S}: open 7 am to 3 pm today, as usual.`] })) },
-  { id: 'new_promo20', who: 'newcomer', family: 'promo', label: 'Message: 20% off today', state: fresh(S => ({ offers: [`${S}: 20% off everything today.`], offerPrice: 4 })) },
+  { id: 'new_heard_good', who: 'newcomer', family: 'heard', label: 'A friend: it was good and quick', state: fresh(S => ({ heard: [friendRemark('good_experience', S, { when: W.when })] })) },
+  { id: 'new_heard_bad', who: 'newcomer', family: 'heard', label: 'A friend: long line there', state: fresh(S => ({ heard: [friendRemark('long_line', S, { when: W.when })] })) },
+  { id: 'new_heard_other', who: 'newcomer', family: 'heard', label: 'A friend: about something else', state: fresh(() => ({ heard: [friendRemark('the farmers market on Oak Street was busy', null, { when: W.when })] })) },
+  { id: 'new_msg_plain', who: 'newcomer', family: 'promo', label: 'Message: open as usual', state: fresh(S => ({ offers: [`${S}: ${W.open}`] })) },
+  { id: 'new_promo20', who: 'newcomer', family: 'promo', label: 'Message: 20% off today', state: fresh(S => ({ offers: [`${S}: 20% off everything today.`], offerPrice: W.price * 0.8 })) },
   // After a first visit 4 days ago, at full price today.
-  { id: 'once_full', who: 'newcomer', family: 'deal', label: 'First visit at full price ($5.00)', state: once({ paid: 5 }) },
-  { id: 'once_deal', who: 'newcomer', family: 'deal', label: 'First visit on a 20%-off deal ($4.00)', state: once({ paid: 4, promo: '20%-off promotion' }) }
+  { id: 'once_full', who: 'newcomer', family: 'deal', label: 'First visit at full price ($5.00)', state: once(() => ({ paid: W.price })) },
+  { id: 'once_deal', who: 'newcomer', family: 'deal', label: 'First visit on a 20%-off deal ($4.00)', state: once(() => ({ paid: W.price * 0.8, promo: '20%-off promotion' })) }
 ];
 
 // ---------- tests: what must be true ----------
@@ -169,10 +184,10 @@ export const TESTS = [
 
 // ---------- requests ----------
 
-export function castFor(spec) {
+export function castFor(spec, cast = CAST) {
   const people = [];
   for (const m of spec.minds) {
-    const role = CAST[m.id];
+    const role = cast[m.id];
     if (!role) continue;
     people.push({ mind: m, visits: role.visits ?? null, returning: role.visits != null, newcomer: role.newcomer === true });
   }
@@ -182,19 +197,37 @@ export function castFor(spec) {
 export const eligible = (cond, person) => (cond.who === 'newcomer' ? person.newcomer : person.returning);
 
 // One DecisionRequest per condition and eligible person. `only` keeps the conditions of some families.
-export function buildRequests(spec, { only = null } = {}) {
-  const shopName = shopView(spec, SHOP).shop.name;
+// `place` is { shopRef, cast, words, scaleDays }: which business, who can be asked what, its words and prices,
+// and how many days one step of memory is (7 where people come weekly). The default is the café.
+export function buildRequests(spec, { only = null, place = null } = {}) {
+  const at = { shopRef: SHOP, cast: CAST, words: CAFE_WORDS, scaleDays: 1, ...(place || {}) };
+  const shopName = shopView(spec, at.shopRef).shop.name;
   const wanted = only ? new Set(only) : null;
   const out = [];
-  for (const cond of CONDITIONS) {
-    if (wanted && !wanted.has(cond.family)) continue;
-    for (const person of castFor(spec)) {
-      if (!eligible(cond, person)) continue;
-      const req = morningRequest({ spec, shopId: SHOP, mind: person.mind, state: cond.state(person, shopName), id: `${cond.id}-${person.mind.id}` });
-      out.push({ ...req, meta: { cond: cond.id, mind: person.mind.id } });
+  W = at.words;
+  try {
+    for (const cond of CONDITIONS) {
+      if (wanted && !wanted.has(cond.family)) continue;
+      for (const person of castFor(spec, at.cast)) {
+        if (!eligible(cond, person)) continue;
+        const state = cond.state(person, shopName);
+        if (at.scaleDays !== 1 && state.memory) state.memory = state.memory.map(m => ({ ...m, daysAgo: m.daysAgo * at.scaleDays }));
+        const req = morningRequest({ spec, shopId: at.shopRef, mind: person.mind, state, id: `${cond.id}-${person.mind.id}` });
+        out.push({ ...req, meta: { cond: cond.id, mind: person.mind.id } });
+      }
     }
-  }
+  } finally { W = CAFE_WORDS; }
   return out;
+}
+
+// The place for --place sushi: its pool says which places it is and who comes how often.
+export function sushiPlace(pool) {
+  const cast = {};
+  for (const [id, p] of Object.entries(pool.people || {})) {
+    const comes = Number(p.usualPerWeek) > 0 && !p.dayVisitor;
+    cast[id] = { ...(comes ? { visits: Math.max(1, Math.round(Number(p.usualPerWeek) * 4)) } : {}), ...(p.newcomer ? { newcomer: true } : {}) };
+  }
+  return { shopRef: { places: pool.places, name: pool.name, about: pool.about, seated: pool.seated === true }, cast, words: SUSHI_WORDS, scaleDays: 7 };
 }
 
 // ---------- statistics ----------
@@ -370,6 +403,7 @@ export function renderReport(result) {
   const { summary, stats, createdAt, repeats } = result;
   const L = [];
   L.push('# Jev return probe: results', '');
+  if (result.note) L.push(`**${result.note}**`, '');
   L.push(`Run ${createdAt}. Model ${stats.model}. ${stats.requests} Jev requests (${repeats} asks of each question), ${stats.fallbacks} unanswered, about $${stats.estCostUSD.toFixed(2)} (unverified price).`, '');
   L.push(summary.noise.pairs
     ? `**Rerun noise.** Two asks of the same question differed by ${(summary.noise.meanGap * 100).toFixed(1)} points on average, ${(summary.noise.p90Gap * 100).toFixed(1)} at the 90th percentile, ${(summary.noise.maxGap * 100).toFixed(1)} at most (${summary.noise.pairs} pairs).`
@@ -427,7 +461,7 @@ export function renderReport(result) {
 async function main() {
   const args = process.argv.slice(2);
   const flag = (name, def) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : def; };
-  const out = resolve(ROOT, flag('out', 'data/validation/jev-return-probe.json'));
+  const out = resolve(ROOT, flag('out', args.includes('sushi') ? 'data/validation/jev-return-probe-sushi.json' : 'data/validation/jev-return-probe.json'));
   const repeats = Math.max(1, Math.min(20, Math.round(Number(flag('repeats', 5))) || 5));
   const only = flag('only', null)?.split(',').map(s => s.trim()).filter(Boolean) || null;
   // --from <results.json>: score saved answers again without asking Jev (after a change to the tests).
@@ -440,8 +474,13 @@ async function main() {
   loadEnv({ cwd: ROOT });
   const apiKey = process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY;
   if (!apiKey) { console.error('No Jev key: set JEV_API_KEY or TYPESAFE_API_KEY in .env.local.'); process.exit(1); }
-  const spec = normalizeSpec(JSON.parse(readFileSync(resolve(ROOT, WORLD), 'utf8')));
-  const reqs = buildRequests(spec, { only });
+  // --place sushi: the same conditions about the sushi restaurant, in dinner words (§21e).
+  const sushi = flag('place', 'cafe') === 'sushi';
+  const pool = sushi ? JSON.parse(readFileSync(resolve(ROOT, 'pools/sushi-restaurant.json'), 'utf8')) : null;
+  const place = sushi ? sushiPlace(pool) : null;
+  const world = sushi ? pool.world : WORLD;
+  const spec = normalizeSpec(JSON.parse(readFileSync(resolve(ROOT, world), 'utf8')));
+  const reqs = buildRequests(spec, { only, place });
   if (!reqs.length) { console.error(`No conditions in ${only?.join(', ')}. Families: ${[...new Set(CONDITIONS.map(c => c.family))].join(', ')}.`); process.exit(1); }
   console.log(`Asking Jev ${reqs.length} questions ${repeats} times each (${reqs.length * repeats} requests)...`);
 
@@ -459,7 +498,7 @@ async function main() {
     console.log(`  pass ${rep + 1} of ${repeats}: ${s.requests} requests, ${s.fallbacks} unanswered`);
   }
 
-  const cast = Object.fromEntries(castFor(spec).map(p => [p.mind.id, { name: p.mind.name, group: p.mind.archetype, visits: p.visits, returning: p.returning, newcomer: p.newcomer }]));
+  const cast = Object.fromEntries(castFor(spec, place?.cast).map(p => [p.mind.id, { name: p.mind.name, group: p.mind.archetype, visits: p.visits, returning: p.returning, newcomer: p.newcomer }]));
   const told = {};
   for (const c of CONDITIONS) {
     const q = reqs.find(r => r.meta.cond === c.id);
@@ -468,7 +507,8 @@ async function main() {
     told[c.id] = { name: o.person.name, history: o.history, memory: o.memory, card: o.card, heard: o.heard, offers: o.offers, cost: o.shop.cost, rating: o.shop.rating };
   }
   const result = {
-    createdAt: new Date().toISOString(), seconds: (Date.now() - t0) / 1000, world: WORLD, shop: SHOP, repeats, only,
+    createdAt: new Date().toISOString(), seconds: (Date.now() - t0) / 1000, world, shop: sushi ? pool.name : SHOP, repeats, only,
+    note: sushi ? `The sushi restaurant, in dinner words. Memories are a week apart ("yesterday" in a test's name is last Friday). The price is $${SUSHI_WORDS.price} and one step is $${SUSHI_WORDS.step}: read "50-cent" as $${SUSHI_WORDS.step} and "1-dollar" as $${2 * SUSHI_WORDS.step}.` : null,
     stats: total, cast, summary: analyze(rows), told, question: reqs[0] ? { asks: reqs[0].asks, example: reqs[0].observation } : null, rows
   };
   console.log(`Done in ${result.seconds.toFixed(0)} s. ${total.requests} requests, ${total.fallbacks} unanswered, model ${total.model}, about $${total.estCostUSD.toFixed(3)}.`);

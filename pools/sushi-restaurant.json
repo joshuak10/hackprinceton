@@ -1,0 +1,32 @@
+{
+  "title": "The sushi restaurant: the neighborhood's diners (assumed)",
+  "world": "worlds/sushi-restaurant.json",
+  "places": ["counter", "table"],
+  "name": "the sushi restaurant",
+  "about": "A small neighborhood sushi restaurant with no reservations: four counter seats and one table of four.",
+  "seated": true,
+  "daysPerWeek": 1,
+  "dayName": "Friday evening",
+  "regular": {"visits": 2, "days": 4},
+  "reward": "a free roll",
+  "size": 752,
+  "note": "Every number here is an assumption written to fit the cast's bios and to fill the room as the one-evening world does (36 people a Friday, in its group shares). The owner's own counts replace usualPerWeek, knows and weight. A day is a Friday evening, so a week is one day. A regular came on at least 2 of the last 4 Fridays.",
+  "people": {
+    "hiro": {"usualPerWeek": 1, "knows": 1, "weight": 1.05},
+    "ana": {"usualPerWeek": 0.5, "knows": 1, "weight": 2},
+    "walter": {"usualPerWeek": 0.9, "knows": 1, "weight": 1.11},
+    "maya": {"usualPerWeek": 0.1, "knows": 0.2, "weight": 50, "newcomer": true},
+    "julian": {"usualPerWeek": 0.08, "knows": 0.6, "weight": 20.8},
+    "claire": {"usualPerWeek": 0.15, "knows": 0.6, "weight": 11.1},
+    "sam": {"usualPerWeek": 0, "knows": 0, "newcomer": true, "dayVisitor": true},
+    "priya": {"usualPerWeek": 0.1, "knows": 0.4, "weight": 25, "newcomer": true},
+    "tom": {"usualPerWeek": 0, "knows": 0, "newcomer": true, "dayVisitor": true},
+    "dana": {"usualPerWeek": 0.06, "knows": 0.4, "weight": 41.7, "newcomer": true}
+  },
+  "ordinaryWait": 10,
+  "trialPerWeek": 0.03,
+  "walkPast": 0.01,
+  "tellReach": 0.3,
+  "habit": [0.25, 0.62, 0.83, 0.93, 1],
+  "rules": {"lossAversion": 2}
+}

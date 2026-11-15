@@ -121,8 +121,13 @@ export function changeFor(name, spec, shopRef, days, pool = null) {
   const priceOf = id => spec.nodes.find(n => n.id === id).price;
   const whole = { from: 0, to: days - 1 };
   if (name == null || name === '' || name === 'none') return null;
-  const staff = /^staff\+(\d+)$/.exec(name);
-  if (staff && Number(staff[1]) > 0) return { ...whole, label: `+${staff[1]} staff at ${shop.name}`, patch: [{ kind: 'node', id: shop.id, field: 'servers', value: shop.servers + Number(staff[1]) }] };
+  // "staff+1" at a counter; "seats+2" at a place with seats (its first place). Both raise how many are served at once.
+  const staff = /^(?:staff|seats)\+(\d+)$/.exec(name);
+  if (staff && Number(staff[1]) > 0) {
+    const first = spec.nodes.find(n => n.id === shop.id), n = Number(staff[1]);
+    const label = shop.seated ? `${n} more seat${n === 1 ? '' : 's'} (${first.name})` : `+${n} staff at ${shop.name}`;
+    return { ...whole, label, patch: [{ kind: 'node', id: shop.id, field: 'servers', value: first.servers + n }] };
+  }
   const price = /^price([+-]\d+(?:\.\d+)?)$/.exec(name);
   if (price) {
     const by = Number(price[1]);
@@ -136,7 +141,7 @@ export function changeFor(name, spec, shopRef, days, pool = null) {
   }
   const card = /^card(\d+)$/.exec(name);
   if (card) return { ...whole, label: `Stamp card: buy ${Number(card[1]) - 1}, the next is free`, card: { need: Math.max(2, Number(card[1])), reward: pool?.reward || 'a free coffee' } };
-  throw new Error(`Unknown change "${name}". Use staff+1, price+0.5, promo20 or card10.`);
+  throw new Error(`Unknown change "${name}". Use staff+1, seats+2, price+0.5, promo20 or card10.`);
 }
 
 const activeOn = (change, d) => Boolean(change) && d >= change.from && d <= change.to;
@@ -473,7 +478,7 @@ export function renderDays(result, { title = '', provider = '', remember = 'wait
   const seeds = result.seeds;
   const meta = result.baselines[0]?.run.meta ?? {};
   const reg = meta.regular ?? { visits: 3, days: 2 * WEEK };
-  const labels = { ...LABELS, regulars: `Regulars (${reg.visits}+ visits in the last ${reg.days} days)` };
+  const labels = { ...LABELS, regulars: `Regulars (${reg.visits}+ visits in the last ${reg.days} ${meta.dayName ?? 'day'}s)` };
   L.push(`${title} · ${result.days} ${meta.dayName ?? 'weekday morning'}s · seeds ${seeds[0]}..${seeds.at(-1)} · ${provider}`);
   L.push('Unvalidated: every usual rate in the pool is an assumption, and the size of the wait effect is unchecked');
   L.push('(docs/PROTOTYPE.md §20d, §21). Read a change against its baseline on the same seeds, not the levels.');
