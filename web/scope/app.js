@@ -16,7 +16,7 @@ import { createAskPanel } from './lib/ask-panel.js';
 import { clockText } from './lib/frames.js';
 import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
-import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiScan, apiDays, apiAskAgain } from './lib/source.js';
+import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiScan, apiDays, apiAskAgain, apiTryChange, apiTryProgress } from './lib/source.js';
 import { foundLine, noScanLine, buildNote, fitoutFailure } from './lib/scan.js';
 import { LOYALTY, suggestionWords, savedResult, loyaltyRows, loyaltyWords, regularWords, captionWords, cautionWords, missingWords } from './lib/loyalty.js';
 import { OWNER_CHANGES, ownerChange, resultFor, periodsFor, compareFor, figureRows, dayBars, ownerHeadline, cautionWords as ownerCaution } from './lib/owner.js';
@@ -54,7 +54,7 @@ const st = {
   loyalty: { saved: undefined, open: null, home: false, runId: null },
   // The owner's view (§21g): the period for the whole screen in days, the change being tried, whether the
   // evening's detail is shown, and whether the promotion test has taken the panel.
-  owner: { n: 1, change: 'seats', details: false, promo: false }, newcomers: new Set(),
+  owner: { n: 1, change: 'seats', details: false, promo: false, busy: '', error: '' }, newcomers: new Set(),
   worlds: { building: [], others: [], buildingName: '' }
 };
 
@@ -371,7 +371,8 @@ function refreshVerdict() {
 // ---------- the owner's view (§21g) ----------
 const owner = createOwner($('verdict'), {
   onPeriod: n => { st.owner.n = n; refreshVerdict(); },
-  onChange: id => { st.owner.change = id; refreshVerdict(); },
+  onChange: id => { st.owner.change = id; st.owner.error = ''; refreshVerdict(); },
+  onTry: tryTyped,
   onDetails: () => { st.owner.details = !st.owner.details; refreshVerdict(); },
   onPromo: () => { st.owner.promo = true; refreshVerdict(); }
 });
@@ -382,6 +383,36 @@ function ownerLayout(on, many = false) {
   document.querySelector('.stage').classList.toggle('period-many', on && many);
   $('periodView').hidden = !(on && many);
 }
+// The owner typed a change (§21h). A suggestion's own words pick the suggestion. Anything else is run with Jev over
+// the saved two months, saved beside them, and shown.
+async function tryTyped(text) {
+  if (st.owner.busy) return;
+  const same = OWNER_CHANGES.find(c => c.name.toLowerCase() === text.toLowerCase());
+  if (same) { st.owner.change = same.id; st.owner.error = ''; refreshVerdict(); return; }
+  const pool = st.caseInfo.pool;
+  Object.assign(st.owner, { busy: text, error: '' });
+  refreshVerdict();
+  // How far the run has got, read from the server while it works.
+  const watch = setInterval(async () => {
+    const p = await apiTryProgress().catch(() => null);
+    const bar = document.querySelector('#verdict .owner-progress'), line = document.querySelector('#verdict .owner-progress-line');
+    if (!p?.running || !bar || !p.total) return;
+    bar.max = p.total; bar.value = p.done;
+    if (line) line.textContent = `${p.done} of ${p.total} evenings done.`;
+  }, 2000);
+  try {
+    const tried = await apiTryChange(pool, text);
+    st.loyalty.saved = await apiDays(pool);
+    st.owner.change = { label: tried.label, text, understood: tried.understood };
+  } catch (err) {
+    st.owner.error = err.message;
+  } finally {
+    clearInterval(watch);
+    st.owner.busy = '';
+    if (st.caseInfo?.pool === pool) refreshVerdict();
+  }
+}
+
 async function showOwner(test, change) {
   const pool = st.caseInfo.pool, bundle = st.bundle;
   ownerLayout(true);
@@ -399,19 +430,20 @@ async function showOwner(test, change) {
       st.dirty = true;
     }
   }
-  const saved = st.loyalty.saved, c = ownerChange(st.owner.change), result = resultFor(saved, c.id);
+  const saved = st.loyalty.saved, c = ownerChange(st.owner.change), result = resultFor(saved, st.owner.change);
   const periods = periodsFor(saved?.meta, result?.days || 0);
   if (!periods.some(p => p.n === st.owner.n)) st.owner.n = periods[0]?.n || 1;
   const period = periods.find(p => p.n === st.owner.n) || { n: 1, label: '1 evening' };
   const cmp = result ? compareFor(result, st.owner.n) : null;
   const canPromo = Boolean(test) || (Boolean(st.live && baseWorld()) && change?.kind === 'promotion');
-  const title = `With ${c.name}`;
+  const title = c.id === 'typed' ? 'With your change' : `With ${c.name}`;
   owner.show({
+    tryText: c.words || c.name, busy: st.owner.busy, error: st.owner.error, understood: c.understood || '',
     periods: periods.length ? periods : [period], n: st.owner.n, changes: OWNER_CHANGES, change: c.id, title,
     headline: cmp ? ownerHeadline(cmp, c, period.label) : '', rows: figureRows(cmp), caution: ownerCaution(result),
     missing: cmp ? null : {
       text: `No saved result for ${c.name} on this computer.`,
-      command: `node bin/swarm.js days ${pool} --days 8 --seeds 3 --provider jev --change ${c.flag} --out data/days/${c.id}.json`
+      command: c.flag ? `node bin/swarm.js days ${pool} --days 8 --seeds 3 --provider jev --change ${c.flag} --out data/days/${c.id}.json` : 'Press “Try it” to run it.'
     },
     details: st.owner.details, promo: canPromo ? (test ? 'See the promotion test' : 'Test a promotion') : ''
   });

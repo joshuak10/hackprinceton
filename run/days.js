@@ -302,7 +302,8 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
     for (const person of people) {
       const rng = seedRng(seed, 'hear', person.id, d);
       const sees = rng(), reach = rng();
-      person.reached = Boolean(promo) && reach < promo.reach;
+      // A message with audience 'customers' (§21h) reaches the people who already know the place, and recruits nobody.
+      person.reached = Boolean(promo) && (promo.audience === 'customers' ? Boolean(person.knows) : reach < promo.reach);
       if (person.knows) continue;
       if (person.reached) { person.knows = true; person.via = 'saw its promotion'; person.knewOn = d; }
       else if (sees < pool.walkPast) { person.knows = true; person.via = 'has walked past it'; person.knewOn = d; }
