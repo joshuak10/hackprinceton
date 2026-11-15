@@ -1348,3 +1348,19 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 - **The same fact in other words moved the answer by 9.7 points** ("stood waiting for a seat for around twenty minutes … before sitting down"). At the café it moved 1.2. So Jev is more sensitive to wording here, and differences under about 10 points between differently worded memories should not be read.
 - The head start on a stamp card and a friend's bad remark gave no clear response.
 
+**Two months at the sushi restaurant** (`node bin/swarm.js days pools/sushi-restaurant.json --days 8 --seeds 3 --provider jev --change promo20,seats+2`; 8 Fridays, 3 seeds, 7,996 Jev requests, about 31 cents). Numbers are per Friday, averaged over the 8, as baseline → change, with the range of the difference across seeds. Unvalidated, as everything in §21.
+
+| | Baseline | 20% off on the first Friday, heard of by half the street | Two more counter seats |
+|---|---|---|---|
+| People who came | 37 | 42 (+4 to +6) | 38 (no clear change) |
+| People seated | 24 | 24 (+0 to +1) | 28 (+4 on every seed) |
+| People turned away or who gave up | 9 | 12 (+3 on every seed) | 7 (−2 to −1) |
+| First-time visitors | 1 | 5 (+4 to +5) | 1 (no change) |
+| Average wait for a seat | 8.0 min | 8.9 min (+0.2 to +1.4) | 6.6 min (−2.1 to −0.9) |
+| Regulars (2 of the last 4 Fridays) | 24 | 21 (−5 to 0: no clear change) | 24 (−3 to +4: no clear change) |
+| Bad remarks | 22 | 25 (+2 to +4) | 17 (−7 to −1) |
+
+- **The promotion fills the doorway, not the room.** It brought about four more people per Friday on average, nearly all first-timers on the night itself, and the eight seats were already full: one more person was seated and three more were turned away. It made no more regulars; on two of three seeds it made fewer.
+- **Two more seats seat four more people every Friday** and turn fewer away, on every seed. Over eight Fridays the number of regulars did not clearly change.
+- **One seed's baseline grew 27%** and fails the steadiness check, so changes in how many people came are the weakest numbers here. Seated, turned away and the wait come from the evening itself and do not depend on it.
+
