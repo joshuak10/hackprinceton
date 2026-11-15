@@ -424,6 +424,7 @@ Pitch lines:
 
 ## 14. Change log
 
+- **Nov 14, 2026, late evening.** The English / Simplified Chinese button is removed from every page (the dashboard, Ask the room and the step-diagram page), with its translation files. **Decision (Josh):** the product is shown in English only. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §19.
 - **v0.33 · Nov 14, 2026.** One front door. **Decision (Ryan):** "make it only like one thread ... make /scope/ the main thing. Move everything to the side".
   - **The root address opens the dashboard.** `/` redirects to `/scope/`. The first viewer keeps its files and opens at `/classic`.
   - **One More menu.** The dashboard's top bar is the brand, the prompt box, More, the language button and the theme toggle. More lists the other pages: step diagrams (`/scope/?mode=environment`), ask the room (`/room/`) and the first viewer (`/classic`). The Environments link and the "Build a new environment" row in the Simulate card are gone.

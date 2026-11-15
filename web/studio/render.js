@@ -44,8 +44,7 @@ export function workflowLayout(spec) {
 }
 
 // onSelect(id): a person's dot was picked. onView(moved): the view was panned or zoomed (true) or put back (false).
-// tr(text): translates the few fixed strings drawn on the canvas; the page passes the language module's.
-export function createWorkflowRenderer(canvas, { onSelect = () => {}, onView = () => {}, tr = text => text } = {}) {
+export function createWorkflowRenderer(canvas, { onSelect = () => {}, onView = () => {} } = {}) {
   const context = canvas.getContext('2d');
   let spec = null, diagram = null, actors = [], slots = new Map(), frame = null;
   let opts = {}, hits = [], size = { width: 1, height: 1, dpr: 1 }, view = { x: 0, y: 0, zoom: 1 };
@@ -87,7 +86,7 @@ export function createWorkflowRenderer(canvas, { onSelect = () => {}, onView = (
     hits = [];
     if (!diagram?.zones.length || !frame) {
       g.textAlign = 'center'; g.fillStyle = palette.muted; g.font = '400 15px "IBM Plex Sans", system-ui, sans-serif';
-      g.fillText(tr('This environment has no steps to draw.'), size.width / 2, size.height / 2);
+      g.fillText('This environment has no steps to draw.', size.width / 2, size.height / 2);
       return;
     }
     const transform = geometry(), { scale } = transform;

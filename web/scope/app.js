@@ -20,7 +20,6 @@ import {
 } from './lib/verdict.js';
 import { createVerdict } from './lib/verdict-panel.js';
 import { createEditor } from './lib/edit.js';
-import { langButton, onLang } from './lib/i18n.js';
 import { seatedPlaces, sameLayout, sameWorld, describeChanges, pairRuns, compare, compareParts } from './lib/layout.js';
 
 const $ = id => document.getElementById(id);
@@ -480,7 +479,7 @@ async function buildPlace(text) {
     p.set(2);
     // The recorded title is the one the place opens by.
     const title = (await loadEngineRun(runId)).meta.title;
-    const carry = ['theme', 'lang'].filter(k => params.get(k)).map(k => `${k}=${encodeURIComponent(params.get(k))}`);
+    const carry = ['theme'].filter(k => params.get(k)).map(k => `${k}=${encodeURIComponent(params.get(k))}`);
     location.assign(`./?${[`place=${encodeURIComponent(title)}`, ...carry].join('&')}`);
   } catch (err) {
     showNotice(`The place could not be built: ${err.message}`);
@@ -504,8 +503,8 @@ function placeItems() {
   const openedCase = opened ? (cases.find(c => c.runTitle === opened)?.id || (building.some(w => w.title === opened) ? 'building' : null)) : null;
   const onCase = place ? openedCase : st.caseId;
   const onWorld = opened && !openedCase ? opened : null;
-  // A link keeps the theme and the language the address asked for.
-  const carry = ['theme', 'lang'].filter(k => params.get(k)).map(k => `${k}=${encodeURIComponent(params.get(k))}`);
+  // A link keeps the theme the address asked for.
+  const carry = ['theme'].filter(k => params.get(k)).map(k => `${k}=${encodeURIComponent(params.get(k))}`);
   const href = query => `./?${[query, ...carry].join('&')}`;
   const item = (label, query, current, sample) => ({ label, href: href(query), current, note: current ? 'On screen' : sample ? 'Sample data' : '' });
   const items = cases.map(c => {
@@ -1120,9 +1119,6 @@ function showEmpty(text) {
 }
 
 async function start() {
-  // The language button (§19). Labels drawn on the map are redrawn when the language changes.
-  onLang(() => { R.baseKey = ''; st.dirty = true; });
-  langButton($('langBtn'));
   R.resize();
   applyTheme();
   setSpeed(4);

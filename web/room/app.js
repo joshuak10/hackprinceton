@@ -1,6 +1,5 @@
 // Ask the room (docs/PROTOTYPE.md §17). Change the moment, ask every cast member, see who moves.
 import { points, refOf, grade, recomputeShare, summarize, byChange } from './maths.js';
-import { langButton } from '../scope/lib/i18n.js';
 import { FEELINGS, withFeeling, firstName } from './feelings.js';
 
 const $ = id => document.getElementById(id);
@@ -443,7 +442,6 @@ function updateDetail(detail, p, sum, home, ref) {
 
 // ---------- start ----------
 async function start() {
-  langButton($('langBtn'));
   applyTheme();
   // The fonts are added here and not in the page's head, so a slow font server cannot hold the page back.
   const fonts = el('link'); fonts.rel = 'stylesheet'; fonts.href = FONTS; document.head.append(fonts);

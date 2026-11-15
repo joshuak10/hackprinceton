@@ -1097,6 +1097,8 @@ There is no patience verdict in this mode, because the verdict compares a wait i
 
 ## 19. The language button: English and Simplified Chinese (Nov 14)
 
+**Removed everywhere (Nov 14, late evening; Josh's decision).** No page has a language button any more: not the dashboard, not Ask the room, not the step-diagram page. `web/scope/lib/i18n.js` and `web/scope/lib/zh.js` are deleted, and `?lang=zh` does nothing. Everything below describes what was there.
+
 **Removed from the scope display (Nov 14, owner's decision).** The scope display (`/scope/`) has no language button and no Chinese: it does not load `i18n.js`, and its map labels are drawn in English only. Ask the room (`/room/`) keeps its button. Its page imports `web/scope/lib/i18n.js`, which reads `web/scope/lib/zh.js`, so both files stay where they are; the strings in `zh.js` for the scope display are no longer used. The rest of this section describes Ask the room.
 
 **Why.** An owner should be able to read the page in their own language. Ask the room (`/room/`) has a button in the header that switches everything on screen between English and Simplified Chinese.

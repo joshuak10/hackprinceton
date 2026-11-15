@@ -1,10 +1,9 @@
 // Environments built from a written brief, in the dashboard's frame (web/scope/index.html and style.css).
 // The page builds, saves, runs and replays an environment; the look, the theme and the language button are the
 // dashboard's. Everything generated or typed enters the page as text; no generated markup or code is run.
-// URL: /scope/?mode=environment, with #run=<run id> to open a recorded run and ?theme=dark or ?lang=zh as on the dashboard.
+// URL: /scope/?mode=environment, with #run=<run id> to open a recorded run and ?theme=dark as on the dashboard.
 import { createWorkflowRenderer } from './render.js';
 import { readPalette } from '../scope/lib/palette.js';
-import { langButton, onLang, tr } from '../scope/lib/i18n.js';
 import * as builders from './builders.js';
 
 const $ = id => document.getElementById(id);
@@ -21,7 +20,7 @@ const ui = Object.fromEntries([
   'savedTag', 'provider', 'seed', 'maxRequests', 'providerHelp', 'runBtn', 'runSelect', 'replayEmpty',
   'runTitle', 'runMeta', 'runDetails', 'runFacts', 'downloadRun', 'runWarning', 'metrics', 'results', 'resultsBlock',
   'roleFilter', 'resources', 'agentSelect', 'events', 'feedFilters', 'worldState', 'sideEmpty', 'sideBody', 'inspector',
-  'askForm', 'askIn', 'askBtn', 'environmentDrawer', 'environmentBtn', 'drawerClose', 'themeBtn', 'langBtn',
+  'askForm', 'askIn', 'askBtn', 'environmentDrawer', 'environmentBtn', 'drawerClose', 'themeBtn',
   'sourceBadge', 'editEnvironmentBtn', 'resetView', 'viewBtn', 'viewMenu', 'mapTools', 'legendMini', 'map', 'mapbox',
   'timeline', 'exampleSelect'
 ].map(id => [id, $(id)]));
@@ -124,11 +123,10 @@ ui.themeBtn.addEventListener('click', () => {
 // ---------- the map ----------
 const renderer = createWorkflowRenderer(ui.map, {
   onSelect: id => selectAgent(id),
-  onView: moved => { ui.resetView.hidden = !moved; },
-  tr
+  onView: moved => { ui.resetView.hidden = !moved; }
 });
 const drawOptions = () => ({ role: state.role, selectedAgent: state.agentId, colorBy: state.colorBy });
-// Draw the map again as it is: after a theme or language change, or a change in the View menu.
+// Draw the map again as it is: after a theme change, or a change in the View menu.
 function redraw() {
   const frame = currentFrame() || state.preview;
   if (frame) renderer.draw(frame, drawOptions());
@@ -989,8 +987,6 @@ window.addEventListener('pagehide', () => {
 
 // ---------- start ----------
 // The language button, wired as on the dashboard: what is drawn on the canvases is drawn again in the new language.
-onLang(() => redraw());
-langButton(ui.langBtn);
 applyTheme();
 renderLegend();
 
