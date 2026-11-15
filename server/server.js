@@ -51,11 +51,12 @@ async function lib(path) {
   }
 }
 
-export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), environmentOptions, rootRedirect = '/scope/' } = {}) {
+export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), environmentOptions, rootRedirect = '/scope/', scanService } = {}) {
   const base = resolve(root);
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), daysDir: join(base, 'data', 'days'), wallsFile: join(base, 'engine', 'walls.js'),
-    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null, rootRedirect
+    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null, rootRedirect,
+    scan: scanService ?? null, scans: new Map()
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
   ctx.environments = createEnvironmentService({ ...environmentOptions, root: base });
@@ -99,6 +100,7 @@ const ROUTES = [
   ['GET', ['worlds'], getWorlds],
   ['GET', ['worlds', ':file'], getWorld],
   ['POST', ['validate'], postValidate],
+  ['POST', ['scan'], postScan],
   ['POST', ['compile'], postCompile],
   ['GET', ['days'], getDays],
   ['GET', ['runs'], getRuns],
@@ -289,7 +291,7 @@ async function compiler() {
 async function getHealth(ctx, req, res) {
   const how = await compiler().catch(() => null);
   send(res, 200, {
-    ok: true, insights: true, jev: hasKey('TYPESAFE_API_KEY'), claude: Boolean(how), compiler: how,
+    ok: true, insights: true, jev: hasKey('TYPESAFE_API_KEY'), claude: Boolean(how), compiler: how, scan: scanAvailable(ctx),
     capabilities: { environments: 1, spatialWorlds: 1 }
   });
 }
@@ -370,7 +372,11 @@ async function postCompile(ctx, req, res) {
   if (description.length > 4000) throw new HttpError(400, 'Keep the description under 4000 characters.');
   // `plan: true` asks for a world drawn as a floor plan, which only the headless agent is told how to draw.
   const how = await compiler();
-  const headless = how === 'claude-code' || (body.plan === true && (await lib('../compile/headless.js')).claudeCliAvailable());
+  const cli = (await lib('../compile/headless.js')).claudeCliAvailable();
+  const headless = how === 'claude-code' || (body.plan === true && cli);
+  // A scan is fitted out by the headless agent only.
+  const scan = body.plan === true ? await scanFor(ctx, body) : null;
+  if (scan && !cli && !ctx.scan) throw new HttpError(501, 'Fitting out a scanned building needs Claude Code on this machine (claude auth login).');
   if (!how) {
     throw new HttpError(501, 'Writing a world from words needs Claude Code on this machine (claude auth login) or ANTHROPIC_API_KEY in .env.local. Without either, run /swarm in Claude Code to write the world, then paste it here.');
   }
@@ -378,8 +384,11 @@ async function postCompile(ctx, req, res) {
   const stop = new AbortController();
   res.on('close', () => { if (!res.writableEnded) stop.abort(new Error('The request was closed.')); });
   let result;
+  const started = Date.now();
   try {
-    if (headless) {
+    if (scan) {
+      result = await (await scans(ctx)).fitout(description, { ...scan, signal: stop.signal });
+    } else if (headless) {
       const { compileWorldHeadless } = await lib('../compile/headless.js');
       result = await compileWorldHeadless(description, { signal: stop.signal });
     } else {
@@ -387,10 +396,65 @@ async function postCompile(ctx, req, res) {
       result = await compileWorld(description, { apiKey: process.env.ANTHROPIC_API_KEY });
     }
   } catch (err) {
-    if (stop.signal.aborted) return;
-    throw new HttpError(502, `Claude could not write a valid world: ${err?.message || err}`);
+    if (stop.signal.aborted) { console.error(`[compile] stopped: the page closed the request after ${Math.round((Date.now() - started) / 1000)} s`); return; }
+    console.error(`[compile] ${scan ? `fit-out of ${scan.modelId}` : 'drawing'} failed after ${Math.round((Date.now() - started) / 1000)} s: ${String(err?.message || err).split('\n').join(' ')}`);
+    throw new HttpError(502, scan ? `Claude could not fit out the scanned building: ${err?.message || err}` : `Claude could not write a valid world: ${err?.message || err}`);
   }
   send(res, 200, result);
+}
+
+// ---------- a scanned building for typed words (§10a) ----------
+
+const SCAN_TTL_MS = 30 * 60 * 1000;
+const MODEL_ID = /^[A-Za-z0-9]{6,32}$/;
+
+// Matterport search and the fit-out agent; tests replace them with startServer({ scanService }).
+async function scans(ctx) {
+  if (ctx.scan) return ctx.scan;
+  const { findScan, compileFitoutHeadless } = await lib('../compile/scanned.js');
+  const { fetchModelGeometry } = await lib('../builder/matterport.js');
+  return { find: findScan, fetchGeometry: fetchModelGeometry, fitout: compileFitoutHeadless, available: () => hasKey('MATTERPORT_API_KEY') && hasKey('MATTERPORT_API_TOKEN') };
+}
+function scanAvailable(ctx) {
+  return ctx.scan ? Boolean(ctx.scan.available?.() ?? true) : hasKey('MATTERPORT_API_KEY') && hasKey('MATTERPORT_API_TOKEN');
+}
+
+// POST /api/scan { description } → { found: { modelId, name, floor, rooms, areaM2, ... } | null, tried, reason }.
+// Searches Matterport for a scan of the kind of place the words describe that has walls and doors to walk in. The
+// scan's geometry stays on the server (it is hackathon data) for the compile that follows.
+async function postScan(ctx, req, res) {
+  const body = await readJsonBody(req);
+  const description = typeof body.description === 'string' ? body.description.trim() : '';
+  if (!description) throw new HttpError(400, 'Send { "description": "a place and a question" }.');
+  if (description.length > 4000) throw new HttpError(400, 'Keep the description under 4000 characters.');
+  if (!scanAvailable(ctx)) return send(res, 200, { found: null, tried: [], reason: 'No Matterport keys on this server.' });
+  let out;
+  try { out = await (await scans(ctx)).find(description); } catch (err) {
+    return send(res, 200, { found: null, tried: [], reason: `Matterport could not be searched: ${err?.message || err}` });
+  }
+  if (!out.found) return send(res, 200, { found: null, tried: out.tried, reason: out.reason });
+  const { raw, ...found } = out.found;
+  const now = Date.now();
+  for (const [k, v] of ctx.scans) if (now - v.at > SCAN_TTL_MS) ctx.scans.delete(k);
+  ctx.scans.set(found.modelId, { raw, name: found.name, at: now });
+  send(res, 200, { found, tried: out.tried, reason: null });
+}
+
+// The scan a compile asks for, { modelId, floor }: its geometry from the search just made, or fetched again.
+async function scanFor(ctx, body) {
+  if (body.scan === undefined || body.scan === null) return null;
+  const modelId = typeof body.scan?.modelId === 'string' ? body.scan.modelId.trim() : '';
+  if (!MODEL_ID.test(modelId)) throw new HttpError(400, 'scan.modelId must be a Matterport model id.');
+  const floor = body.scan.floor;
+  if (floor !== undefined && floor !== null && !Number.isInteger(floor)) throw new HttpError(400, 'scan.floor must be a floor number.');
+  if (!scanAvailable(ctx)) throw new HttpError(501, 'Building on a scan needs MATTERPORT_API_KEY and MATTERPORT_API_TOKEN in .env.local.');
+  let hit = ctx.scans.get(modelId);
+  if (!hit) {
+    try { hit = { raw: await (await scans(ctx)).fetchGeometry({ modelId }), name: '' }; } catch (err) {
+      throw new HttpError(502, `The scan ${modelId} could not be read from Matterport: ${err?.message || err}`);
+    }
+  }
+  return { raw: hit.raw, modelId, name: hit.name, floor: floor ?? undefined };
 }
 
 // ---------- runs ----------

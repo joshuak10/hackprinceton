@@ -90,6 +90,7 @@ export function showProgress(root, steps, note) {
       items.forEach((li, k) => { li.className = k < i ? 'done' : k === i ? 'now' : ''; });
       if (label && items[i]) items[i].lastChild.textContent = label;
     },
+    note(text) { n.textContent = text || ''; },
     done() { root.hidden = true; root.replaceChildren(); }
   };
 }

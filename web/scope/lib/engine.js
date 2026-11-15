@@ -11,6 +11,11 @@ export function isEngineRun(raw) {
   return !raw.spec?.geometry && !raw.geometry && Array.isArray(raw.frames?.walls) && raw.frames.walls.length > 0;
 }
 
+// A world fitted out on a scan names it in geo.source ("matterport-vector:<model id>"); older worlds do not.
+export function scanModelId(spec) {
+  return /^matterport[a-z-]*:([A-Za-z0-9]{6,32})$/.exec(String(spec?.geo?.source ?? ''))?.[1] ?? null;
+}
+
 export function adaptEngineRun(raw, { modelId = null } = {}) {
   const spec = raw.spec || {};
   const frames = raw.frames || {};
@@ -61,7 +66,7 @@ export function adaptEngineRun(raw, { modelId = null } = {}) {
   };
   const geometry = {
     kind: 'interior',
-    source: { provider: spec.geo?.source?.startsWith('matterport') ? 'matterport' : 'engine', modelId, name: spec.title },
+    source: { provider: spec.geo?.source?.startsWith('matterport') ? 'matterport' : 'engine', modelId: scanModelId(spec) ?? modelId, name: spec.title },
     metersPerUnit: mpu, bounds, floors: [floor],
     provenance: spec.provenance || {}
   };

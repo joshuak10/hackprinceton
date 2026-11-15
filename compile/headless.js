@@ -44,7 +44,7 @@ The people and the question:
 - waiting: { "tellPatience": false, "askAgainEvery": 5 }.
 - Use what the description says first; invent plausible, concrete numbers for the rest. Never use the names of real private individuals. Name real public places only if the description names them.`;
 
-function reference() {
+export function reference() {
   return readFileSync(join(WORLDS_DIR, 'SCHEMA.md'), 'utf8');
 }
 
@@ -73,6 +73,50 @@ export function claudeCliAvailable(env = process.env) {
 }
 
 const isPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * One headless Claude Code agent with one tool (Write) in an empty temporary folder, whose goal is one JSON file.
+ * `instructions` and `goal` are functions of the file's path. The instructions go in a file, not on the command line,
+ * so nothing typed shows in the process list. Returns { raw: the file's text or null, turns, costUsd }.
+ */
+export async function writeWithAgent({
+  instructions, goal, model = DEFAULT_AGENT_MODEL, signal = null, timeoutMs = DEFAULT_TIMEOUT_MS,
+  spawn = nodeSpawn, executable = process.env.SWARM_CLAUDE_BIN || 'claude', maxTurns = AGENT_MAX_TURNS, fileName = WORLD_FILE
+}) {
+  const cwd = await mkdtemp(join(tmpdir(), 'swarmscope-world-'));
+  const file = join(cwd, fileName), notes = join(cwd, 'instructions.md');
+  try {
+    await writeFile(notes, instructions(file), { mode: 0o600 });
+    const args = [
+      '-p', '--output-format', 'json',
+      '--tools', 'Write', '--allowed-tools', 'Write', '--permission-mode', 'acceptEdits',
+      '--safe-mode', '--setting-sources', '',
+      '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+      '--no-session-persistence', '--no-chrome', '--max-turns', String(maxTurns),
+      '--model', model || DEFAULT_AGENT_MODEL,
+      '--append-system-prompt-file', notes
+    ];
+    const output = await runHeadless({
+      args, prompt: goal(file), cwd, spawn, executable, signal, timeoutMs,
+      label: 'Claude Code', executableSetting: 'SWARM_CLAUDE_BIN',
+      env: { ...process.env, CLAUDE_CODE_SAFE_MODE: '1' }, classifyFailure: authenticationFailure
+    });
+    const agent = parseClaudeResult(output);
+    return { raw: await readFile(file, 'utf8').catch(() => null), turns: agent.turns ?? 0, costUsd: agent.costUsd ?? 0 };
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+}
+
+// The agent's file as one JSON object: { value } or { error } in words the next attempt can act on.
+export function readAgentJson(raw, what = 'world') {
+  if (raw == null) return { error: `the ${what} file was not written` };
+  if (Buffer.byteLength(raw) > MAX_WORLD_BYTES) return { error: `the ${what} file is larger than 512 KB; write a smaller ${what}` };
+  let value;
+  try { value = JSON.parse(raw); } catch (err) { return { error: `the ${what} file is not valid JSON (${err.message})` }; }
+  if (!isPlainObject(value)) return { error: `the ${what} file must hold one JSON object` };
+  return { value };
+}
 
 // What must hold besides validateWorld for the world to be drawn as a floor plan.
 function planProblems(spec) {
@@ -103,43 +147,20 @@ export async function compileWorldHeadless(description, {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     signal?.throwIfAborted();
     onStatus?.({ attempt, phase: 'writing' });
-    const cwd = await mkdtemp(join(tmpdir(), 'swarmscope-world-'));
-    const file = join(cwd, WORLD_FILE), notes = join(cwd, 'instructions.md');
-    let raw = null;
-    try {
-      // The description goes in a file, not on the command line, so nothing typed shows in the process list.
-      await writeFile(notes, instructions(text, file, previous, errors), { mode: 0o600 });
-      const args = [
-        '-p', '--output-format', 'json',
-        '--tools', 'Write', '--allowed-tools', 'Write', '--permission-mode', 'acceptEdits',
-        '--safe-mode', '--setting-sources', '',
-        '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-        '--no-session-persistence', '--no-chrome', '--max-turns', String(AGENT_MAX_TURNS),
-        '--model', model || DEFAULT_AGENT_MODEL,
-        '--append-system-prompt-file', notes
-      ];
-      const goal = `/goal The file ${file} holds one complete Swarmscope world for the description in your instructions: ` +
+    const agent = await writeWithAgent({
+      instructions: file => instructions(text, file, previous, errors),
+      goal: file => `/goal The file ${file} holds one complete Swarmscope world for the description in your instructions: ` +
         'a single JSON object in visit mode with walls, doors, places and a cast, following the world format reference and ' +
-        `every rule given there${errors.length ? ', with every listed validation error fixed' : ''}.`;
-      const output = await runHeadless({
-        args, prompt: goal, cwd, spawn, executable, signal, timeoutMs,
-        label: 'Claude Code', executableSetting: 'SWARM_CLAUDE_BIN',
-        env: { ...process.env, CLAUDE_CODE_SAFE_MODE: '1' }, classifyFailure: authenticationFailure
-      });
-      const agent = parseClaudeResult(output);
-      turns += agent.turns ?? 0;
-      costUsd += agent.costUsd ?? 0;
-      raw = await readFile(file, 'utf8').catch(() => null);
-    } finally {
-      await rm(cwd, { recursive: true, force: true });
-    }
+        `every rule given there${errors.length ? ', with every listed validation error fixed' : ''}.`,
+      model, signal, timeoutMs, spawn, executable
+    });
+    turns += agent.turns;
+    costUsd += agent.costUsd;
 
     onStatus?.({ attempt, phase: 'checking' });
-    if (raw == null) { errors = ['the world file was not written']; continue; }
-    if (Buffer.byteLength(raw) > MAX_WORLD_BYTES) { errors = ['the world file is larger than 512 KB; write a smaller world']; continue; }
-    let spec;
-    try { spec = JSON.parse(raw); } catch (err) { errors = [`the world file is not valid JSON (${err.message})`]; continue; }
-    if (!isPlainObject(spec)) { errors = ['the world file must hold one JSON object']; continue; }
+    const read = readAgentJson(agent.raw, 'world');
+    if (read.error) { errors = [read.error]; continue; }
+    const spec = read.value;
     const result = validateWorld(spec);
     const problems = [...(result.ok ? [] : result.errors), ...planProblems(spec)];
     if (!problems.length) {

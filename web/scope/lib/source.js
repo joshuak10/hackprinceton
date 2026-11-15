@@ -139,12 +139,24 @@ export async function apiLoadRun(runId, { modelId = null } = {}) {
 // Start a run of a world spec on the server and wait for it. Returns the new run id.
 // `link` marks the run as one side of a test of one change; the server checks it and stores it in meta.json.
 // Words -> a world with a floor plan, written by Claude on the server (POST /api/compile). It takes a few minutes.
-export async function apiCompile(description, { signal } = {}) {
+// With `scan` ({ modelId, floor } from apiScan), Claude fits out that scanned building instead of drawing one.
+export async function apiCompile(description, { signal, scan = null } = {}) {
   const res = await fetch('/api/compile', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description, plan: true }), signal
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description, plan: true, ...(scan ? { scan: { modelId: scan.modelId, floor: scan.floor } } : {}) }), signal
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `Writing the place failed (${res.status}).`);
+  return body;
+}
+
+// Words -> a Matterport scan of that kind of place with walls and doors, or { found: null, reason } (POST /api/scan).
+export async function apiScan(description, { signal } = {}) {
+  const res = await fetch('/api/scan', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description }), signal
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { found: null, tried: [], reason: body.error || `The scan search failed (${res.status}).` };
   return body;
 }
 

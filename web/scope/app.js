@@ -13,7 +13,8 @@ import { createTimeline } from './lib/timeline.js';
 import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, el } from './lib/panels.js';
 import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
-import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiDays } from './lib/source.js';
+import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiScan, apiDays } from './lib/source.js';
+import { foundLine, noScanLine, buildNote } from './lib/scan.js';
 import { LOYALTY, suggestionWords, savedResult, loyaltyRows, loyaltyWords, regularWords, captionWords, cautionWords, missingWords } from './lib/loyalty.js';
 import {
   chooseRun, findTest, findOfferTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords,
@@ -496,28 +497,55 @@ async function newRun(provider) {
 }
 
 // ---------- a new place from the prompt ----------
-// Claude draws the place the words describe (its floor plan, its counters and the people who come), the engine runs
-// it, and the page opens it like any other recorded place.
+// First a real scanned building of the kind the words describe (Matterport): if one has walls and doors to walk in,
+// Claude fits it out inside those walls. Otherwise, or if the fit-out fails, Claude draws the place from the words.
+// The engine runs it, and the page opens it like any other recorded place.
 async function buildPlace(text) {
   if (st.loading || !st.live) return;
   hideCard($('askCard'));
   busy(true);
   pause();
   const jev = Boolean(st.live.jev);
-  const p = showProgress($('progress'), [{ label: 'Claude is drawing the place' }, { label: 'People are arriving' }, { label: 'Opening the place' }],
-    'Claude draws the floor plan and writes the people from your words. This takes two or three minutes.');
+  const p = showProgress($('progress'), [
+    { label: 'Looking for a scanned building like this' }, { label: 'Claude is drawing the place' },
+    { label: 'People are arriving' }, { label: 'Opening the place' }
+  ], 'Swarmscope first looks for a real scanned building of this kind. If none fits, Claude draws one from your words.');
   p.set(0);
-  const started = performance.now();
-  const clock = setInterval(() => p.set(0, `Claude is drawing the place (${Math.round((performance.now() - started) / 1000)} s)`), 1000);
-  try {
-    const { spec } = await apiCompile(text);
+  let clock = null;
+  const tick = label => {
     clearInterval(clock);
-    p.set(1, jev ? 'Jev is deciding for every person' : 'The rule model is deciding for every person');
+    const started = performance.now();
+    const show = () => p.set(1, `${label} (${Math.round((performance.now() - started) / 1000)} s)`);
+    show();
+    clock = setInterval(show, 1000);
+  };
+  try {
+    const search = st.live.scan ? await apiScan(text) : { found: null, reason: 'No Matterport keys on this server.' };
+    const found = search.found;
+    p.set(0, found ? foundLine(found) : noScanLine(search));
+    p.note(buildNote(found));
+    let spec = null;
+    if (found) {
+      tick('Claude is fitting out the scanned building');
+      try {
+        ({ spec } = await apiCompile(text, { scan: found }));
+      } catch (err) {
+        // The scan could not be fitted out: draw the place instead, and say so.
+        p.set(0, 'The scanned building could not be fitted out, so Claude draws the place');
+        p.note(buildNote(null));
+      }
+    }
+    if (!spec) {
+      tick('Claude is drawing the place');
+      ({ spec } = await apiCompile(text));
+    }
+    clearInterval(clock);
+    p.set(2, jev ? 'Jev is deciding for every person' : 'The rule model is deciding for every person');
     const runId = await apiStartRun({
       spec, provider: jev ? 'jev' : 'rules', seed: 7,
-      onStatus: s => p.set(1, `Simulating: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% of the time window`)
+      onStatus: s => p.set(2, `Simulating: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% of the time window`)
     });
-    p.set(2);
+    p.set(3);
     // The recorded title is the one the place opens by.
     const title = (await loadEngineRun(runId)).meta.title;
     const carry = ['theme'].filter(k => params.get(k)).map(k => `${k}=${encodeURIComponent(params.get(k))}`);
@@ -569,7 +597,7 @@ $('askForm').addEventListener('submit', e => {
   const canBuild = Boolean(st.live?.claude) && text.length >= 12;
   const build = canBuild ? [{ label: 'Build this place', solid: true, onClick: () => buildPlace(text) }] : [];
   const buildLine = canBuild
-    ? `Build this place: Claude draws its floor plan and its people from your words, then ${st.live.jev ? 'Jev' : 'the rule model'} decides for each person. About three minutes${st.live.jev ? ', and a few cents' : ''}.`
+    ? `Build this place: ${st.live.scan ? 'Swarmscope looks for a real scanned building of this kind and Claude fits it out, or Claude draws one' : 'Claude draws its floor plan and its people'} from your words, then ${st.live.jev ? 'Jev' : 'the rule model'} decides for each person. About three minutes${st.live.jev ? ', and a few cents' : ''}.`
     : null;
   if (!baseWorld() || !st.live) {
     const sample = providerWords(st.bundle.meta) === 'Sample data';
