@@ -3,11 +3,6 @@
    have: form fields, the examples in the empty state, a Cancel button on the progress steps, and a few rows.
    Rules kept from the dashboard: red means people lost and nothing else; ink marks the one main action. */
 
-/* A link that is a button (Places, Download the record). */
-.environment-app a.btn { display: inline-flex; align-items: center; text-decoration: none; color: var(--text); }
-.environment-app a.btn.quiet { color: var(--muted); }
-.environment-app a.btn.quiet:hover { color: var(--text); }
-
 /* ---------- form fields: the prompt box's look, for a select, a number or a few lines of text ---------- */
 .field {
   width: 100%;
@@ -35,12 +30,10 @@ textarea.field { height: auto; padding: 8px 10px; line-height: 1.45; resize: ver
 .form .btn { justify-self: start; }
 .form .note { margin-top: 0; }
 
-/* ---------- top bar and the strip above the map ---------- */
-.top .runnote:empty { display: none; }
+/* ---------- the strip above the map: the recorded runs ---------- */
 .headtools .field { width: auto; max-width: 264px; }
 
 /* ---------- the map: the workflow drawing, its empty state, a problem, the progress steps ---------- */
-#map { cursor: grab; }
 #replayEmpty { gap: 14px; justify-items: center; }
 #replayEmpty .lead { max-width: none; }
 #replayEmpty .hint { text-align: center; }

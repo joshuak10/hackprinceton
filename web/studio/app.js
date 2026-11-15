@@ -170,7 +170,7 @@ function renderLegend() {
   const spec = state.run?.spec || state.artifact?.spec;
   const items = state.colorBy === 'role'
     ? (spec?.roles || []).slice(0, 5).map((role, index) => [`var(--g-${index + 1})`, role.name || stepName(role.id)])
-    : [['var(--a-queue)', 'Waiting'], ['var(--a-walk)', 'Working'], ['var(--a-serve)', 'Finished']];
+    : [['var(--a-queue)', 'Idle'], ['var(--a-walk)', 'Busy'], ['var(--a-serve)', 'Finished']];
   const parts = items.map(([color, text]) => {
     const item = el('span'), dot = el('i');
     dot.style.background = color;
@@ -416,9 +416,11 @@ function previewDefinition(spec) {
   ui.mapTools.hidden = false;
   ui.legendMini.hidden = false;
   ui.runTitle.textContent = spec.title;
-  ui.runMeta.textContent = 'Not simulated yet. Everyone is at their first step. Press Simulate to run it.';
+  ui.runMeta.textContent = 'Not simulated yet. The map shows where everyone starts. Press Simulate to run it.';
   ui.runMeta.title = '';
 }
+// The examples show while nothing is loaded and nothing is being built or run.
+function showEmpty() { ui.replayEmpty.hidden = Boolean(state.job) || Boolean(state.artifact); }
 function showSide() {
   const run = Boolean(state.run), person = run && Boolean(state.agentId) && state.names.has(state.agentId) && Boolean(currentFrame());
   ui.sideEmpty.hidden = run;
@@ -465,7 +467,10 @@ function loadArtifact(artifact, { useBrief = true } = {}) {
     [peopleIn(spec), 'People'], [spec.roles?.length, 'Roles'], [spec.actions?.length, 'Actions'], [spec.ticks, 'Ticks']
   ].map(([value, label]) => { const fig = el('div', '', 'fig'); fig.append(el('b', number(value)), el('span', label)); return fig; }));
   ui.definitionDetails.replaceChildren(
-    disclosure('Roles and goals', (spec.roles || []).map(role => ({ title: role.name, description: role.goal, meta: `${plural(role.count, 'person', 'people')}, starting at ${stepName(role.initialState)}` }))),
+    disclosure('Roles and goals', (spec.roles || []).map(role => ({
+      title: role.name, description: role.goal,
+      meta: `${plural(role.count, 'person', 'people')}, starting at ${stepName(role.initialState)}${role.arrive ? `, arriving from tick ${role.arrive.from} to tick ${role.arrive.to}` : ''}`
+    }))),
     disclosure('Actions and steps', (spec.actions || []).map(action => ({
       title: action.label, description: `From ${(action.from || []).map(stepName).join(' or ')} to ${stepName(action.to)}`,
       meta: `${plural(action.duration ?? 1, 'tick')}, ${plural((action.requirements || []).length, 'condition')}, ${plural((action.resources || []).length, 'shared resource')}`
@@ -539,13 +544,13 @@ function describeProgress(job) {
 async function followJob(job) {
   clearTimeout(state.poll);
   state.job = job;
+  showEmpty();
   setDrawer(false);
   const running = job.type === 'run';
   const steps = running ? [...(state.chained ? ['Building the environment'] : []), 'Running the simulation', 'Opening the replay']
     : ['Building the environment', ...(state.autoRun ? ['Running the simulation', 'Opening the replay'] : ['Opening the definition'])];
   const at = running && state.chained ? 1 : 0;
   showJob(steps, at, describeProgress(job));
-  ui.cancelBtn.hidden = false;
   ui.cancelBtn.disabled = false;
   ui.jobProgress.hidden = true;
   controls();
@@ -565,7 +570,7 @@ async function followJob(job) {
       if (['done', 'error', 'cancelled'].includes(current.status)) {
         ui.cancelBtn.disabled = true;
         const chain = job.type === 'build' && current.status === 'done' && state.autoRun;
-        showJob(steps, chain ? 1 : running ? steps.length - 1 : 1, chain ? 'Starting the run.' : 'Opening what was recorded.');
+        if (current.status === 'done') showJob(steps, chain ? 1 : steps.length - 1, chain ? 'Starting the run.' : 'Opening what was recorded.');
         ui.jobProgress.hidden = true;
         await refreshLibraries();
         if (current.status === 'done') {
@@ -580,10 +585,12 @@ async function followJob(job) {
           }
         } else {
           if (current.runId) await openRun(current.runId);
-          message(current.status === 'cancelled' ? 'Cancelled. A run that was stopped part way is kept in the record.' : current.error || 'It did not work.', current.status === 'error');
+          message(current.status === 'cancelled' ? 'Cancelled. A run that was stopped part way is kept in the record.'
+            : current.error || (running ? 'The simulation could not run.' : 'The environment could not be built.'), current.status === 'error');
         }
         state.job = null;
         state.autoRun = false;
+        showEmpty();
         if (!chain) {
           ui.jobPanel.hidden = true;
           controls();
@@ -617,8 +624,9 @@ async function openRun(id) {
   const result = record.result || {}, stats = result.providerStats || {};
   state.names = new Map((result.agents || []).map(agent => [agent.id, agent.name || agent.id]));
   // "Decisions by" is not taken from the record: it stays Jev when the server has a key, or what was picked here.
+  // The seed is, so that running again repeats the run; the request limit only means something on a Jev run.
   ui.seed.value = record.seed;
-  if (Number.isFinite(record.maxRequests)) ui.maxRequests.value = record.maxRequests;
+  if (record.provider === 'jev' && Number.isFinite(record.maxRequests)) ui.maxRequests.value = record.maxRequests;
   ui.runSelect.value = record.id;
   ui.replayEmpty.hidden = true;
   ui.timeline.hidden = false;
@@ -734,9 +742,10 @@ function renderFrame() {
   renderer.draw(frame, drawOptions());
   const soFar = (state.run.result.events || []).filter(event => event.tick <= frame.tick);
 
-  // Four figures in one row, as on the dashboard.
+  // Four figures in one row, as on the dashboard. Where people arrive over time, the first counts who is here.
+  const arriving = (state.run.spec.roles || []).some(role => role.arrive);
   ui.metrics.replaceChildren(...[
-    [frame.agents.length, 'People'],
+    [frame.agents.length, arriving ? 'People here' : 'People', arriving ? 'People who have arrived so far.' : ''],
     [soFar.filter(event => event.type === 'completed').length, 'Actions done', 'Actions finished so far.'],
     [frame.agents.filter(agent => agent.status === 'terminal').length, 'Finished', 'People who have reached the end of their work.'],
     [soFar.filter(event => event.type === 'blocked').length, 'Blocked', 'Times someone chose an action and could not start it, so far.']
@@ -815,11 +824,14 @@ function renderAgent() {
   const head = el('div', '', 'insp-head');
   head.append(el('h2', agent.name || agent.id), el('p', role?.name || stepName(agent.role), 'who'));
   const where = now ? stepName(now.state) : '';
-  head.append(el('p', !now ? 'Not in this tick' : now.status === 'terminal' ? `Finished at ${where}` : now.status === 'running' ? `Working: ${actionLabel(now.action)}` : `Waiting at ${where}`, 'state'));
+  // Idle is between actions, busy is in the middle of one, finished is at a step with nothing left to do.
+  head.append(el('p', !now ? (agent.arrivesAt > frame.tick ? `Arrives at tick ${agent.arrivesAt}` : 'Not here at this tick')
+    : now.status === 'terminal' ? 'Finished' : now.status === 'running' ? `Busy: ${actionLabel(now.action)}` : 'Idle', 'state'));
 
   const facts = el('dl', '', 'persona');
-  const wants = agent.goal || role?.goal;
-  if (wants) facts.append(el('dt', 'Wants'), el('dd', wants));
+  for (const [term, value] of [['Wants', agent.goal || role?.goal], ['Step', where]]) {
+    if (value) facts.append(el('dt', term), el('dd', value));
+  }
 
   const decisions = (run.result.decisions || []).filter(decision => decision.agentId === agent.id && decision.t <= frame.tick);
   const list = el('div');

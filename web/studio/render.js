@@ -57,7 +57,8 @@ export function createWorkflowRenderer(canvas, { onSelect = () => {}, onView = (
 
   const geometry = () => {
     if (!diagram) return { scale: 1, x: 0, y: 0 };
-    const fit = Math.max(0.04, Math.min((size.width - 100) / diagram.width, (size.height - 132) / diagram.height));
+    // Room is left for the tools in the top corner and the legend at the bottom.
+    const fit = Math.max(0.04, Math.min((size.width - 100) / diagram.width, (size.height - 96) / diagram.height));
     const scale = fit * view.zoom;
     return { scale, x: size.width / 2 - diagram.width * scale / 2 + view.x, y: size.height / 2 - diagram.height * scale / 2 + view.y };
   };
