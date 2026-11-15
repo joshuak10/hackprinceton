@@ -772,7 +772,7 @@ function daysSetup({ pool, daysProvider, expProvider, confirmProvider, spec, see
   let normal, shopName;
   try {
     normal = normalizePool(pool);
-    shopName = shopView(spec, normal.shop).shop.name;
+    shopName = shopView(spec, normal.shopRef).shop.name;
   } catch { return none; }
   let provider = null;
   if (daysProvider !== undefined) provider = daysProvider;
@@ -1035,7 +1035,7 @@ async function testOverDays(ctx, input) {
   const name = DAYS_CHANGE[input.change]?.(Number(input.value));
   if (!name) return { isError: true, content: 'Nothing was run: change must be staff, price, promotion or stamp_card, with a value in range (see the tool description).' };
   const { compareDays, changeFor } = await import('./days.js');
-  const change = changeFor(name, ctx.spec, d.pool.shop, d.days);
+  const change = changeFor(name, ctx.spec, d.pool.shopRef, d.days, d.pool);
   const id = `W${d.tests.length + 1}`;
   ctx.step({ type: 'days', id, label: input.label, why: input.why, change: change.label });
   const res = await compareDays({ pool: d.pool, spec: ctx.spec, days: d.days, seeds: d.seeds, provider: d.provider, changes: [change], baselines: d.baselines });

@@ -50,7 +50,8 @@ const rules = () => new RulesProvider();
 describe('days: small pieces', () => {
   test('a week is 5 mornings, and Monday is 3 calendar days after Friday', () => {
     assert.equal(WEEK, 5);
-    assert.deepEqual([0, 4, 5, 9, 10].map(calendarDay), [0, 4, 7, 11, 14]);
+    assert.deepEqual([0, 4, 5, 9, 10].map(d => calendarDay(d)), [0, 4, 7, 11, 14]);
+    assert.deepEqual([0, 1, 2, 4].map(d => calendarDay(d, 1)), [0, 7, 14, 28], 'a Friday-evening place: each day is a week on');
   });
 
   test('a wait is remembered to the minute when short and to 5 minutes from 10 up', () => {
@@ -106,7 +107,8 @@ describe('days: small pieces', () => {
 describe('days: the pool', () => {
   test('defaults fill in, values are clamped, and a pool with no people cannot run', () => {
     const p = normalizePool({ people: { ines: { usualPerWeek: 9, knows: 2 } } });
-    assert.deepEqual(p.people.ines, { usualPerWeek: 5, knows: 1, weight: 1, newcomer: false, dayVisitor: false });
+    assert.deepEqual(p.people.ines, { usualPerWeek: 7, knows: 1, weight: 1, newcomer: false, dayVisitor: false });
+    assert.deepEqual([p.daysPerWeek, p.dayName, p.regular, p.shopRef], [5, 'weekday morning', { visits: 3, days: 10 }, null]);
     assert.deepEqual([p.size, p.ordinaryWait, p.rules.lossAversion, p.rules.remember, p.habit.length, p.tellReach], [200, 5, 2, 'wait', 5, 0.3]);
     assert.equal(normalizePool({ people: {}, rules: { remember: 'outcome' } }).rules.remember, 'outcome');
     assert.throws(() => normalizePool({}), /people/);
@@ -365,6 +367,61 @@ describe('days: a run', () => {
     await runDays({ pool: POOL, spec: WORLD, days, seed: 7, provider: watch, change: { from: 0, to: days - 1, label: 'card', card: { need: 3, reward: 'a free loaf' } } });
     const stamps = new Set(seen.map(c => Number(/(\d+) of 3 stamps/.exec(c)[1])));
     assert.deepEqual([...stamps].sort(), [0, 1, 2], 'a full card starts again at 0');
+  });
+});
+
+describe('days: a restaurant with seats, open one evening a week', () => {
+  const DINER = {
+    title: 'Kelp & Rice (fictional)', question: 'Who comes back?', context: 'Friday evening at a small fictional sushi bar.',
+    mode: 'visit', duration: 150, clockStart: 1080, travelSpeed: 40,
+    arrivals: { total: 30, start: 0, end: 100, shape: 'peak' },
+    nodes: [
+      { id: 'door', name: 'Street door', kind: 'gate', x: 50, y: 90 },
+      { id: 'counter', name: 'Counter seats', kind: 'service', x: 40, y: 40, servers: 3, serviceTime: 30, appeal: 0.8, price: 38, tags: ['sushi'], about: 'Three seats at the counter.' },
+      { id: 'table', name: 'Table', kind: 'service', x: 60, y: 40, servers: 3, serviceTime: 40, appeal: 0.6, price: 32, tags: ['sushi'], about: 'One table.' }
+    ],
+    archetypes: [{ id: 'locals', name: 'Locals', share: 1, visits: 1, patience: 15, info: 0, needs: ['sushi'] }],
+    minds: [{ id: 'hana', name: 'Hana Ito', age: 50, archetype: 'locals', bio: 'Comes most Fridays.' }, { id: 'rob', name: 'Rob Lee', age: 30, archetype: 'locals', bio: 'Comes now and then.' }]
+  };
+  const DINER_POOL = {
+    world: 'n/a', places: ['counter', 'table'], name: 'Kelp & Rice', seated: true, daysPerWeek: 1, dayName: 'Friday evening',
+    regular: { visits: 2, days: 4 }, reward: 'a free roll', size: 80, ordinaryWait: 10,
+    people: { hana: { usualPerWeek: 0.8, knows: 1 }, rob: { usualPerWeek: 0.25, knows: 0.6, newcomer: true } }
+  };
+
+  test('the two places are one business, and a week is one evening', async () => {
+    const pool = normalizePool(DINER_POOL);
+    assert.deepEqual(pool.shopRef, { places: ['counter', 'table'], name: 'Kelp & Rice', about: undefined, seated: true });
+    const people = buildPeople(pool, normalizeSpec(JSON.parse(JSON.stringify(DINER))), 7);
+    assert.ok(people.filter(p => p.persona === 'hana').every(p => p.usual === 0.8 && p.lastPaid === 35), 'the price is the average of the two places');
+    const run = await runDays({ pool: DINER_POOL, spec: DINER, days: 6, seed: 7, provider: rules() });
+    assert.deepEqual(run.meta, { daysPerWeek: 1, dayName: 'Friday evening', regular: { visits: 2, days: 4 }, shopName: 'Kelp & Rice' });
+    const visits = run.people.flatMap(p => p.visits);
+    assert.ok(visits.some(v => v.outcome === 'served') && visits.some(v => v.outcome === 'left'), 'six seats: some are seated, some leave');
+    const s = summarize(run);
+    assert.equal(s.visitsPerWeek, run.days.reduce((x, d) => x + d.went, 0) / 6, 'per week is per evening');
+    assert.equal(s.regulars, run.people.filter(p => p.went.filter(d => d >= 2).length >= 2).length);
+  });
+
+  test('memories are worded for seats and dated in weeks; a promotion is a lower price and one message', async () => {
+    const told = [];
+    const listen = { name: 'listen', external: false, async decideMany(reqs) { for (const r of reqs) if (r.kind === 'morning') told.push(r.observation); return reqs.map(r => ({ provider: 'rules', action: r.auto?.action })); }, stats() { return {}; } };
+    const spec = normalizeSpec(JSON.parse(JSON.stringify(DINER)));
+    const pool = normalizePool(DINER_POOL);
+    const promo = changeFor('promo20', spec, pool.shopRef, 4, pool);
+    assert.deepEqual([promo.from, promo.to], [0, 0], 'the first week is the first evening');
+    assert.deepEqual(changeFor('price+2', spec, pool.shopRef, 4, pool).patch.map(o => [o.id, o.value]), [['counter', 40], ['table', 34]]);
+    assert.equal(changeFor('card8', spec, pool.shopRef, 4, pool).card.reward, 'a free roll');
+    const run = await runDays({ pool: DINER_POOL, spec: DINER, days: 4, seed: 7, provider: listen, change: promo });
+    const memories = told.flatMap(o => o.memory || []);
+    assert.ok(memories.some(m => /^1 week ago: (waited about \d+ minutes for a seat|no wait) at Kelp & Rice/.test(m)), memories[0]);
+    assert.ok(memories.some(m => /left without eating\.$/.test(m)));
+    assert.equal(memories.some(m => /in line|ordering|Yesterday/.test(m)), false);
+    const offered = told.find(o => o.offers);
+    assert.deepEqual(offered.offers, ['Kelp & Rice: 20% off everything today.']);
+    assert.equal(offered.shop.cost, '$28.00 with the offer (usually $35.00)');
+    assert.equal(offered.shop.name, 'Kelp & Rice');
+    assert.ok(run.people.flatMap(p => p.visits).some(v => v.paid === 28));
   });
 });
 

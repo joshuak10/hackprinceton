@@ -353,18 +353,22 @@ export function memoryWords(m, shopName = 'the shop') {
   const left = r.outcome === 'left';
   // Turned away on seeing the line (§21b): they did not wait, so the memory is the line they saw.
   const ahead = Math.round(Number(r.ahead) || 0);
+  // `seated` (§21e): a place where people wait for a seat and eat, not a counter with a line.
+  const W = r.seated
+    ? { saw: 'waiting for a seat', gone: 'left without eating', none: 'no wait', quick: 'seated right away', queue: 'for a seat', got: 'then was seated' }
+    : { saw: 'in line', gone: 'left without ordering', none: 'no line', quick: 'served right away', queue: 'in line', got: 'then was served' };
   if (left && wait < 1 && ahead > 0) {
-    return `${when}: found ${ahead === 1 ? '1 person' : `${ahead} people`} in line at ${shopName} and left without ordering.`;
+    return `${when}: found ${ahead === 1 ? '1 person' : `${ahead} people`} ${W.saw} at ${shopName} and ${W.gone}.`;
   }
   const parts = [];
-  if (wait < 1) parts.push(left ? `no line at ${shopName}` : `no line at ${shopName}, served right away`);
+  if (wait < 1) parts.push(left ? `${W.none} at ${shopName}` : `${W.none} at ${shopName}, ${W.quick}`);
   else {
     const moved = r.ending === 'fast' ? ', slow at first and quick at the end'
       : r.ending === 'slow' ? ', quick at first and stalled just before the counter' : '';
-    parts.push(`waited ${minutesWords(wait)} in line at ${shopName}${moved}`);
+    parts.push(`waited ${minutesWords(wait)} ${W.queue} at ${shopName}${moved}`);
   }
-  if (left) parts.push('then left without ordering');
-  else if (wait >= 1) parts.push('then was served');
+  if (left) parts.push(`then ${W.gone}`);
+  else if (wait >= 1) parts.push(W.got);
   let text = parts.join(', ');
   if (!left && r.paid != null) text += `, and paid ${moneyWords(r.paid)}${r.promo ? ` with a ${r.promo}` : ''}`;
   return `${when}: ${text}.`;
@@ -419,7 +423,7 @@ export function morningObservation(ctx) {
     shop: compact({ name, known_for: shop.about, offers: tags.join(', '), cost: morningCost(shop), rating: ratingWords(shop.rating) }),
     other_places: (Array.isArray(c.others) ? c.others : []).map(o => compact({ name: o.name, known_for: o.about, cost: moneyWords(o.price) })),
     history: historyWords(c.history, name),
-    memory: (Array.isArray(c.memory) ? c.memory : []).slice(0, MEMORY_MAX).map(m => memoryWords(m, name)),
+    memory: (Array.isArray(c.memory) ? c.memory : []).slice(0, MEMORY_MAX).map(m => memoryWords(c.seated ? { seated: true, ...m } : m, name)),
     card: cardWords(c.card, name),
     heard: heardList(c.heard),
     offers: offerList(c.offers)

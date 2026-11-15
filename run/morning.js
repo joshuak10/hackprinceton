@@ -9,12 +9,26 @@ import { morningObservation, remarkText } from '../engine/observe.js';
 const services = spec => spec.nodes.filter(n => n.kind === 'service');
 
 // The shop being asked about and the world's other service places.
+// `shopId` is a place id, or { places: [ids], name, about, seated } for one business made of several places
+// (a restaurant's counter and its table): then `shop` stands for all of them, under one name and one price
+// (their average), and `shop.ids` lists them.
 export function shopView(spec, shopId = null) {
   const places = services(spec);
   if (!places.length) throw new Error('The morning question needs a world with at least one service place.');
-  const shop = places.find(n => n.id === shopId) || (shopId == null ? places[0] : null);
-  if (!shop) throw new Error(`No service place "${shopId}" in this world.`);
-  return { shop, others: places.filter(n => n !== shop) };
+  if (shopId && typeof shopId === 'object') {
+    const ids = Array.isArray(shopId.places) ? shopId.places.map(String) : [];
+    const mine = ids.map(id => places.find(n => n.id === id));
+    if (!mine.length || mine.some(n => !n)) throw new Error(`No service places "${ids.join(', ')}" in this world.`);
+    const price = Math.round(mine.reduce((s, n) => s + n.price, 0) / mine.length * 100) / 100;
+    const shop = {
+      id: mine[0].id, ids: mine.map(n => n.id), name: shopId.name || mine[0].name, about: shopId.about ?? mine[0].about,
+      tags: [...new Set(mine.flatMap(n => n.tags || []))], price, servers: mine[0].servers, seated: shopId.seated === true
+    };
+    return { shop, others: places.filter(n => !shop.ids.includes(n.id)) };
+  }
+  const found = places.find(n => n.id === shopId) || (shopId == null ? places[0] : null);
+  if (!found) throw new Error(`No service place "${shopId}" in this world.`);
+  return { shop: { ...found, ids: [found.id], seated: false }, others: places.filter(n => n !== found) };
 }
 
 // "A friend (yesterday): long line at Alder & Pine Coffee". `kind` is a visit remark kind (long_line,
@@ -48,7 +62,7 @@ export function morningRequest({ spec, shopId = null, mind, state = {}, t = 0, i
       price: s.price ?? shop.price, wasPrice: s.wasPrice, offerPrice: s.offerPrice, rating: s.rating
     },
     others: others.map(n => ({ name: n.name, about: n.about, price: n.price })),
-    history: s.history, memory: s.memory, card: s.card, heard: s.heard, offers: s.offers
+    history: s.history, memory: s.memory, card: s.card, heard: s.heard, offers: s.offers, seated: shop.seated
   });
   return {
     id: id ?? `morning-${mind.id}`, kind: 'morning', why: null, t, agentId: 0, personaId: mind.id,

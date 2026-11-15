@@ -19,7 +19,6 @@ export const HEARD_DAYS = 7;         // a remark is remembered for this many cal
 export const HEARD_SHOWN = 2;
 export const TIME_JITTER = 10;       // minutes either side of a person's usual time
 export const USUAL_MAX = 0.95;       // nobody comes every single morning: "5 days in 5" is 19 mornings in 20
-const HISTORY_DAYS = 4 * WEEK;       // "N times in the last 4 weeks"
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const logit = p => { const q = clamp(p, 0.002, 0.998); return Math.log(q / (1 - q)); };
@@ -29,8 +28,9 @@ const round4 = x => Math.round(x * 10000) / 10000;
 // A wait as a person remembers it: to the minute when short, to the nearest 5 minutes from 10 up.
 export const rememberedWait = m => { const x = Math.max(0, Number(m) || 0); return x < 1 ? 0 : x < 10 ? Math.round(x) : Math.round(x / 5) * 5; };
 // Day 5 is the Monday after day 4: three calendar days later.
-export const calendarDay = d => Math.floor(d / WEEK) * 7 + (d % WEEK);
-const daysBetween = (from, to) => calendarDay(to) - calendarDay(from);
+// With k days a week: at 5, day 5 is the Monday after day 4; at 1 (a Friday-evening place), each day is a week on.
+export const calendarDay = (d, k = WEEK) => Math.floor(d / k) * 7 + (d % k);
+const daysBetween = (from, to, k = WEEK) => calendarDay(to, k) - calendarDay(from, k);
 
 // ---------- the pool ----------
 
@@ -43,15 +43,22 @@ export function normalizePool(raw) {
   const people = {};
   for (const [id, p] of Object.entries(r.people)) {
     people[id] = {
-      usualPerWeek: num(p?.usualPerWeek, 0, 0, WEEK), knows: num(p?.knows, 0, 0, 1), weight: num(p?.weight, 1, 0, 100),
+      usualPerWeek: num(p?.usualPerWeek, 0, 0, 7), knows: num(p?.knows, 0, 0, 1), weight: num(p?.weight, 1, 0, 100),
       newcomer: p?.newcomer === true, dayVisitor: p?.dayVisitor === true
     };
   }
   const habit = Array.isArray(r.habit) && r.habit.length ? r.habit.map(h => num(h, 1, 0.01, 1)) : [0.25, 0.62, 0.83, 0.93, 1];
   return {
     title: String(r.title || ''), world: r.world || null, shop: r.shop || null,
+    // One business made of several places (a restaurant's counter and its table), under one name.
+    shopRef: Array.isArray(r.places) && r.places.length ? { places: r.places.map(String), name: r.name || null, about: r.about ?? undefined, seated: r.seated === true } : (r.shop || null),
+    // Days the place is simulated per week: 5 weekday mornings by default, 1 for a Friday-evening place.
+    daysPerWeek: Math.round(num(r.daysPerWeek, WEEK, 1, 7)), dayName: String(r.dayName || 'weekday morning'),
+    // Who counts as a regular: this many visits in the last so many simulated days.
+    regular: { visits: Math.round(num(r.regular?.visits, 3, 1, 50)), days: Math.round(num(r.regular?.days, 2 * WEEK, 1, 100)) },
+    reward: String(r.reward || 'a free coffee'),
     size: Math.round(num(r.size, 200, 1, 5000)), people,
-    ordinaryWait: num(r.ordinaryWait, 5, 0, 120), trialPerWeek: num(r.trialPerWeek, 0.5, 0.01, WEEK),
+    ordinaryWait: num(r.ordinaryWait, 5, 0, 120), trialPerWeek: num(r.trialPerWeek, 0.5, 0.001, 7),
     walkPast: num(r.walkPast, 0.03, 0, 1), tellReach: num(r.tellReach, 0.3, 0, 20), habit,
     rules: { lossAversion: num(r.rules?.lossAversion, 2, 1, 5), remember: r.rules?.remember === 'outcome' ? 'outcome' : 'wait' }
   };
@@ -82,7 +89,7 @@ export function buildPeople(pool, spec, seed = 7) {
   const order = exact.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0]);
   for (let k = 0, left = pool.size - counts.reduce((s, c) => s + c, 0); k < left; k++) counts[order[k % order.length][1]]++;
 
-  const refPrice = shopView(spec, pool.shop).shop.price;
+  const refPrice = shopView(spec, pool.shopRef).shop.price;
   const people = [];
   cast.forEach((m, i) => {
     const role = pool.people[m.id];
@@ -92,7 +99,7 @@ export function buildPeople(pool, spec, seed = 7) {
       const rng = seedRng(seed, 'person', id);
       const knows = k < knowing;
       people.push({
-        id, persona: m.id, group: m.archetype, usual: Math.min(USUAL_MAX, role.usualPerWeek / WEEK), time: usualTime(spec.arrivals, rng),
+        id, persona: m.id, group: m.archetype, usual: Math.min(USUAL_MAX, role.usualPerWeek / pool.daysPerWeek), time: usualTime(spec.arrivals, rng),
         knows, via: null, established: knows,   // established: came before day 0, at their usual rate
         went: [],        // days they came
         visits: [],      // { day, wait, outcome, ahead, paid } at the shop
@@ -107,24 +114,28 @@ export function buildPeople(pool, spec, seed = 7) {
 
 // { from, to, patch, card, promo, label }. `patch` is a what-if patch (§15), `card` { need, reward },
 // `promo` { text, priceOff, reach }. Days outside from..to run as the baseline.
-export function changeFor(name, spec, shopId, days) {
-  const { shop } = shopView(spec, shopId);
+// `shopRef` is a place id or a pool's shopRef; `pool` (optional, normalized) gives the reward and the days in a week.
+export function changeFor(name, spec, shopRef, days, pool = null) {
+  const { shop } = shopView(spec, shopRef);
+  const k = pool?.daysPerWeek ?? WEEK;
+  const priceOf = id => spec.nodes.find(n => n.id === id).price;
   const whole = { from: 0, to: days - 1 };
   if (name == null || name === '' || name === 'none') return null;
   const staff = /^staff\+(\d+)$/.exec(name);
   if (staff && Number(staff[1]) > 0) return { ...whole, label: `+${staff[1]} staff at ${shop.name}`, patch: [{ kind: 'node', id: shop.id, field: 'servers', value: shop.servers + Number(staff[1]) }] };
   const price = /^price([+-]\d+(?:\.\d+)?)$/.exec(name);
   if (price) {
-    const to = round2(shop.price + Number(price[1]));
-    return { ...whole, label: `Price ${Number(price[1]) > 0 ? 'up' : 'down'} to $${to.toFixed(2)}`, patch: [{ kind: 'node', id: shop.id, field: 'price', value: to }] };
+    const by = Number(price[1]);
+    const to = round2(shop.price + by);
+    return { ...whole, label: `Price ${by > 0 ? 'up' : 'down'} to $${to.toFixed(2)}`, patch: shop.ids.map(id => ({ kind: 'node', id, field: 'price', value: round2(priceOf(id) + by) })) };
   }
   const promo = /^promo(\d+)$/.exec(name);
   if (promo) {
     const off = clamp(Number(promo[1]) / 100, 0.01, 0.9);
-    return { from: 0, to: Math.min(days, WEEK) - 1, label: `${promo[1]}% off for the first week, heard of by half the street`, promo: { text: `${shop.name}: ${promo[1]}% off everything today.`, priceOff: off, reach: 0.5 } };
+    return { from: 0, to: Math.min(days, k) - 1, label: `${promo[1]}% off for the first week, heard of by half the street`, promo: { text: `${shop.name}: ${promo[1]}% off everything today.`, priceOff: off, reach: 0.5 } };
   }
   const card = /^card(\d+)$/.exec(name);
-  if (card) return { ...whole, label: `Stamp card: buy ${Number(card[1]) - 1}, the next is free`, card: { need: Math.max(2, Number(card[1])), reward: 'a free coffee' } };
+  if (card) return { ...whole, label: `Stamp card: buy ${Number(card[1]) - 1}, the next is free`, card: { need: Math.max(2, Number(card[1])), reward: pool?.reward || 'a free coffee' } };
   throw new Error(`Unknown change "${name}". Use staff+1, price+0.5, promo20 or card10.`);
 }
 
@@ -135,9 +146,10 @@ const activeOn = (change, d) => Boolean(change) && d >= change.from && d <= chan
 const agoWords = n => (n <= 1 ? 'yesterday' : n % 7 === 0 ? (n === 7 ? '1 week ago' : `${n / 7} weeks ago`) : `${n} days ago`);
 
 // How many times they came in the last 4 weeks. Before day 0 an established customer came at their usual rate.
-function visitCount(person, d) {
-  const before = person.established ? person.usual * Math.max(0, HISTORY_DAYS - d) : 0;
-  return Math.round(before) + person.went.filter(x => d - x <= HISTORY_DAYS).length;
+function visitCount(person, d, k = WEEK) {
+  const span = 4 * k;
+  const before = person.established ? person.usual * Math.max(0, span - d) : 0;
+  return Math.round(before) + person.went.filter(x => d - x <= span).length;
 }
 
 // Three records for one person this morning (§21b):
@@ -147,11 +159,11 @@ function visitCount(person, d) {
 //   reference  the same person on an ordinary day: the same visits, each an ordinary one, and no remarks.
 export function recordsFor(person, d, ctx) {
   const been = person.established || person.went.length > 0;
-  const history = been ? { visits: Math.max(1, visitCount(person, d)), weeks: 4 } : { visits: 0, via: person.via || 'has walked past it' };
-  const remembered = person.visits.filter(v => daysBetween(v.day, d) <= MEMORY_DAYS).slice(-MEMORY_VISITS).reverse();
-  const memory = remembered.map(v => ({ daysAgo: daysBetween(v.day, d), wait: v.wait, outcome: v.outcome, ahead: v.ahead }));
-  const heard = person.heard.filter(h => daysBetween(h.day, d) <= HEARD_DAYS).slice(-HEARD_SHOWN).reverse()
-    .map(h => friendRemark(h.kind, ctx.shopName, { when: agoWords(daysBetween(h.day, d)) }));
+  const history = been ? { visits: Math.max(1, visitCount(person, d, ctx.k)), weeks: 4 } : { visits: 0, via: person.via || 'has walked past it' };
+  const remembered = person.visits.filter(v => daysBetween(v.day, d, ctx.k) <= MEMORY_DAYS).slice(-MEMORY_VISITS).reverse();
+  const memory = remembered.map(v => ({ daysAgo: daysBetween(v.day, d, ctx.k), wait: v.wait, outcome: v.outcome, ahead: v.ahead }));
+  const heard = person.heard.filter(h => daysBetween(h.day, d, ctx.k) <= HEARD_DAYS).slice(-HEARD_SHOWN).reverse()
+    .map(h => friendRemark(h.kind, ctx.shopName, { when: agoWords(daysBetween(h.day, d, ctx.k)) }));
   const plain = { history, memory, price: ctx.refPrice };
   if (heard.length) plain.heard = heard;
   const today = { ...plain, price: ctx.price };
@@ -162,14 +174,14 @@ export function recordsFor(person, d, ctx) {
   if (ctx.promo && person.reached) { today.offers = [ctx.promo.text]; today.offerPrice = round2(ctx.price * (1 - ctx.promo.priceOff)); changed = true; }
   const reference = {
     history, price: ctx.refPrice,
-    memory: remembered.map(v => ({ daysAgo: daysBetween(v.day, d), wait: ctx.ordinaryWait, outcome: 'served' }))
+    memory: remembered.map(v => ({ daysAgo: daysBetween(v.day, d, ctx.k), wait: ctx.ordinaryWait, outcome: 'served' }))
   };
   return { today, plain: changed ? plain : null, reference, priceRise: round2(ctx.price) > round2(ctx.refPrice) };
 }
 
 // A person's usual chance today, before Jev moves it.
 export function usualToday(person, pool) {
-  if (!person.established && person.served === 0) return pool.trialPerWeek / WEEK;
+  if (!person.established && person.served === 0) return pool.trialPerWeek / pool.daysPerWeek;
   const habit = person.established ? 1 : pool.habit[Math.min(person.served, pool.habit.length) - 1];
   return person.usual * habit;
 }
@@ -245,7 +257,8 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
   const pool = normalizePool(rawPool);
   const base = normalizeSpec(rawSpec);
   if (base.mode !== 'visit') throw new Error('The multi-day loop needs a visit world.');
-  const { shop } = shopView(base, pool.shop);
+  const { shop } = shopView(base, pool.shopRef);
+  const k = pool.daysPerWeek;
   const people = buildPeople(pool, base, seed);
   const byId = new Map(people.map(p => [p.id, p]));
   const refPrice = shop.price;
@@ -257,8 +270,8 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
     const spec = on && change.patch ? applyPatch(base, change.patch).spec : base;
     const promo = on && change.promo ? change.promo : null;
     const card = on ? change.card ?? null : null;
-    const price = shopView(spec, shop.id).shop.price;
-    const ctx = { shopId: shop.id, shopName: shop.name, price, refPrice, ordinaryWait: pool.ordinaryWait, promo, card };
+    const price = shopView(spec, pool.shopRef).shop.price;
+    const ctx = { shopId: pool.shopRef, shopName: shop.name, price, refPrice, ordinaryWait: pool.ordinaryWait, promo, card, k };
 
     // 1. Who hears of the shop, and who a promotion reaches.
     for (const person of people) {
@@ -286,13 +299,16 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
       const u = rng(), jitter = (rng() * 2 - 1) * TIME_JITTER;
       if (u >= job.chance) continue;
       const t = clamp(job.person.time + jitter, spec.arrivals.start, Math.max(spec.arrivals.start, spec.arrivals.end - 1));
-      arrivals.push({ t: round2(t), persona: job.person.persona, first: shop.id, tag: job.person.id });
+      arrivals.push({ t: round2(t), persona: job.person.persona, first: shop.ids.length === 1 ? shop.id : null, tag: job.person.id });
     }
 
-    // 3. The day, on the engine. A promotion is an offer to everyone who comes: the discount is at the
-    // counter, whoever heard of it beforehand.
+    // 3. The day, on the engine. A promotion lowers the price for everyone who comes (the discount is at the
+    // counter, whoever heard of it beforehand) and is told once, as a message.
     const daySpec = promo
-      ? applyPatch(spec, [{ kind: 'offer', offer: { id: 'promotion', text: promo.text, place: shop.id, priceOff: promo.priceOff } }]).spec
+      ? applyPatch(spec, [
+        ...shop.ids.map(id => ({ kind: 'node', id, field: 'price', value: round2(spec.nodes.find(n => n.id === id).price * (1 - promo.priceOff)) })),
+        { kind: 'offer', offer: { id: 'promotion', text: promo.text } }
+      ]).spec
       : spec;
     const run = arrivals.length
       ? await runSwarm({ spec: daySpec, seed: hash32(seed, 'day', d), provider, simOpts: { arrivals } })
@@ -309,7 +325,7 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
       tagOf.set(a.id, person);
       if (!person.established && person.went.length === 0) { day.firstTime++; person.firstDay = d; }
       person.went.push(d);
-      const mine = (a.lines || []).filter(l => l.place === shop.id);
+      const mine = (a.lines || []).filter(l => shop.ids.includes(l.place));
       const servedLine = mine.find(l => l.outcome === 'served'), leftLine = mine.find(l => l.outcome === 'left');
       if (servedLine) {
         // Peak-end (rule): the visit is remembered by its worst wait and that it ended in being served.
@@ -328,7 +344,7 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
       }
     }
     for (const r of remarks) {
-      if (r.placeId !== shop.id) continue;
+      if (!shop.ids.includes(r.placeId)) continue;
       const speaker = tagOf.get(r.agentId);
       if (!speaker) continue;
       if (r.kind === 'good_experience') day.good++; else day.bad++;
@@ -349,6 +365,7 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
   }
   return {
     days: out, asked, centers: ownCenters,
+    meta: { daysPerWeek: k, dayName: pool.dayName, regular: pool.regular, shopName: shop.name },
     people: people.map(p => ({ id: p.id, persona: p.persona, group: p.group, established: p.established, knows: p.knows, went: p.went, served: p.served, firstDay: p.firstDay ?? null, visits: p.visits }))
   };
 }
@@ -359,18 +376,19 @@ const mean = xs => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
 
 // One arm of one seed, as the numbers an owner asks about.
 export function summarize(run) {
-  const n = run.days.length, weeks = n / WEEK;
+  const k = run.meta?.daysPerWeek ?? WEEK, regular = run.meta?.regular ?? { visits: 3, days: 2 * WEEK };
+  const n = run.days.length, weeks = n / k;
   const total = k => run.days.reduce((s, d) => s + d[k], 0);
   const half = Math.floor(n / 2);
   const firsts = run.people.filter(p => p.firstDay != null && p.firstDay < half);
-  const lastTen = p => p.went.filter(d => d >= n - 2 * WEEK).length;
+  const lately = p => p.went.filter(d => d >= n - regular.days).length;
   return {
     visitsPerWeek: total('went') / weeks, servedPerWeek: total('served') / weeks, walkAwaysPerWeek: total('left') / weeks,
     firstTimersPerWeek: total('firstTime') / weeks,
     avgWait: total('served') ? run.days.reduce((s, d) => s + d.avgWait * d.served, 0) / total('served') : 0,
     cameBack: firsts.length ? firsts.filter(p => p.went.length > 1).length / firsts.length : null,
     firstTimers: firsts.length,
-    regulars: run.people.filter(p => lastTen(p) >= 3).length,
+    regulars: run.people.filter(p => lately(p) >= regular.visits).length,
     goodRemarksPerWeek: total('good') / weeks, badRemarksPerWeek: total('bad') / weeks
   };
 }
@@ -383,12 +401,13 @@ export function realism(run) {
   const top = counts.slice(0, Math.max(1, Math.round(counts.length / 5))).reduce((s, c) => s + c, 0);
   const first = run.days.slice(0, half).reduce((s, d) => s + d.went, 0) / Math.max(1, half);
   const second = run.days.slice(half).reduce((s, d) => s + d.went, 0) / Math.max(1, n - half);
-  // Of visits made with at least 5 days left to run: the share followed by another visit within 5 days.
+  // Of visits made with a week's days left to run (at least 2): the share followed by another visit in that many days.
+  const win = Math.max(2, run.meta?.daysPerWeek ?? WEEK);
   const again = sel => {
     let made = 0, back = 0;
     for (const p of run.people.filter(sel)) {
       const days = p.established ? p.went : p.went.slice(0, 1);
-      for (const d of days) { if (d > n - 1 - WEEK) continue; made++; if (p.went.some(x => x > d && x <= d + WEEK)) back++; }
+      for (const d of days) { if (d > n - 1 - win) continue; made++; if (p.went.some(x => x > d && x <= d + win)) back++; }
     }
     return made ? back / made : null;
   };
@@ -452,7 +471,10 @@ const pass = v => (v == null ? 'not enough data' : v ? 'pass' : 'FAIL');
 export function renderDays(result, { title = '', provider = '', remember = 'wait' } = {}) {
   const L = [];
   const seeds = result.seeds;
-  L.push(`${title} · ${result.days} weekday mornings · seeds ${seeds[0]}..${seeds.at(-1)} · ${provider}`);
+  const meta = result.baselines[0]?.run.meta ?? {};
+  const reg = meta.regular ?? { visits: 3, days: 2 * WEEK };
+  const labels = { ...LABELS, regulars: `Regulars (${reg.visits}+ visits in the last ${reg.days} days)` };
+  L.push(`${title} · ${result.days} ${meta.dayName ?? 'weekday morning'}s · seeds ${seeds[0]}..${seeds.at(-1)} · ${provider}`);
   L.push('Unvalidated: every usual rate in the pool is an assumption, and the size of the wait effect is unchecked');
   L.push('(docs/PROTOTYPE.md §20d, §21). Read a change against its baseline on the same seeds, not the levels.');
   if (provider !== 'jev') L.push('Rule model: nobody reads memory, so everyone comes at their usual rate. This is a dry run.');
@@ -460,7 +482,7 @@ export function renderDays(result, { title = '', provider = '', remember = 'wait
   L.push('', `Baseline, average of ${seeds.length} seed${seeds.length === 1 ? '' : 's'}:`);
   for (const k of METRICS) {
     const xs = result.baselines.map(b => b.summary[k]).filter(x => x != null);
-    if (xs.length) L.push(`  ${LABELS[k].padEnd(42)} ${fmt(k, mean(xs)).padStart(6)}   (${fmt(k, Math.min(...xs))} to ${fmt(k, Math.max(...xs))})`);
+    if (xs.length) L.push(`  ${labels[k].padEnd(42)} ${fmt(k, mean(xs)).padStart(6)}   (${fmt(k, Math.min(...xs))} to ${fmt(k, Math.max(...xs))})`);
   }
   L.push('', 'Realism checks on the baseline (level 2), seed by seed:');
   const r = result.baselines.map(b => b.realism);
@@ -474,7 +496,7 @@ export function renderDays(result, { title = '', provider = '', remember = 'wait
       if (!e) continue;
       const range = seeds.length > 1 ? `  (${signed(k, e.min)} to ${signed(k, e.max)})` : '';
       const verdict = seeds.length < 2 ? '' : e.min === 0 && e.max === 0 ? '  no change' : e.agrees ? '  every seed agrees' : '  seeds disagree: no clear effect';
-      L.push(`  ${LABELS[k].padEnd(42)} ${fmt(k, e.before).padStart(6)} → ${fmt(k, e.after).padStart(6)}   ${signed(k, e.mean).padStart(8)}${range}${verdict}`);
+      L.push(`  ${labels[k].padEnd(42)} ${fmt(k, e.before).padStart(6)} → ${fmt(k, e.after).padStart(6)}   ${signed(k, e.mean).padStart(8)}${range}${verdict}`);
     }
   }
   return L;

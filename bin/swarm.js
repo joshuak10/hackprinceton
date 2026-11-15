@@ -559,11 +559,12 @@ async function cmdDays([ref], flags) {
   }
   const { file: worldFile, raw } = readWorld(pool.world);
   const spec = checkedSpec(raw, shortPath(worldFile));
-  const { compareDays, changeFor, renderDays } = await import('../run/days.js');
+  const { compareDays, changeFor, renderDays, normalizePool } = await import('../run/days.js');
+  const normal = normalizePool(pool);
   const days = intFlag(flags, 'days', 10, 2);
   const seeds = seedRange(intFlag(flags, 'seed', 7), intFlag(flags, 'seeds', 3, 1));
   const changes = String(flags.change ?? '').split(',').map(x => x.trim()).filter(Boolean).map(name => {
-    try { return changeFor(name, spec, pool.shop, days); } catch (err) { throw new CliError(err.message); }
+    try { return changeFor(name, spec, normal.shopRef, days, normal); } catch (err) { throw new CliError(err.message); }
   });
   const provider = providerFor(providerName, { ...flags, 'max-requests': flags['max-requests'] ?? 200000 });
   let last = 0;
