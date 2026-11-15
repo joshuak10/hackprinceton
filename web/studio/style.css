@@ -1,99 +1,128 @@
-/* Environment adapter: Scope provides all palette, typography, layout and control tokens. */
-.environment-app { min-width: 0; }
-.environment-app a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
-.environment-app .place { min-width: 0; }
-.environment-app .maphead .sub { max-width: 70ch; }
-.environment-app .map-tools { z-index: 1; flex-wrap: wrap; }
-.environment-app .mapbox { min-height: 220px; }
-.environment-status { font-size: 13px; color: var(--accent); margin-top: 8px; white-space: pre-wrap; max-height: 80px; overflow: auto; }
-.environment-status:empty { display: none; }
-.environment-status.error { color: var(--i-congestion); }
-.environment-cases { grid-template-columns: repeat(2,minmax(200px,330px)); }
-.environment-case { min-height: 180px; padding: 24px; border: 1px solid var(--line-2); background: var(--panel); border-radius: var(--radius); text-align: left; cursor: pointer; }
-.environment-case:hover { border-color: var(--accent); }
-.environment-case .case-icon { display: block; font-size: 29px; color: var(--accent); margin-bottom: 22px; }
-.environment-case b { font: 650 20px/1.2 var(--display); display: block; }
-.environment-case small { display: block; color: var(--muted); margin-top: 10px; font-size: 13px; }
-.empty-note { text-align: center; }
-.environment-progress { z-index: 3; }
-.job-content { display: grid; gap: 15px; max-width: 480px; min-width: 260px; padding: 30px; background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); }
-.job-content h2 { margin: 0; font: 650 21px var(--display); }
-.job-content p { margin: 0; color: var(--muted); font-size: 14px; }
-.job-content progress { width: 100%; height: 5px; accent-color: var(--accent); }
-.job-content .btn { justify-self: start; }
-.legend-idle { background: var(--a-queue); }
-.legend-running { background: var(--a-walk); }
-.legend-terminal { background: var(--a-serve); }
-.layout-note { color: var(--faint); }
-.environment-side { overflow-y: auto; }
-.environment-side-empty { padding: 22px 18px; color: var(--faint); font-size: 15px; }
-.environment-side #replayContent { min-height: 0; }
-.environment-side .metric { padding: 14px 18px 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.environment-side .metric:nth-child(2n) { border-right: 0; }
-.environment-side .metric b { display: block; font: 600 30px/1.05 var(--font); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.environment-side .metric span { color: var(--muted); font-size: 13px; }
-.resource-chip + .resource-chip { margin-top: 12px; }
-.resource-label { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
-.resource-label span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
-.resource-chip progress { width: 100%; display: block; height: 5px; margin-top: 7px; accent-color: var(--accent); }
-.environment-events { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
-.environment-events li { display: grid; grid-template-columns: 30px 1fr; gap: 10px; border-top: 1px solid var(--line); padding: 9px 0; font-size: 13px; }
-.environment-events li:first-child { border: 0; }
-.environment-events time { color: var(--faint); font-variant-numeric: tabular-nums; }
-.environment-events li.blocked,.environment-events li.rejected { color: var(--i-decision); }
-.environment-events p { margin: 3px 0 0; font-size: 12px; color: var(--faint); }
-.environment-inspector select,.environment-drawer select,.environment-drawer input,.environment-drawer textarea { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--ground); color: var(--text); font: 14px/1.4 var(--font); }
-.environment-inspector select,.environment-drawer select,.environment-drawer input { min-height: 38px; }
-.environment-drawer textarea { resize: vertical; }
-.environment-drawer textarea::placeholder,.environment-drawer input::placeholder { color: var(--faint); }
-.environment-drawer { width: min(480px,100%); }
-.drawer-intro { padding-top: 14px; }
-.environment-preset { display: grid; gap: 6px; margin-top: 15px; font-size: 13px; color: var(--muted); }
-.environment-form { display: grid; gap: 14px; margin-top: 18px; }
-.environment-form label,.run-fields label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
-.label-note { display: inline; font-size: 12px; color: var(--faint); }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.drawer-section { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 22px; }
-.drawer-section .block-head h3 { margin: 0; }
-.model-empty { padding: 16px 0; }
-.model-title { margin-top: 18px; align-items: start; }
-.model-title h3 { margin: 0; }
-.model-numbers { display: grid; grid-template-columns: repeat(4,1fr); margin: 16px 0; border-block: 1px solid var(--line); }
-.model-number { padding: 10px 0; }
-.model-number b { display: block; font-size: 21px; font-variant-numeric: tabular-nums; }
-.model-number span { display: block; color: var(--muted); font-size: 12px; }
-.definition-details details { padding: 9px 0; border-bottom: 1px solid var(--line); }
-.environment-app summary { cursor: pointer; font-size: 13px; font-weight: 500; }
-.definition-list { padding: 10px 0 0; display: grid; gap: 10px; font-size: 13px; }
-.definition-list p { margin: 3px 0; color: var(--muted); font-size: 12px; }
-.small-tag { color: var(--faint); font-size: 11px; }
-.assumptions { margin-top: 16px; font-size: 12px; color: var(--muted); }
-.assumptions h4 { margin: 0 0 8px; color: var(--text); font-size: 13px; }
-.assumptions ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
-.warnings { border-left: 2px solid var(--i-decision); color: var(--muted); padding: 6px 10px; margin: 14px 0; font-size: 12px; white-space: pre-wrap; }
-.editor-wrap { margin: 18px 0 14px; }
-.editor-wrap .hint { margin: 10px 0; }
-.environment-drawer .code-editor { font: 11px/1.6 ui-monospace,Menlo,monospace; }
-.save-row { display: flex; gap: 12px; align-items: center; }
-.save-row .hint { font-size: 12px; }
-.run-fields { grid-template-columns: 1.4fr .6fr; }
-.run-fields label:last-child { grid-column: 1/-1; }
-#providerHelp { margin: 12px 0; }
-.run-full { width: 100%; }
-.fineprint { margin-top: 15px; }
-.agent-facts { display: grid; gap: 5px; font-size: 14px; margin: 12px 0; }
-.agent-facts p { margin: 0; }
-.help { font-size: 12px; color: var(--muted); }
-.decisions { display: grid; gap: 8px; max-height: 420px; overflow-y: auto; margin-top: 12px; }
-.decision { border: 1px solid var(--line); border-radius: var(--radius-s); padding: 10px; font-size: 12px; }
-.decision-label { display: block; font-size: 11px; color: var(--muted); margin-top: 7px; }
-.decision-options { display: grid; gap: 5px; margin: 10px 0; }
-.decision-option { display: flex; justify-content: space-between; gap: 12px; }
-.probability { color: var(--accent); white-space: nowrap; }
-.environment-app pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 10px/1.6 ui-monospace,Menlo,monospace; max-height: 250px; overflow-y: auto; }
-.run-details .btn { margin: 12px 0; }
-.run-details .hint { margin-top: 12px; }
-.environment-app p,.environment-app h3 { overflow-wrap: anywhere; }
-@media(max-width:1200px) { .environment-app .spatial-link { display: none; } .environment-app .top { gap: 12px; } .environment-app { --side-w: 340px; } .environment-app .maphead { align-items: start; flex-direction: column; gap: 12px; } .environment-app .headtools,.environment-app .runpick { width: 100%; } .environment-app .runpick select { max-width: 100%; flex: 1; } }
-@media(max-width:900px) { .environment-app { --side-w: 285px; } .environment-app .ask input { font-size: 14px; } .environment-app .brand { font-size: 20px; } .environment-app #sourceBadge { display: none; } .environment-cases { grid-template-columns: 1fr; } .environment-case { min-height: 120px; padding: 16px; } .environment-case .case-icon { display: none; } .environment-app .empty { padding: 18px; } .environment-app .map-tools .select { font-size: 12px; } }
-@media(max-width:700px) { .environment-app { grid-template-rows: auto 1fr; min-height: 100vh; height: auto; } body:has(.environment-app) { overflow: auto; } .environment-app .top { flex-wrap: wrap; padding: 12px; gap: 10px; } .environment-app .ask { order: 3; flex-basis: 100%; max-width: none; } .environment-app .top-tools { gap: 3px; } .environment-app #sourceBadge { display: none; } .environment-app .stage { grid-template-columns: 1fr; } .environment-app .mapcol { min-height: 600px; } .environment-app .mapbox { margin: 0 12px; min-height: 330px; } .environment-app .maphead { padding-inline: 14px; } .environment-app .place h1 { font-size: 23px; } .environment-app .map-tools { left: 8px; right: 8px; top: 8px; gap: 4px; } .environment-app .map-tools .chip { display: none; } .environment-app .timeline { padding-inline: 14px; } .environment-app .side { border-left: 0; border-top: 1px solid var(--line); } .environment-drawer { top: 0; z-index: 8; width: min(480px,100%); } .environment-app .layout-note { width: 100%; } .environment-app .clock { font-size: 18px; } .environment-app .span { font-size: 11px; } }
+/* Environment page. The frame, the tokens, the type scale and the controls all come from the dashboard's
+   stylesheet (/scope/style.css). This file only adds what the workflow view needs and the dashboard does not
+   have: form fields, the examples in the empty state, a Cancel button on the progress steps, and a few rows.
+   Rules kept from the dashboard: red means people lost and nothing else; ink marks the one main action. */
+
+/* A link that is a button (Places, Download the record). */
+.environment-app a.btn { display: inline-flex; align-items: center; text-decoration: none; color: var(--text); }
+.environment-app a.btn.quiet { color: var(--muted); }
+.environment-app a.btn.quiet:hover { color: var(--text); }
+
+/* ---------- form fields: the prompt box's look, for a select, a number or a few lines of text ---------- */
+.field {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--field);
+  border-radius: var(--radius);
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+}
+.field::placeholder { color: var(--faint); opacity: 1; }
+.field:disabled { opacity: 0.55; cursor: not-allowed; }
+select.field { cursor: pointer; }
+textarea.field { height: auto; padding: 8px 10px; line-height: 1.45; resize: vertical; }
+.field.small { height: 30px; padding: 0 8px; font-size: var(--fs-s); }
+.field.code { font: 400 var(--fs-xs)/1.6 ui-monospace, Menlo, monospace; }
+
+.form { display: grid; gap: 12px; }
+.form label { display: grid; gap: 4px; color: var(--muted); font-size: var(--fs-s); }
+.form .field { font-size: var(--fs-m); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+.label-note { margin-left: 4px; color: var(--faint); font-size: var(--fs-xs); }
+.form .btn { justify-self: start; }
+.form .note { margin-top: 0; }
+
+/* ---------- top bar and the strip above the map ---------- */
+.top .runnote:empty { display: none; }
+.headtools .field { width: auto; max-width: 264px; }
+
+/* ---------- the map: the workflow drawing, its empty state, a problem, the progress steps ---------- */
+#map { cursor: grab; }
+#replayEmpty { gap: 14px; justify-items: center; }
+#replayEmpty .lead { max-width: none; }
+#replayEmpty .hint { text-align: center; }
+.examples {
+  width: min(520px, 100%);
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.examples .row { padding: 8px 10px; }
+.examples .empty-row { padding: 8px 10px; color: var(--faint); font-size: var(--fs-s); }
+.environment-app .notice { max-width: min(560px, calc(100% - 300px)); align-items: start; }
+.environment-app .notice p { max-height: 132px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.environment-app .notice .btn { flex: none; }
+#jobPanel progress { display: block; width: 100%; height: 6px; margin-top: 12px; }
+#jobPanel .note { max-width: 380px; }
+#jobPanel .btn { justify-self: start; margin-top: 18px; }
+.legend-mini .aside { color: var(--faint); }
+
+/* ---------- side panel ---------- */
+.side-empty { padding: 16px 18px; font-size: var(--fs-m); }
+.results { margin-top: 0; }
+.results tbody tr:first-child { border-top: 0; }
+.results th { white-space: normal; }
+/* A shared resource: the look of a bottleneck row, without the button. */
+.rank .res { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; padding: 5px 8px 7px; }
+.pick-hint { margin-top: 6px; }
+.glyph.started { border-radius: 50%; background: var(--a-walk); }
+.glyph.completed { border-radius: 50%; background: var(--a-serve); }
+.glyph.blocked { border-radius: 2px; background: var(--i-congestion); }
+.feed .still { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: start; padding: 6px 8px; }
+.dec-item details { margin-top: 6px; }
+.environment-app summary { cursor: pointer; color: var(--muted); font-size: var(--fs-s); font-weight: 500; }
+.environment-app pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow-y: auto;
+  border-radius: var(--radius-s);
+  background: var(--panel-2);
+  font: 400 var(--fs-xs)/1.6 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- the Environment drawer ---------- */
+.drawer-body label { cursor: pointer; }
+.sec-head { margin: 18px 0 6px; }
+.sec-head h3 { margin: 0; }
+.model-title { margin: 0; align-items: baseline; flex-wrap: nowrap; }
+.drawer-body .empty-note { margin-top: 0; }
+.model-title h4 { margin: 0; font-size: var(--fs-m); font-weight: 600; overflow-wrap: anywhere; }
+.model-numbers { margin: 12px 0 4px; padding: 10px 0; }
+.definition details { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.definition-list { display: grid; gap: 10px; padding: 8px 0 2px; font-size: var(--fs-s); }
+.definition-list strong { font-weight: 500; overflow-wrap: anywhere; }
+.definition-list p { color: var(--muted); overflow-wrap: anywhere; }
+.definition-list span { display: block; color: var(--faint); font-size: var(--fs-xs); }
+.assumptions { margin-top: 12px; color: var(--muted); font-size: var(--fs-s); }
+.assumptions h4 { margin: 0 0 4px; color: var(--text); font-size: var(--fs-s); font-weight: 600; }
+.assumptions ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
+/* Something to watch out for: ink and weight, never red. */
+.warn { margin-top: 8px; color: var(--text); font-size: var(--fs-s); font-weight: 500; overflow-wrap: anywhere; }
+.editor { margin-top: 14px; }
+.editor .field { margin-top: 8px; }
+.save-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+#runDetails .btn { margin-top: 12px; }
+
+/* ---------- narrower windows: the page still works below the dashboard's 1180 px ---------- */
+@media (max-width: 1180px) {
+  .environment-app { min-width: 0; --side-w: 320px; }
+  .environment-app .top { gap: 12px; }
+  .environment-app .maphead { flex-wrap: wrap; gap: 8px 20px; }
+}
+@media (max-width: 760px) {
+  body:has(.environment-app) { overflow: auto; }
+  .environment-app { height: auto; min-height: 100vh; grid-template-rows: auto 1fr; }
+  .environment-app .top { flex-wrap: wrap; padding: 10px 12px; }
+  .environment-app .ask { order: 9; flex-basis: 100%; max-width: none; }
+  .environment-app .stage { grid-template-columns: minmax(0, 1fr); }
+  .environment-app .mapcol { min-height: 620px; }
+  .environment-app .drawer { top: 0; }
+}

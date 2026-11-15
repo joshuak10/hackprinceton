@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Swarmscope · Environments</title>
-<meta name="description" content="Define an environment, build it with Claude or Codex, and watch individual Jev agents simulate its workflow.">
+<meta name="description" content="Describe a place or a team in words. Claude builds it as an environment, and every simulated person in it decides through Jev.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650;12..96,750&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/scope/style.css">
 <link rel="stylesheet" href="/studio/style.css">
@@ -19,64 +19,175 @@
     <a class="brand" href="/scope/?mode=environment" aria-label="Swarmscope, start over">Swarmscope</a>
     <form class="ask" id="askForm" autocomplete="off">
       <label class="visually-hidden" for="askIn">What do you want to simulate?</label>
-      <input id="askIn" type="text" maxlength="12000" placeholder="What do you want to simulate? Describe an environment, its people, and the question." spellcheck="false">
-      <button class="btn primary" id="askBtn" type="submit">Simulate</button>
+      <input id="askIn" type="text" maxlength="12000" placeholder="Describe what to simulate, for example: a busy help desk" spellcheck="false">
+      <button class="btn" id="askBtn" type="submit">Simulate</button>
     </form>
-    <div class="top-tools">
-      <button class="btn" id="environmentBtn" type="button" aria-expanded="true" aria-controls="environmentDrawer">Environment</button>
-      <span class="badge" id="sourceBadge">Ready to build</span>
-      <a class="btn ghost spatial-link" href="/scope/?case=building">Spatial demos</a>
-      <button class="btn ghost icon" id="themeBtn" type="button" aria-label="Switch to light theme"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="4.2" fill="currentColor"/><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 1.8v2.1M10 16.1v2.1M1.8 10h2.1M16.1 10h2.1M4.2 4.2l1.5 1.5M14.3 14.3l1.5 1.5M4.2 15.8l1.5-1.5M14.3 5.7l1.5-1.5"/></g></svg></button>
-    </div>
+    <button class="btn" id="environmentBtn" type="button" aria-expanded="false" aria-controls="environmentDrawer">Environment</button>
+    <p class="runnote" id="sourceBadge" hidden></p>
+    <a class="btn quiet" href="/scope/" id="placesLink">Places</a>
+    <button class="btn quiet" id="langBtn" type="button" data-i18n-skip lang="zh-Hans" aria-label="切换到简体中文">中文</button>
+    <button class="btn quiet icon" id="themeBtn" type="button" aria-label="Switch to dark theme"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="7.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 2.8a7.2 7.2 0 0 1 0 14.4z" fill="currentColor"/></svg></button>
   </header>
+
   <main class="stage">
-    <section class="mapcol" aria-label="Environment simulation">
+    <section class="mapcol" aria-label="Simulation map">
       <div class="maphead">
-        <div class="place"><h1 id="runTitle">Choose what to simulate</h1><p id="runMeta" class="sub">Define your own environment, guidelines, and agents.</p><div id="status" class="environment-status" role="status" aria-live="polite"></div></div>
-        <div class="headtools"><label class="runpick"><span>Run</span><select id="runSelect" aria-label="Recorded run"><option value="">Recorded runs</option></select></label></div>
-      </div>
-      <div class="mapbox" id="mapbox">
-        <canvas id="map" hidden aria-label="Workflow state layout. Dots are simulated agents; select one to inspect its decisions."></canvas>
-        <div class="map-tools" id="mapTools" hidden>
-          <label class="select"><span>Color agents by</span><select id="colorBy"><option value="state">What they're doing</option><option value="role">Role</option></select></label>
-          <label class="select"><span class="visually-hidden">Filter by role</span><select id="roleFilter"><option value="">All roles</option></select></label>
-          <button class="chip" id="editEnvironmentBtn" type="button">Edit environment</button>
+        <div class="place">
+          <h1 id="runTitle">Choose what to simulate</h1>
+          <p id="runMeta" class="question">Describe your own world, its rules and its people.</p>
         </div>
-        <div class="legend-mini" id="legendMini" hidden><span><i class="legend-idle"></i>idle</span><span><i class="legend-running"></i>active</span><span><i class="legend-terminal"></i>finished</span><span class="layout-note">Workflow layout · states, not physical locations</span></div>
-        <div class="empty" id="replayEmpty"><p class="lead">Describe a world above, or start with a ready-to-run environment.</p><div id="examples" class="cases environment-cases"><span class="hint">Loading environments…</span></div><p class="hint empty-note">Claude or Codex builds the environment. Jev makes each agent decide.</p></div>
-        <section id="jobPanel" class="progress environment-progress" hidden aria-label="Current operation"><div class="job-content"><h2 id="jobType">Building environment</h2><p id="jobText" role="status" aria-live="polite"></p><progress id="jobProgress" aria-label="Operation progress"></progress><button id="cancelBtn" class="btn" type="button">Cancel</button></div></section>
+        <div class="headtools">
+          <label class="visually-hidden" for="runSelect">Recorded runs</label>
+          <select class="field small" id="runSelect"><option value="">Recorded runs</option></select>
+        </div>
       </div>
+
+      <div class="mapbox" id="mapbox">
+        <canvas id="map" hidden></canvas>
+        <div class="map-corner" id="mapTools" hidden>
+          <button type="button" class="btn small" id="resetView" hidden>Reset view</button>
+          <button type="button" class="btn small" id="editEnvironmentBtn">Edit the environment</button>
+          <button type="button" class="btn small" id="viewBtn" aria-expanded="false" aria-controls="viewMenu">View</button>
+          <div class="menu" id="viewMenu" hidden>
+            <fieldset>
+              <legend>Color people by</legend>
+              <label><input type="radio" name="colorBy" value="state" checked> What they are doing</label>
+              <label><input type="radio" name="colorBy" value="role"> Role</label>
+            </fieldset>
+            <fieldset id="roleFilter">
+              <legend>Show</legend>
+              <label><input type="radio" name="role" value="" checked> Everyone</label>
+            </fieldset>
+          </div>
+        </div>
+        <div class="legend-mini" id="legendMini" hidden></div>
+        <div class="empty" id="replayEmpty">
+          <p class="lead">Describe what you want to simulate above, or start from an example.</p>
+          <ul class="runs examples" id="examples" aria-label="Examples"><li class="empty-row">Loading the examples…</li></ul>
+          <p class="hint">Claude builds the environment from your words. Jev decides for each person.</p>
+        </div>
+        <div class="notice" id="notice" hidden></div>
+        <div class="progress" id="jobPanel" hidden>
+          <ol id="jobSteps"></ol>
+          <p class="note" id="jobText" role="status" aria-live="polite"></p>
+          <progress id="jobProgress" aria-label="How far the simulation is" hidden></progress>
+          <button id="cancelBtn" class="btn" type="button">Cancel</button>
+        </div>
+      </div>
+
       <div class="timeline" id="timeline" hidden>
-        <div class="track"><canvas id="hist" aria-hidden="true"></canvas><input type="range" id="scrub" min="0" max="1" step="1" value="0" aria-label="Simulation tick"></div>
-        <div class="controls"><button class="btn play" id="playBtn" type="button" aria-label="Play"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path id="playIcon" d="M6 4l10 6-10 6z" fill="currentColor"/></svg></button><div class="seg" role="group" aria-label="Playback speed"><button type="button" data-speed="1" aria-pressed="true" class="on">1×</button><button type="button" data-speed="4" aria-pressed="false">4×</button><button type="button" data-speed="16" aria-pressed="false">16×</button></div><p class="clock" id="clock">Tick 0</p><p class="span" id="span">Recorded agent actions</p></div>
+        <div class="track">
+          <canvas id="hist" aria-hidden="true"></canvas>
+          <input type="range" id="scrub" min="0" max="1" step="1" value="0" aria-label="Simulation time">
+        </div>
+        <div class="controls">
+          <button class="btn play" id="playBtn" type="button" aria-label="Play"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path id="playIcon" d="M6 4l10 6-10 6z" fill="currentColor"/></svg></button>
+          <div class="seg" role="group" aria-label="Playback speed">
+            <button type="button" data-speed="1" aria-pressed="true">1×</button>
+            <button type="button" data-speed="4" aria-pressed="false">4×</button>
+            <button type="button" data-speed="16" aria-pressed="false">16×</button>
+          </div>
+          <p class="clock" id="clock" aria-live="off">Tick 0</p>
+          <p class="span" id="span"></p>
+        </div>
       </div>
     </section>
-    <aside class="side environment-side" aria-label="What is happening">
-      <div id="sideEmpty" class="environment-side-empty">Metrics, resources and agent decisions appear here once a simulation runs.</div>
-      <div id="replayContent" hidden>
-        <section id="metrics" class="counters" aria-label="Simulation results"></section>
-        <section class="block"><div class="block-head"><h2>Shared resources</h2><span class="hint">Right now</span></div><div id="resources" aria-label="Resource usage at the selected tick"></div></section>
-        <section class="block incident-block"><div class="block-head"><h2>Incidents</h2><span class="hint" id="eventCount"></span></div><ol id="events" class="environment-events"></ol></section>
-        <section class="block environment-inspector"><div class="block-head"><h2>Agent inspector</h2></div><label class="visually-hidden" for="agentSelect">Choose an agent</label><select id="agentSelect"><option value="">Choose an agent</option></select><div id="agentInfo" class="hint">Select an agent to see its goals and decisions.</div><div id="decisions" class="decisions"></div></section>
-        <section class="block run-details"><details><summary>Run details &amp; assumptions</summary><div id="runWarning" class="warnings" hidden></div><p class="hint">Exploration under stated assumptions, not a validated forecast.</p><a id="downloadRun" class="btn small" download>Download record</a><details><summary>World state at this tick</summary><pre id="worldState"></pre></details></details></section>
+
+    <aside class="side" id="side" aria-label="What the simulation shows">
+      <p class="hint side-empty" id="sideEmpty">Counters, shared resources and activity appear here once a simulation runs.</p>
+      <section class="counters" id="metrics" aria-label="Right now" hidden></section>
+      <div class="side-body" id="sideBody" hidden>
+        <section class="block" id="resultsBlock" hidden>
+          <div class="block-head"><h2>Results</h2><span class="hint">Whole run</span></div>
+          <table class="vt results"><tbody id="results"></tbody></table>
+        </section>
+        <section class="block">
+          <div class="block-head"><h2>Shared resources</h2><span class="hint">Right now</span></div>
+          <ol class="rank" id="resources"></ol>
+        </section>
+        <section class="block">
+          <div class="block-head"><h2><label for="agentSelect">People</label></h2></div>
+          <select class="field" id="agentSelect"><option value="">Choose a person</option></select>
+          <p class="hint pick-hint">Or click a dot on the map to see what that person chose.</p>
+        </section>
+        <section class="block grow">
+          <div class="block-head"><h2>Activity</h2><div class="filters" id="feedFilters" role="group" aria-label="Kinds of activity"></div></div>
+          <ol class="feed" id="events"></ol>
+        </section>
       </div>
+      <section class="inspector" id="inspector" hidden aria-label="One person"></section>
     </aside>
   </main>
-  <aside class="drawer environment-drawer" id="environmentDrawer" aria-label="Environment settings">
-    <div class="drawer-head"><h2>Environment</h2><button class="btn ghost small" id="drawerClose" type="button">Close</button></div>
+
+  <aside class="drawer" id="environmentDrawer" hidden aria-label="Environment">
+    <div class="drawer-head">
+      <h2>Environment</h2>
+      <button class="btn quiet small" id="drawerClose" type="button">Close</button>
+    </div>
     <div class="drawer-body">
-      <div class="drawer-intro"><p class="hint">Set the world and its guidelines. Claude or Codex builds it; agents run inside the rules you inspect.</p></div>
-      <label class="environment-preset">Ready-to-run examples<select id="exampleSelect"><option value="">Choose an example</option></select></label>
-      <form id="briefForm" class="environment-form">
-        <label>Environment<textarea id="description" required maxlength="12000" rows="3" placeholder="A response team handles outages with limited specialists and deployment slots."></textarea></label>
-        <label>Question or objective<textarea id="objectives" maxlength="6000" rows="2" placeholder="What changes when a second deployment slot becomes available?"></textarea></label>
-        <label>Agent guidelines <span class="label-note">One per line</span><textarea id="guidelines" maxlength="40000" rows="3" placeholder="Prioritize urgent incidents.&#10;Investigate before deploying.&#10;Escalate when specialist knowledge is needed."></textarea></label>
-        <label>Constraints<textarea id="constraints" maxlength="6000" rows="2" placeholder="12 responders, 2 specialists, 1 deployment slot, 60 ticks."></textarea></label>
-        <div class="form-row"><label>Builder<select id="backend"><option value="claude-code">Headless Claude Code</option><option value="codex">Headless Codex</option><option value="anthropic">Anthropic API</option></select></label><label>Model <span class="label-note">Optional</span><input id="model" maxlength="120" placeholder="Configured default"></label></div>
-        <p class="hint" id="builderHelp">Uses your local Claude Code sign-in.</p><button id="buildBtn" type="submit" class="btn primary">Build &amp; inspect</button>
+      <p class="note">Describe a world and its rules. Claude builds it, and you can check every rule before anyone runs in it.</p>
+
+      <h3><label for="exampleSelect">Start from an example</label></h3>
+      <select class="field" id="exampleSelect"><option value="">Choose an example</option></select>
+
+      <h3>Describe your own</h3>
+      <form id="briefForm" class="form">
+        <label>The place or the team<textarea class="field" id="description" required maxlength="12000" rows="3" placeholder="A response team handles outages with a few specialists and one release slot."></textarea></label>
+        <label>Your question<textarea class="field" id="objectives" maxlength="6000" rows="2" placeholder="What changes when a second release slot opens?"></textarea></label>
+        <label><span>Guidelines for the people <small class="label-note">One per line</small></span><textarea class="field" id="guidelines" maxlength="40000" rows="3" placeholder="Take urgent incidents first.&#10;Investigate before releasing a fix.&#10;Ask a specialist when unsure."></textarea></label>
+        <label>Limits<textarea class="field" id="constraints" maxlength="6000" rows="2" placeholder="12 responders, 2 specialists, 1 release slot, 60 ticks."></textarea></label>
+        <div class="form-row">
+          <label>Built by<select class="field" id="backend"><option value="claude-code">Headless Claude Code</option><option value="anthropic">Anthropic API</option></select></label>
+          <label><span>Model <small class="label-note">Optional</small></span><input class="field" id="model" maxlength="120" placeholder="Default model"></label>
+        </div>
+        <p class="note" id="builderHelp"></p>
+        <button id="buildBtn" type="submit" class="btn">Build and check</button>
       </form>
-      <section class="drawer-section"><div class="block-head"><h3>Saved environments</h3><button id="refreshBtn" type="button" class="btn ghost small">Refresh</button></div><label class="visually-hidden" for="environmentSelect">Saved environments</label><select id="environmentSelect"><option value="">Choose a saved environment</option></select><div id="modelEmpty" class="hint model-empty">Choose an example or build from your description to inspect its definition.</div><div id="modelOverview" hidden><div class="block-head model-title"><h3 id="environmentTitle"></h3><span id="savedTag" class="badge">No model</span></div><p id="environmentDescription" class="hint"></p><div id="modelNumbers" class="model-numbers"></div><div id="definitionDetails" class="definition-details"></div><div id="assumptions" class="assumptions"></div><div id="warnings" class="warnings" hidden></div></div><details id="editorDetails" class="editor-wrap"><summary>Edit or paste definition JSON</summary><p class="hint">Saving validates the definition and creates a new version.</p><label class="visually-hidden" for="specEditor">Environment JSON definition</label><textarea id="specEditor" spellcheck="false" class="code-editor" rows="12" placeholder='{ "version": 1, "title": "My environment", … }'></textarea></details><div class="save-row"><button id="saveBtn" type="button" class="btn small" disabled>Validate &amp; save</button><span id="saveNote" class="hint">No definition loaded</span></div></section>
-      <section class="drawer-section"><h3>Simulation</h3><div class="form-row run-fields"><label>Decisions by<select id="provider"><option value="rules">Rules · offline baseline</option><option value="jev">Jev · live agents</option></select></label><label>Seed<input id="seed" type="number" min="0" max="2147483647" step="1" value="7"></label><label>Jev request budget<input id="maxRequests" type="number" min="0" max="20000" step="1" value="2000"></label></div><p class="hint" id="providerHelp">Rules sample action weights; Jev interprets agent guidelines.</p><button id="runBtn" type="button" class="btn primary run-full" disabled>Run environment</button><p class="hint fineprint">Guidelines guide choices. Declared conditions, resource capacities and transitions enforce hard constraints.</p></section>
+
+      <div class="block-head sec-head"><h3><label for="environmentSelect">Saved environments</label></h3><button id="refreshBtn" type="button" class="btn quiet small">Refresh</button></div>
+      <select class="field" id="environmentSelect"><option value="">Choose a saved environment</option></select>
+
+      <h3>The environment on screen</h3>
+      <p id="modelEmpty" class="note empty-note">Choose an example or build your own to see its rules here.</p>
+      <div id="modelOverview" hidden>
+        <div class="block-head model-title"><h4 id="environmentTitle"></h4><span id="savedTag" class="runnote"></span></div>
+        <p id="environmentDescription" class="note"></p>
+        <div id="modelNumbers" class="counters model-numbers"></div>
+        <div id="definitionDetails" class="definition"></div>
+        <div id="assumptions" class="assumptions"></div>
+        <div id="warnings" hidden></div>
+      </div>
+      <details id="editorDetails" class="editor">
+        <summary>Edit the definition as JSON</summary>
+        <p class="note">Saving checks the definition and keeps it as a new version.</p>
+        <label class="visually-hidden" for="specEditor">Environment definition, as JSON</label>
+        <textarea id="specEditor" spellcheck="false" class="field code" rows="12" placeholder='{ "version": 1, "title": "My environment", … }'></textarea>
+      </details>
+      <div class="save-row"><button id="saveBtn" type="button" class="btn small" disabled>Check and save</button><span id="saveNote" class="hint">Nothing is loaded yet.</span></div>
+
+      <h3>Simulation</h3>
+      <div class="form">
+        <div class="form-row">
+          <label>Decisions by<select class="field" id="provider"><option value="jev">Jev</option><option value="rules">Rule model</option></select></label>
+          <label>Seed<input class="field" id="seed" type="number" min="0" max="2147483647" step="1" value="7"></label>
+        </div>
+        <label>Most Jev requests in one run<input class="field" id="maxRequests" type="number" min="0" max="20000" step="1" value="2000"></label>
+        <p class="note" id="providerHelp"></p>
+        <button id="runBtn" type="button" class="btn" disabled>Run the environment</button>
+        <p class="note">Guidelines steer what people choose. The conditions, resource limits and allowed steps in the definition always hold.</p>
+      </div>
+
+      <section id="runDetails" hidden>
+        <h3>The run on screen</h3>
+        <dl id="runFacts"></dl>
+        <div id="runWarning" hidden></div>
+        <p class="note">This explores what could happen under the assumptions above. It is not a forecast.</p>
+        <a id="downloadRun" class="btn small" download>Download the record</a>
+        <details class="editor">
+          <summary>World state at this tick</summary>
+          <pre id="worldState"></pre>
+        </details>
+      </section>
     </div>
   </aside>
 </div>

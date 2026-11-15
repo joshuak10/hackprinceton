@@ -1,5 +1,5 @@
-// The Scope visual language applied to logical workflow states. These are diagram positions,
-// never physical coordinates: an actor stays in its current state until the recorded transition.
+// The dashboard's drawing (its palette and type) applied to the steps of a workflow. These are diagram positions,
+// never physical coordinates: a person stays in their current step until the recorded transition.
 import { readPalette } from '../scope/lib/palette.js';
 
 const hash = value => {
@@ -43,13 +43,15 @@ export function workflowLayout(spec) {
   return { zones, edges: [...edgeMap.values()], width, height };
 }
 
-export function createWorkflowRenderer(canvas, { onSelect = () => {} } = {}) {
+// onSelect(id): a person's dot was picked. onView(moved): the view was panned or zoomed (true) or put back (false).
+// tr(text): translates the few fixed strings drawn on the canvas; the page passes the language module's.
+export function createWorkflowRenderer(canvas, { onSelect = () => {}, onView = () => {}, tr = text => text } = {}) {
   const context = canvas.getContext('2d');
   let spec = null, diagram = null, actors = [], slots = new Map(), frame = null;
   let opts = {}, hits = [], size = { width: 1, height: 1, dpr: 1 }, view = { x: 0, y: 0, zoom: 1 };
   let pointer = null, suppressClick = false, destroyed = false;
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Workflow map. Select an agent dot to inspect its decisions. Positions represent workflow states, not physical locations.');
+  canvas.setAttribute('aria-label', 'Map of the work. Each dot is a person. Click a dot to see what that person chose. Boxes are workflow states, not physical locations.');
   canvas.tabIndex = 0;
   canvas.style.touchAction = 'none';
 
@@ -81,17 +83,10 @@ export function createWorkflowRenderer(canvas, { onSelect = () => {} } = {}) {
     g.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
     g.clearRect(0, 0, size.width, size.height);
     g.fillStyle = palette.ground; g.fillRect(0, 0, size.width, size.height);
-    g.strokeStyle = palette.mesh; g.globalAlpha = 0.19; g.lineWidth = 0.5;
-    g.beginPath();
-    for (let x = 0; x < size.width; x += 32) { g.moveTo(x, 0); g.lineTo(x, size.height); }
-    for (let y = 0; y < size.height; y += 32) { g.moveTo(0, y); g.lineTo(size.width, y); }
-    g.stroke(); g.globalAlpha = 1;
     hits = [];
     if (!diagram?.zones.length || !frame) {
-      g.textAlign = 'center'; g.fillStyle = palette.label; g.font = '500 18px "IBM Plex Sans", system-ui, sans-serif';
-      g.fillText('Build an environment. Watch the agents decide.', size.width / 2, size.height / 2 - 10);
-      g.fillStyle = palette.muted; g.font = '13px "IBM Plex Sans", system-ui, sans-serif';
-      g.fillText('Choose an example or describe your own scenario above.', size.width / 2, size.height / 2 + 18);
+      g.textAlign = 'center'; g.fillStyle = palette.muted; g.font = '400 15px "IBM Plex Sans", system-ui, sans-serif';
+      g.fillText(tr('This environment has no steps to draw.'), size.width / 2, size.height / 2);
       return;
     }
     const transform = geometry(), { scale } = transform;
@@ -144,7 +139,7 @@ export function createWorkflowRenderer(canvas, { onSelect = () => {} } = {}) {
       g.textAlign = 'left'; g.fillStyle = palette.label; g.font = `500 ${fontSize}px "IBM Plex Sans", system-ui, sans-serif`;
       if (width > 56) g.fillText(shortened(title(zone.id), width - 48), point.x + 11, point.y + headingHeight * .65);
       g.textAlign = 'right'; g.fillStyle = occupants.length ? palette.text : palette.muted;
-      g.font = `${fontSize}px ui-monospace, monospace`; g.fillText(String(occupants.length), point.x + width - 11, point.y + headingHeight * .65);
+      g.font = `600 ${fontSize}px "IBM Plex Sans", system-ui, sans-serif`; g.fillText(String(occupants.length), point.x + width - 11, point.y + headingHeight * .65);
       const inset = Math.max(8, 14 * scale), innerWidth = Math.max(1, width - inset * 2), innerHeight = Math.max(1, height - headingHeight - inset * 2);
       const total = Math.max(1, actors.length), columns = Math.max(1, Math.ceil(Math.sqrt(total * innerWidth / innerHeight)));
       const rows = Math.ceil(total / columns), cellWidth = innerWidth / columns, cellHeight = innerHeight / rows;
@@ -178,7 +173,10 @@ export function createWorkflowRenderer(canvas, { onSelect = () => {} } = {}) {
     view.x = around.x - size.width / 2 - (around.x - size.width / 2 - view.x) * ratio;
     view.y = around.y - size.height / 2 - (around.y - size.height / 2 - view.y) * ratio;
     if (before.scale) paint();
+    moved();
   }
+  const moved = () => onView(view.x !== 0 || view.y !== 0 || view.zoom !== 1);
+  function resetView() { view = { x: 0, y: 0, zoom: 1 }; paint(); moved(); }
   const click = event => { if (suppressClick) { suppressClick = false; return; } const hit = hitAt(position(event)); if (hit) onSelect(hit.id); };
   const down = event => { if (event.button !== 0) return; pointer = { ...position(event), viewX: view.x, viewY: view.y, moved: false }; canvas.setPointerCapture?.(event.pointerId); };
   const move = event => {
@@ -186,12 +184,12 @@ export function createWorkflowRenderer(canvas, { onSelect = () => {} } = {}) {
     if (!pointer) { canvas.style.cursor = hitAt(point) ? 'pointer' : 'grab'; return; }
     const dx = point.x - pointer.x, dy = point.y - pointer.y;
     if (Math.hypot(dx, dy) > 4) pointer.moved = true;
-    if (pointer.moved) { view.x = pointer.viewX + dx; view.y = pointer.viewY + dy; canvas.style.cursor = 'grabbing'; paint(); }
+    if (pointer.moved) { view.x = pointer.viewX + dx; view.y = pointer.viewY + dy; canvas.style.cursor = 'grabbing'; paint(); moved(); }
   };
   const up = () => { suppressClick = !!pointer?.moved; pointer = null; canvas.style.cursor = 'grab'; };
   const wheel = event => { event.preventDefault(); zoom(Math.exp(-event.deltaY * .001), position(event)); };
   const key = event => {
-    if (event.key === '0') { view = { x: 0, y: 0, zoom: 1 }; paint(); event.preventDefault(); }
+    if (event.key === '0') { resetView(); event.preventDefault(); }
     else if (['+', '=', '-'].includes(event.key)) { zoom(event.key === '-' ? .85 : 1.15); event.preventDefault(); }
     else if (['ArrowLeft', 'ArrowRight'].includes(event.key) && hits.length) {
       const index = hits.findIndex(hit => hit.id === opts.selectedAgent), step = event.key === 'ArrowLeft' ? -1 : 1;
@@ -207,10 +205,11 @@ export function createWorkflowRenderer(canvas, { onSelect = () => {} } = {}) {
       spec = nextSpec; diagram = spec ? workflowLayout(spec) : null;
       actors = result?.agents || (spec?.roles || []).flatMap(role => Array.from({ length: role.count }, (_, index) => ({ id: `${role.id}_${index + 1}`, role: role.id })));
       slots = new Map(actors.slice().sort((a, b) => hash(a.id) - hash(b.id) || a.id.localeCompare(b.id)).map((agent, index) => [agent.id, index]));
-      frame = null; hits = []; view = { x: 0, y: 0, zoom: 1 }; paint();
+      frame = null; hits = []; view = { x: 0, y: 0, zoom: 1 }; paint(); moved();
     },
     draw(nextFrame, options = {}) { frame = nextFrame; opts = options; paint(); },
     resize,
+    resetView,
     destroy() { destroyed = true; observer?.disconnect(); for (const [name, listener] of listeners) canvas.removeEventListener(name, listener); hits = []; }
   };
 }
