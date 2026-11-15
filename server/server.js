@@ -54,7 +54,7 @@ async function lib(path) {
 export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), environmentOptions, rootRedirect = '/scope/' } = {}) {
   const base = resolve(root);
   const ctx = {
-    worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
+    worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), daysDir: join(base, 'data', 'days'), wallsFile: join(base, 'engine', 'walls.js'),
     loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null, rootRedirect
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
@@ -100,6 +100,7 @@ const ROUTES = [
   ['GET', ['worlds', ':file'], getWorld],
   ['POST', ['validate'], postValidate],
   ['POST', ['compile'], postCompile],
+  ['GET', ['days'], getDays],
   ['GET', ['runs'], getRuns],
   ['POST', ['runs'], postRun],
   ['GET', ['runs', ':id', 'status'], getStatus],
@@ -401,6 +402,14 @@ async function readRunJson(ctx, id, name) {
     if (err.code === 'ENOENT' || err.code === 'ENOTDIR') throw new HttpError(404, `Run ${id} has no ${name}.json.`);
     throw err;
   }
+}
+
+// The saved results of the multi-day loop for one pool (§21f): ?pool=pools/<name>.json. Read-only.
+async function getDays(ctx, req, res) {
+  const pool = new URL(req.url, 'http://localhost').searchParams.get('pool') || '';
+  const { savedDays, validPool } = await lib('../run/days-saved.js');
+  if (!validPool(pool)) throw new HttpError(400, 'Name the pool as ?pool=pools/<name>.json.');
+  send(res, 200, await savedDays(ctx.daysDir, pool));
 }
 
 async function getRuns(ctx, req, res) {

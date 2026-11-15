@@ -22,7 +22,8 @@
       "placeName": "Sushi restaurant",
       "source": "drawn",
       "runTitle": "Friday dinner at an eight-seat sushi restaurant (drawn from a sketch)",
-      "suggestion": "promotion"
+      "suggestion": "promotion",
+      "pool": "pools/sushi-restaurant.json"
     }
   }
 }

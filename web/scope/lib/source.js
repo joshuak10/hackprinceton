@@ -140,6 +140,9 @@ export async function apiCompile(description, { signal } = {}) {
   return body;
 }
 
+// The saved two-month results for a pool of diners (§21f): { pool, found, meta, results }.
+export const apiDays = pool => getJson(`/api/days?pool=${encodeURIComponent(pool)}`);
+
 export async function apiStartRun({ spec, provider = 'rules', seed = 7, link = null, onStatus, signal }) {
   const res = await fetch('/api/runs', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

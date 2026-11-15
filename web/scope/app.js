@@ -13,7 +13,8 @@ import { createTimeline } from './lib/timeline.js';
 import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, el } from './lib/panels.js';
 import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
-import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile } from './lib/source.js';
+import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiDays } from './lib/source.js';
+import { LOYALTY, suggestionWords, savedResult, loyaltyRows, loyaltyWords, regularWords, captionWords, cautionWords, missingWords } from './lib/loyalty.js';
 import {
   chooseRun, findTest, findOfferTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords,
   verdictWords, whySentence, busiestWindow, providerWords, placeName, runLabel, isJev, windowNoun, hasPromotion
@@ -42,6 +43,9 @@ const st = {
   live: null, config: {}, fly: null, lastPanels: -1, dirty: true,
   rankMode: store.get('scope-rank') === 'now' ? 'now' : 'total',
   test: null, testing: null, sessionTests: new Set(), loading: false, room: null,
+  // The loyalty buttons (§21f): the saved results, the change that is open, and whether the changes are shown
+  // in place of a promotion test's result.
+  loyalty: { saved: undefined, open: null, home: false, runId: null },
   worlds: { building: [], others: [], buildingName: '' }
 };
 
@@ -73,7 +77,11 @@ const T = createTimeline({
   onSpeed: s => setSpeed(s)
 });
 const tour = createTour({ root: $('tour'), body: $('tourBody'), title: $('tourTitle'), closeBtn: $('tourClose'), onClose: () => { st.dirty = true; } });
-const verdict = createVerdict($('verdict'), { onTest: runTest, onCancel: () => testAbort?.abort(), onPick: id => openRun(id, { keepTime: true, side: true }) });
+const verdict = createVerdict($('verdict'), {
+  onTest: runTest, onCancel: () => testAbort?.abort(), onPick: id => openRun(id, { keepTime: true, side: true }),
+  onChoose: id => { st.loyalty.open = id; refreshVerdict(); },
+  onBack: () => { st.loyalty.open = null; st.loyalty.home = true; refreshVerdict(); }
+});
 
 new ResizeObserver(() => {
   R.resize();
@@ -295,6 +303,13 @@ function refreshVerdict() {
   const change = test?.change || changeFor(st.caseInfo, bundle.spec, bundle.metrics);
   st.ringNode = change?.nodeId || null;
   st.dirty = true;
+  // The loyalty buttons (§21f): the place opens on three changes to try; a promotion test's result keeps its
+  // place and leads to them.
+  if (st.loyalty.runId !== meta.runId) Object.assign(st.loyalty, { open: null, home: false, runId: meta.runId });
+  if (st.caseInfo?.pool) {
+    if (st.loyalty.open) { showSaved(st.loyalty.open); return; }
+    if (!test || st.loyalty.home) { if (showChoices(bundle, test, change)) return; }
+  }
   if (!change) { verdict.message('This run has no counters with a line, so there is no change to test.'); return; }
   if (!test) {
     const words = change.kind === 'promotion' ? promotionWords(bundle.spec, bundle.metrics, change, timing) : worstLineWords(bundle.spec, bundle.metrics, timing);
@@ -328,6 +343,7 @@ function refreshVerdict() {
       why: whySentence(result, change, { clockStart: meta.clockStart, window }), caution: words.caution,
       // The promotion can be tested as often as you like: Jev answers differently each time (§18).
       again: change.kind === 'promotion' && Boolean(st.live && baseWorld()),
+      more: st.caseInfo?.pool ? { label: 'Other changes to try', onClick: () => { st.loyalty.home = true; refreshVerdict(); } } : null,
       toggle: {
         baseline: pair.baseline, change: pair.change, labels: words.toggle, selected: meta.runId,
         note: shown ? '' : `The map shows the ${providerWords(meta) === 'Jev' ? 'Jev run' : 'run you opened'}. Pick a side to watch the test; the time on the slider is kept.`
@@ -337,6 +353,38 @@ function refreshVerdict() {
     if (st.bundle !== bundle) return;
     verdict.message(`The test results could not be loaded: ${err.message}`);
     showNotice(`The test results could not be loaded: ${err.message}`);
+  });
+}
+
+// The opening state at a place with a pool of diners (§21f): who did not get a seat on the run on screen, and
+// three changes to try. The promotion test stays as a quieter step: its result when one exists, or the test.
+function showChoices(bundle, test, change) {
+  const words = suggestionWords(bundle.metrics);
+  if (!words) return false;
+  const canTest = Boolean(st.live && baseWorld()) && change?.kind === 'promotion';
+  const promo = canTest ? wordsFor(change, testProvider(change)) : null;
+  verdict.choices({
+    words, choices: LOYALTY.map(c => ({ id: c.id, label: c.button })),
+    second: test ? { label: 'See the promotion test', onClick: () => { st.loyalty.home = false; refreshVerdict(); } }
+      : promo ? { label: promo.action, onClick: runTest, hint: promo.plan } : null,
+    note: isJev(bundle.meta) ? 'The count above is from the Jev run on screen.' : ''
+  });
+  return true;
+}
+
+// One change's saved two months. The results are read once from the server; without the engine there are none.
+async function showSaved(id) {
+  const pool = st.caseInfo.pool, runId = st.bundle.meta.runId;
+  if (st.loyalty.saved === undefined) {
+    verdict.message('Loading the saved results…');
+    st.loyalty.saved = st.live ? await apiDays(pool).catch(() => null) : null;
+    if (st.bundle?.meta.runId !== runId || st.loyalty.open !== id || st.testing) return;
+  }
+  const saved = st.loyalty.saved, result = savedResult(saved, id);
+  if (!result) { verdict.saved({ missing: missingWords(id, pool) }); return; }
+  verdict.saved({
+    words: loyaltyWords(id, result, saved.meta), rows: loyaltyRows(result), caption: captionWords(result, saved.meta),
+    regularIs: regularWords(saved.meta), caution: cautionWords(result)
   });
 }
 

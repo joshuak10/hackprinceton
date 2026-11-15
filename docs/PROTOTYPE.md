@@ -1385,3 +1385,30 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 - **The promotion stays the worst:** it brings first-timers on one Friday, mostly to be turned away.
 - One seed's baseline grew 22% and fails the steadiness check; seated, turned away and the wait come from each evening and are the firmer numbers.
 
+
+### 21f. The loyalty buttons on the sushi page (Nov 14)
+
+**What the owner sees.** At the sushi restaurant (`/scope/?case=sushi`) the panel at the top of the side panel opens on one sentence and three buttons.
+
+- **The sentence** comes from the run on screen: "12 of 36 people did not get a seat. Being turned away is what stops diners coming back, far more than a wait or the price. Try seating more of them before discounting." The reason is the memory check of §21e: being turned away costs 42 points, a 30-minute wait 8, a $2 price rise 1.
+- **The buttons:** Two more seats, Faster turnover at the counter, A card for people you turn away. Each shows the saved result of two months of the same diners with that change (§21, §21e), in the same panel, with "Back to the changes".
+- **The promotion test stays, one step down.** Under the buttons is "Test the promotion", or "See the promotion test" when one was run. A promotion test's result still opens first when the run on screen belongs to one, with "Other changes to try" under it. The building page, a changed room and Run details are as before.
+
+**One result.**
+- **The headline** names the change and states only what every run agrees on, in this order: people seated, people turned away or giving up; if neither, the wait for a seat; if not that, first-time visitors. When nothing agrees it reads "no clear change in who gets a seat".
+- **The second line is always the regulars:** the change with its range when every run agrees, "no change", or "no clear change (24 before, 24 after; the runs disagree)".
+- **The table** has people seated, turned away or gave up, average wait for a seat, first-time visitors and regulars: before, after, and the change as a range across runs. Where the runs disagree the change reads "no clear change".
+- **Under it:** what a regular is ("A regular came on at least 2 of the last 4 Fridays", from the pool), and one caution line: simulated diners, assumed visit rates, who decided, sizes not validated, read the direction and the range.
+- The main view never says "seed", "requests" or "pool".
+
+**Where the results come from.** `GET /api/days?pool=pools/<name>.json` returns the saved results for that pool: `{ pool, found, meta, results }`.
+- It reads every file in `data/days/` (not committed) that was made from the pool and keeps one result per change label, the newest file's. Each result has `label`, `days`, `runs`, `provider`, `createdAt`, `file` and `effects` (per metric: `before`, `after`, `mean`, `min`, `max`, `agrees`). `meta` is the day name, days per week, the pool's definition of a regular and the shop's name.
+- The runs themselves stay on the server; the files are megabytes.
+- It only reads. The pool must be named `pools/<name>.json`; anything else is a 400, and no file outside `data/days/` is opened.
+- The page asks once, when a button is first pressed. The case names its pool in `web/scope/mock/index.json` (`"pool": "pools/sushi-restaurant.json"`); a case without one has no buttons.
+
+**Matching a button to a result** is by the label the days command writes: `/more seat/i`, `/quicker|faster/i`, `/turned away/i`.
+
+**A result that is not saved on this computer** says so and shows the command, for example `node bin/swarm.js days pools/sushi-restaurant.json --days 8 --seeds 3 --provider jev --change seats+2 --out data/days/seats.json`. All four at once: `--change promo20,seats+2,faster15,sorry --out data/days/sushi-all.json` (about 43 cents and 11,000 Jev requests). Results are saved per computer, so a teammate's numbers differ a little: Jev does not answer the same question the same way twice.
+
+**Code.** `run/days-saved.js` (reading and merging), `server/server.js` (`getDays`), `web/scope/lib/loyalty.js` (the words and the table, no DOM), `web/scope/lib/verdict-panel.js` (`choices`, `saved`), `web/scope/app.js` (`showChoices`, `showSaved`). Tests: `test/server-days.test.js`, `test/loyalty.test.js`.
