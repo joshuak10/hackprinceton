@@ -1,6 +1,6 @@
 # Swarmscope for independent businesses: Use-Case Spec
 
-1> **Version:** v0.1 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.1 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Scope:** only the independent-business product. The project spec, [SWARMSCOPE_SPEC.md](SWARMSCOPE_SPEC.md) (v0.24), records the decision to pursue it. The engine contract, [docs/PROTOTYPE.md](docs/PROTOTYPE.md), still governs the code.
 > **Rule:** as in the project spec, change this file first, then the code, and log every decision in section 14.
 >
