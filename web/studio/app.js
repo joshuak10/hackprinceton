@@ -3,6 +3,7 @@
 import { createWorkflowRenderer } from './render.js';
 import { createTimeline } from '../scope/lib/timeline.js';
 import { readPalette } from '../scope/lib/palette.js';
+import { createBuilderSelection, builderHelp, builderName } from './builders.js';
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries([
   'examples', 'status', 'jobPanel', 'jobType', 'jobText', 'jobProgress', 'cancelBtn', 'briefForm',
@@ -17,6 +18,7 @@ const ui = Object.fromEntries([
   'colorBy', 'eventCount', 'exampleSelect'
 ].map(id => [id, $(id)]));
 ui.scrubber = $('scrub'); ui.tickLabel = $('clock');
+const builderSelection = createBuilderSelection(ui.backend.value);
 const state = { artifact: null, dirty: false, run: null, job: null, poll: null, playing: null, health: null,
   ready: false, pending: false, agentId: '', frame: 0, download: null, opening: 0, speed: 1, briefSnapshot: '',
   autoRun: false, theme: 'dark', preview: null, examples: [] };
@@ -127,9 +129,8 @@ function controls() {
   ui.providerHelp.textContent = ui.provider.value === 'jev'
     ? `${state.health?.jev ? 'Jev is configured.' : 'Requires TYPESAFE_API_KEY in .env.local.'} Starts live API requests up to your budget. Any fallback decisions are labeled in the record.`
     : 'Rules sample the action weights in your definition. They do not interpret prose guidelines.';
-  ui.builderHelp.textContent = ui.backend.value === 'claude-code'
-    ? 'Uses your local Claude Code sign-in. Generated definitions are validated before they can run.'
-    : `${state.health?.claude ? 'Anthropic API is configured.' : 'Requires ANTHROPIC_API_KEY in .env.local.'} Claude returns a validated environment definition.`;
+  ui.builderHelp.textContent = builderHelp(ui.backend.value, state.health || {});
+  ui.model.placeholder = ui.backend.value === 'codex' ? 'Codex configured default' : ui.backend.value === 'claude-code' ? 'Claude configured default' : 'Default API model';
 }
 function disclosure(title, rows) {
   const details = el('details'); details.append(el('summary', title));
@@ -151,6 +152,8 @@ function loadArtifact(artifact, { useBrief = true } = {}) {
   ui.environmentSelect.value = artifact.id || '';
   ui.specEditor.value = stringify(artifact.spec);
   if (useBrief) fillBrief(artifact.brief || { description: artifact.spec.description, guidelines: artifact.spec.guidelines });
+  const selectedBuilder = builderSelection.restore(artifact.builder, ui.model.value);
+  ui.backend.value = selectedBuilder.backend; ui.model.value = selectedBuilder.model;
   const spec = artifact.spec;
   state.briefSnapshot = JSON.stringify(brief());
   ui.askIn.value = ui.description.value;
@@ -207,7 +210,7 @@ function describeProgress(job) {
   if (progress?.tick !== undefined) return `Tick ${progress.tick} / ${progress.ticks} · ${number(progress.decisions)} decisions · ${number(progress.completedActions)} actions completed`;
   if (progress?.message) return progress.message;
   if (progress?.stage) return `${progress.stage}${progress.attempt ? ` · attempt ${progress.attempt}` : ''}`;
-  return job.type === 'run' ? 'Running agents…' : 'Claude is building and validating your environment…';
+  return job.type === 'run' ? 'Running agents…' : builderName(job.backend || ui.backend.value) + ' is building and validating your environment…';
 }
 async function followJob(job) {
   clearTimeout(state.poll); state.job = job; drawer(false);
@@ -378,10 +381,11 @@ async function startBuild(autoRun = false) {
   if (!state.ready || state.job || state.pending) return;
   if (!ui.description.value.trim()) { drawer(true); ui.description.focus(); throw new Error('Describe the environment you want to simulate.'); }
   state.autoRun = autoRun; state.pending = true; controls(); message();
+  const backend = ui.backend.value;
   try {
-    const job = await api('environment-builds', { brief: brief(), backend: ui.backend.value, ...(ui.model.value.trim() ? { model: ui.model.value.trim() } : {}) });
+    const job = await api('environment-builds', { brief: brief(), backend, ...(ui.model.value.trim() ? { model: ui.model.value.trim() } : {}) });
     state.pending = false;
-    await followJob({ ...job, type: 'build' });
+    await followJob({ ...job, type: 'build', backend });
   } catch (error) { state.autoRun = false; throw error; }
   finally { state.pending = false; controls(); }
 }
@@ -447,7 +451,12 @@ function chooseExample(example) {
 ui.exampleSelect.addEventListener('change', () => chooseExample(state.examples.find(example => example.id === ui.exampleSelect.value)));
 ui.refreshBtn.addEventListener('click', safely(refreshLibraries));
 ui.runSelect.addEventListener('change', safely(async () => { if (ui.runSelect.value) { message(); await openRun(ui.runSelect.value); } }));
-ui.provider.addEventListener('change', controls); ui.backend.addEventListener('change', controls);
+ui.provider.addEventListener('change', controls);
+ui.backend.addEventListener('change', () => {
+  const selected = builderSelection.select(ui.backend.value, ui.model.value);
+  ui.model.value = selected.model;
+  controls();
+});
 ui.roleFilter.addEventListener('change', renderFrame);
 ui.colorBy.addEventListener('change', renderFrame);
 ui.agentSelect.addEventListener('change', () => { state.agentId = ui.agentSelect.value; renderFrame(); });

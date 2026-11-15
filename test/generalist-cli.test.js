@@ -51,6 +51,23 @@ test('env-build persists the original brief and generation metadata and exports 
   assert.ok((await readdir(join(cwd, 'data', 'environments'))).includes(artifact.id + '.json'));
 });
 
+test('env-build selects Codex, forwards the model, and records its provenance', async t => {
+  const cwd = await workspace(t), lines = [];
+  const build = async (brief, options) => {
+    assert.equal(options.backend, 'codex');
+    assert.equal(options.model, 'codex-fixture');
+    return { spec, brief, warnings: [], attempts: 1, builder: { backend: options.backend, model: options.model } };
+  };
+  assert.equal(await cmdEnvironmentBuild(['A Codex-built workflow'], { backend: 'codex', model: 'codex-fixture', json: true }, { cwd, build, out: line => lines.push(line), err: () => {} }), 0);
+  const artifact = JSON.parse(lines.at(-1));
+  assert.equal(artifact.source, 'codex');
+  assert.equal(artifact.builder.model, 'codex-fixture');
+  assert.equal(artifact.brief.description, 'A Codex-built workflow');
+  for (const backend of ['shell', '']) {
+    await assert.rejects(cmdEnvironmentBuild(['Workflow'], { backend }, { cwd, build: () => assert.fail('must not build') }), /backend must be claude-code, codex or anthropic/);
+  }
+});
+
 test('env-build refuses accidental overwrite before requesting generation', async t => {
   const cwd = await workspace(t);
   await writeFile(join(cwd, 'existing.json'), 'keep');
@@ -85,4 +102,7 @@ test('actual swarm CLI dispatches environment commands and keeps JSON output mac
   const invalid = spawnSync(process.execPath, [cli, 'env-run', 'spec.json', '--provider', 'invalid'], { cwd, encoding: 'utf8' });
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /provider must be rules or jev/);
+  const help = spawnSync(process.execPath, [cli, '--help'], { cwd, encoding: 'utf8' });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /--backend claude-code\|codex\|anthropic/);
 });

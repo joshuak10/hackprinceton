@@ -72,6 +72,8 @@ async function followJob(service, initial, signal, progress) {
 export async function cmdEnvironmentBuild(args, flags, {
   cwd = process.cwd(), out = stdout, err = stderr, build = buildEnvironment, serviceFactory = defaultService
 } = {}) {
+  const backend = flags.backend ?? 'claude-code';
+  if (!['claude-code', 'codex', 'anthropic'].includes(backend)) throw new Error('--backend must be claude-code, codex or anthropic.');
   if (flags.brief && args.length) throw new Error('Use a description or --brief FILE, not both.');
   let raw = flags.brief ? await readInput(flags.brief, cwd) : { description: args.join(' ') };
   if (flags.objectives !== undefined) raw = { ...raw, objectives: flags.objectives };
@@ -85,7 +87,7 @@ export async function cmdEnvironmentBuild(args, flags, {
   const file = await exportTarget(flags, cwd);
   return interrupted(async signal => {
     const result = await build(brief, {
-      backend: flags.backend || 'claude-code', model: flags.model, signal,
+      backend, model: flags.model, signal,
       onProgress: event => err(`${event.stage} · attempt ${event.attempt}/${event.maxAttempts}`)
     });
     if (signal.aborted) throw cancelled();

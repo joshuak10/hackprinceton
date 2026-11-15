@@ -29,9 +29,9 @@ const USAGE = `Swarmscope: user-defined environments where every agent decides t
 Usage: swarm <command> [options]
 
   env-build "<description>" [--brief FILE] [--guidelines FILE]
-      [--objectives TEXT] [--constraints TEXT] [--backend claude-code|anthropic]
+      [--objectives TEXT] [--constraints TEXT] [--backend claude-code|codex|anthropic]
       [--model ID] [--out FILE] [--force] [--json]
-                                    Build and save a general environment with headless Claude;
+                                    Build and save an environment with headless Claude or Codex;
                                     --brief takes a JSON brief instead of a description
   env-validate FILE [--json]         Validate a general environment or saved artifact
   env-run FILE [--provider rules|jev] [--seed N] [--max-requests N] [--json]

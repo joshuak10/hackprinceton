@@ -170,7 +170,7 @@ export function createEnvironmentService({ root = process.cwd(), builder = build
   function build(input) {
     const brief = normalizeBrief(input.brief);
     const backend = input.backend ?? 'claude-code';
-    if (!['claude-code', 'anthropic'].includes(backend)) throw fail(400, 'backend must be claude-code or anthropic.');
+    if (!['claude-code', 'codex', 'anthropic'].includes(backend)) throw fail(400, 'backend must be claude-code, codex or anthropic.');
     if (input.model !== undefined && (typeof input.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(input.model))) throw fail(400, 'model must be a model identifier.');
     return launch('build', async ({ signal, onProgress, job }) => {
       const result = await builder(brief, { backend, model: input.model, signal, onProgress });

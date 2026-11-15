@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Swarmscope · Environments</title>
-<meta name="description" content="Define an environment, build it with Claude, and watch individual Jev agents simulate its workflow.">
+<meta name="description" content="Define an environment, build it with Claude or Codex, and watch individual Jev agents simulate its workflow.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650;12..96,750&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -43,7 +43,7 @@
           <button class="chip" id="editEnvironmentBtn" type="button">Edit environment</button>
         </div>
         <div class="legend-mini" id="legendMini" hidden><span><i class="legend-idle"></i>idle</span><span><i class="legend-running"></i>active</span><span><i class="legend-terminal"></i>finished</span><span class="layout-note">Workflow layout · states, not physical locations</span></div>
-        <div class="empty" id="replayEmpty"><p class="lead">Describe a world above, or start with a ready-to-run environment.</p><div id="examples" class="cases environment-cases"><span class="hint">Loading environments…</span></div><p class="hint empty-note">Claude builds the environment. Jev makes each agent decide.</p></div>
+        <div class="empty" id="replayEmpty"><p class="lead">Describe a world above, or start with a ready-to-run environment.</p><div id="examples" class="cases environment-cases"><span class="hint">Loading environments…</span></div><p class="hint empty-note">Claude or Codex builds the environment. Jev makes each agent decide.</p></div>
         <section id="jobPanel" class="progress environment-progress" hidden aria-label="Current operation"><div class="job-content"><h2 id="jobType">Building environment</h2><p id="jobText" role="status" aria-live="polite"></p><progress id="jobProgress" aria-label="Operation progress"></progress><button id="cancelBtn" class="btn" type="button">Cancel</button></div></section>
       </div>
       <div class="timeline" id="timeline" hidden>
@@ -65,14 +65,14 @@
   <aside class="drawer environment-drawer" id="environmentDrawer" aria-label="Environment settings">
     <div class="drawer-head"><h2>Environment</h2><button class="btn ghost small" id="drawerClose" type="button">Close</button></div>
     <div class="drawer-body">
-      <div class="drawer-intro"><p class="hint">Set the world and its guidelines. Claude builds it; agents run inside the rules you inspect.</p></div>
+      <div class="drawer-intro"><p class="hint">Set the world and its guidelines. Claude or Codex builds it; agents run inside the rules you inspect.</p></div>
       <label class="environment-preset">Ready-to-run examples<select id="exampleSelect"><option value="">Choose an example</option></select></label>
       <form id="briefForm" class="environment-form">
         <label>Environment<textarea id="description" required maxlength="12000" rows="3" placeholder="A response team handles outages with limited specialists and deployment slots."></textarea></label>
         <label>Question or objective<textarea id="objectives" maxlength="6000" rows="2" placeholder="What changes when a second deployment slot becomes available?"></textarea></label>
         <label>Agent guidelines <span class="label-note">One per line</span><textarea id="guidelines" maxlength="40000" rows="3" placeholder="Prioritize urgent incidents.&#10;Investigate before deploying.&#10;Escalate when specialist knowledge is needed."></textarea></label>
         <label>Constraints<textarea id="constraints" maxlength="6000" rows="2" placeholder="12 responders, 2 specialists, 1 deployment slot, 60 ticks."></textarea></label>
-        <div class="form-row"><label>Builder<select id="backend"><option value="claude-code">Headless Claude Code</option><option value="anthropic">Anthropic API</option></select></label><label>Model <span class="label-note">Optional</span><input id="model" maxlength="120" placeholder="Configured default"></label></div>
+        <div class="form-row"><label>Builder<select id="backend"><option value="claude-code">Headless Claude Code</option><option value="codex">Headless Codex</option><option value="anthropic">Anthropic API</option></select></label><label>Model <span class="label-note">Optional</span><input id="model" maxlength="120" placeholder="Configured default"></label></div>
         <p class="hint" id="builderHelp">Uses your local Claude Code sign-in.</p><button id="buildBtn" type="submit" class="btn primary">Build &amp; inspect</button>
       </form>
       <section class="drawer-section"><div class="block-head"><h3>Saved environments</h3><button id="refreshBtn" type="button" class="btn ghost small">Refresh</button></div><label class="visually-hidden" for="environmentSelect">Saved environments</label><select id="environmentSelect"><option value="">Choose a saved environment</option></select><div id="modelEmpty" class="hint model-empty">Choose an example or build from your description to inspect its definition.</div><div id="modelOverview" hidden><div class="block-head model-title"><h3 id="environmentTitle"></h3><span id="savedTag" class="badge">No model</span></div><p id="environmentDescription" class="hint"></p><div id="modelNumbers" class="model-numbers"></div><div id="definitionDetails" class="definition-details"></div><div id="assumptions" class="assumptions"></div><div id="warnings" class="warnings" hidden></div></div><details id="editorDetails" class="editor-wrap"><summary>Edit or paste definition JSON</summary><p class="hint">Saving validates the definition and creates a new version.</p><label class="visually-hidden" for="specEditor">Environment JSON definition</label><textarea id="specEditor" spellcheck="false" class="code-editor" rows="12" placeholder='{ "version": 1, "title": "My environment", … }'></textarea></details><div class="save-row"><button id="saveBtn" type="button" class="btn small" disabled>Validate &amp; save</button><span id="saveNote" class="hint">No definition loaded</span></div></section>
