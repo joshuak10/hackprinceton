@@ -60,6 +60,14 @@ button, input, textarea { font: inherit; color: inherit; }
 .badge { margin-left: auto; font-size: 13px; font-weight: 500; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap; }
 .badge.live { border-color: var(--accent); color: var(--accent); }
 
+/* The two modes (§17b): the same room, asked at the counter or the next morning. As tall as a small button. */
+[hidden] { display: none !important; }
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--ground); }
+.modes button { height: 26px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.modes button:hover { color: var(--text); }
+.modes button[aria-pressed="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+.modes button:disabled { opacity: 0.55; cursor: not-allowed; }
+
 .btn { height: 42px; padding: 0 16px; border-radius: var(--radius); border: 1px solid var(--line-2); background: var(--panel-2); cursor: pointer; font-weight: 500; white-space: nowrap; }
 .btn:hover { border-color: var(--muted); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
@@ -97,6 +105,13 @@ textarea::placeholder { color: var(--faint); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; color: var(--muted); font-size: 13.5px; cursor: pointer; }
 .chip:hover { color: var(--text); border-color: var(--muted); }
+/* A row of choices for the next morning: the label, then the options, of which one is pressed. */
+.opt { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin-top: 8px; }
+.opt-label { font-size: 14.5px; color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 5px; margin-left: auto; }
+.seg .chip { min-width: 38px; padding: 0 10px; }
+.chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--panel-2); color: var(--text); }
+.chip:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .actions { display: flex; gap: 10px; margin-top: 20px; }
 /* The ask button stays in view however long the controls get. */
@@ -135,6 +150,7 @@ textarea::placeholder { color: var(--faint); }
 .who .name .age { font-weight: 400; color: var(--faint); margin-left: 6px; font-size: 13.5px; }
 .who .name .group { font-weight: 400; color: var(--faint); margin-left: 10px; font-size: 12.5px; }
 .who .name .edited { margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 7px; }
+.who .name .never { margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 7px; }
 /* What the person is like: the words that explain the answer, on one line so all twelve fit on a screen. */
 .who .feel { display: block; color: var(--muted); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -147,6 +163,10 @@ textarea::placeholder { color: var(--faint); }
 .meter .delta.small { background: var(--small); }
 .meter .tick { position: absolute; top: 2px; bottom: 2px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; transition: left 420ms cubic-bezier(.2, .7, .2, 1); }
 .meter.empty .tick, .meter.empty .fill, .meter.empty .delta { display: none; }
+/* Someone the page's changes do not reach: the reason in words, and no bar. */
+.meter.skip { height: auto; }
+.meter.skip .track { display: none; }
+.meter .why { display: block; font-size: 13px; line-height: 1.3; color: var(--faint); }
 
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .num .pct { font: 650 19px/1 var(--display); }
@@ -170,13 +190,18 @@ textarea::placeholder { color: var(--faint); }
 .split .bar i.rival { background: var(--rival); }
 .split .bar i.skip { background: var(--skip); }
 .split .val { font-variant-numeric: tabular-nums; color: var(--muted); }
+/* The next morning shows two records side by side: the boxes end level, so the two chances line up. */
+.detail.pair > div { display: flex; flex-direction: column; }
+.detail.pair .told { flex: 1; }
 .edit label { display: block; font-size: 13.5px; color: var(--muted); margin-top: 8px; }
 .edit textarea { margin-top: 4px; min-height: 0; font-size: 14.5px; }
 .edit .actions { margin-top: 12px; }
-.edit .note { margin: 10px 0 0; font-size: 13px; color: var(--faint); }
+.edit .note, .detail .note { margin: 10px 0 0; font-size: 13px; color: var(--faint); }
 
 @media (max-width: 900px) {
   .app { height: auto; min-height: 100vh; }
+  .top { flex-wrap: wrap; }
+  .modes { order: 1; flex: 1 0 100%; }
   .grid { grid-template-columns: 1fr; overflow: visible; }
   .controls, .room { overflow: visible; }
   .ask-bar { position: static; }

@@ -56,7 +56,8 @@ export function startServer({ port = 4173, host = '127.0.0.1', root = process.cw
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
     loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null,
-    roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomChain: Promise.resolve(), roomWaiting: 0, roomFetch
+    roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomChain: Promise.resolve(), roomWaiting: 0, roomFetch,
+    poolsDir: join(base, 'pools')
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
   const server = http.createServer((req, res) => {
@@ -97,7 +98,8 @@ const ROUTES = [
   ['GET', ['runs', ':id', 'advice'], getAdvice],
   ['GET', ['runs', ':id', ':file'], getRunFile],
   ['GET', ['room'], getRoom],
-  ['POST', ['room', 'ask'], postRoomAsk]
+  ['POST', ['room', 'ask'], postRoomAsk],
+  ['POST', ['room', 'morning'], postRoomMorning]
 ];
 
 async function handle(ctx, req, res) {
@@ -433,7 +435,47 @@ async function getRoom(ctx, req, res) {
   const { roomView } = await lib('../run/room.js');
   let view;
   try { view = roomView(raw); } catch (err) { throw new HttpError(400, err.message); }
-  send(res, 200, { world: file, ...view, live: hasKey('TYPESAFE_API_KEY'), recorded: (await roomRecord(ctx)).size });
+  send(res, 200, { world: file, ...view, morning: await roomMorningView(ctx, file, raw), live: hasKey('TYPESAFE_API_KEY'), recorded: (await roomRecord(ctx)).size });
+}
+
+// The pool file that goes with a world (docs/PROTOTYPE.md §21a): pools/<the world's file name>. Null when there
+// is none, or when it names another world.
+async function readPool(ctx, file) {
+  const name = file.endsWith('.json') ? file : file + '.json';
+  let pool;
+  try { pool = JSON.parse(await readFile(join(ctx.poolsDir, name), 'utf8')); } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    if (err instanceof SyntaxError) throw new HttpError(400, `pools/${name} is not valid JSON: ${err.message}`);
+    throw err;
+  }
+  if (!pool || typeof pool !== 'object' || Array.isArray(pool)) return null;
+  if (typeof pool.world === 'string' && pool.world.split('/').pop() !== name) return null;
+  return pool;
+}
+
+// What the page's next-morning mode needs (§17b), or null when this world cannot be asked that way. A pool
+// file that cannot be used must not take the at-the-counter mode down with it.
+async function roomMorningView(ctx, file, raw) {
+  try {
+    const pool = await readPool(ctx, file);
+    if (!pool) return null;
+    const { morningView } = await lib('../run/room-morning.js');
+    return morningView(raw, pool);
+  } catch (err) {
+    console.error(`[room] next morning is not available for ${file}: ${err.message}`);
+    return null;
+  }
+}
+
+// Jev for the page, or the record alone when there is no key or the caller asked for no network.
+async function roomProvider(ctx, record, live) {
+  const { recordProvider } = await lib('../run/room.js');
+  if (!live) return recordProvider(record);
+  const { makeProvider } = await lib('../providers/index.js');
+  return makeProvider('jev', {
+    shuffle: false, cache: record, concurrency: 32, maxRequests: 120,
+    timeoutMs: 4000, retry: { attempts: 2, maxRetryAfterMs: 1000 }, fetch: ctx.roomFetch
+  });
 }
 
 // Each ask is at most 4 questions per cast member: before, now, now with the plain sign, and now with the
@@ -443,18 +485,11 @@ async function postRoomAsk(ctx, req, res) {
   const body = await readJsonBody(req);
   const file = roomWorldName(body.world);
   const raw = await readWorld(ctx, file);
-  const { askRoom, recordProvider } = await lib('../run/room.js');
+  const { askRoom } = await lib('../run/room.js');
   const record = await roomRecord(ctx);
   const live = hasKey('TYPESAFE_API_KEY') && body.offline !== true;
   const out = await roomTurn(ctx, async () => {
-    let provider = recordProvider(record);
-    if (live) {
-      const { makeProvider } = await lib('../providers/index.js');
-      provider = makeProvider('jev', {
-        shuffle: false, cache: record, concurrency: 32, maxRequests: 120,
-        timeoutMs: 4000, retry: { attempts: 2, maxRetryAfterMs: 1000 }, fetch: ctx.roomFetch
-      });
-    }
+    const provider = await roomProvider(ctx, record, live);
     let result;
     try {
       result = await askRoom({
@@ -466,6 +501,31 @@ async function postRoomAsk(ctx, req, res) {
       throw new HttpError(/rejected the API key/.test(err?.message || '') ? 502 : 400, err?.message || 'The room could not be asked.');
     }
     // Answers already received are worth more than the file: a failed save is logged, not returned as an error.
+    if (live) await saveRoomRecord(ctx).catch(err => console.error(`[room] could not save the record: ${err.message}`));
+    return { ...result, error: (live && result.failed && provider.stats().firstError) || null };
+  });
+  send(res, 200, { world: file, ...out, live, recorded: record.size });
+}
+
+// The next-morning mode (§17b): each cast member is asked the morning question twice, for the record the page
+// set and for the record it is compared with. Same turn-taking, record and live provider as the route above.
+async function postRoomMorning(ctx, req, res) {
+  const body = await readJsonBody(req);
+  const file = roomWorldName(body.world);
+  const raw = await readWorld(ctx, file);
+  const pool = await readPool(ctx, file);
+  if (!pool) throw new HttpError(404, `No pool file for ${file}, so the next-morning question cannot be asked of this world.`);
+  const { askMorning } = await lib('../run/room-morning.js');
+  const record = await roomRecord(ctx);
+  const live = hasKey('TYPESAFE_API_KEY') && body.offline !== true;
+  const out = await roomTurn(ctx, async () => {
+    const provider = await roomProvider(ctx, record, live);
+    let result;
+    try {
+      result = await askMorning({ spec: raw, pool, scenario: body.scenario, only: Array.isArray(body.only) ? body.only : null, provider });
+    } catch (err) {
+      throw new HttpError(/rejected the API key/.test(err?.message || '') ? 502 : 400, err?.message || 'The room could not be asked.');
+    }
     if (live) await saveRoomRecord(ctx).catch(err => console.error(`[room] could not save the record: ${err.message}`));
     return { ...result, error: (live && result.failed && provider.stats().firstError) || null };
   });

@@ -1023,6 +1023,82 @@ There is no patience verdict in this mode, because the verdict compares a wait i
 
 **What it does not show.** One moment, not a morning: no line dynamics, no word of mouth, no repeat visits. The people are unvalidated. Jev reacts weakly to price unless a person's description mentions money, so price answers show direction only, and only for those people (in the example world Tomas, Omar and Priyanka; Bill reacts to the price having changed). The plain-sign answer is one recorded answer per person and moment, so a person whose plain-sign answer happens to sit high or low leans the same way under every sign; the 15-point bar is what keeps that from being named. A warm or sad sign can lower the share, because five of the twelve start near 100% and have no room to rise.
 
+### 17b. Next morning (Nov 14)
+
+**Why.** §17 asks one moment inside a visit. The owner's next question is what that visit does to tomorrow: does this person come back? §20 defined that question and checked it against Jev. This mode puts it on the page.
+
+**What it is.** A switch in the page's header: "At the counter" (§17, the default, unchanged) and "Next morning". `run/room-morning.js` asks every cast member the morning question (`visit_today`, §20b) twice: for the record the page set, and for the record it is compared with. Each answer is the chance of going to the shop today. The mode needs the world's pool file (§21a), `pools/<world file name>`. A world without one does not offer the mode.
+
+- **Who is asked as what.** A cast member the pool gives a usual rate is a returning customer, told `history: { visits: round(usualPerWeek × 4), weeks: 4 }`. A `dayVisitor`, or anyone the pool does not list, has never been inside: `history: { visits: 0, via: "has walked past it" }` and no memory. In the café that is Greta.
+- **The ordinary morning.** The record the mode opens on, and the base of every comparison: the last visit was yesterday, the wait was the pool's `ordinaryWait` (5 minutes), the person was served, and nothing else is said.
+- `morningView(spec, pool)`: the shop, who is asked as what, the options, the defaults and the bars.
+- `normalizeMorning(pool, raw, price)`: `{ wait, outcome, daysAgo, priceChange, card, remark, rating, message }`, clamped like `normalizeScenario`. Every value is one of the options: a number takes the nearest allowed value, anything else takes the default. A wait of 0 cannot end in leaving. A price change that would make the shop free is not offered.
+- `morningRecords(scenario, person, ctx)`: one person's two records, `now` and `before`.
+- `askMorning({ spec, pool, scenario, only, provider })`: asks, and returns each person's two chances with the room's share.
+
+**Controls.** One fact each, and only facts the return probe found Jev responds to (§20d). Every record has the shape and the words of the probe's condition for it. For the same person and visit count the request is byte-identical to the probe's (tested).
+
+| Control | Options | Record field | Probe conditions |
+|---|---|---|---|
+| Minutes in line, last visit | 0, 5, 10, 20, 30 | `memory: [{ daysAgo, wait, outcome }]` | `wait0` to `wait30` |
+| Then | was served, left without ordering | the same record | `left10`, `left20` |
+| When | yesterday, 1 week ago, 4 weeks ago | the same record | `bad_d1`, `bad_d7`, `bad_d28` |
+| Price today, against last week | −$1, −50¢, the same, +50¢, +$1 | `price`, `wasPrice` | `price_down1`, `price_down`, `price_up`, `price_up1` |
+| Stamp card | none, 2 of 10, 8 of 10 | `card: { have, need: 10, reward: "a free coffee" }` | `card_2of10`, `card_8of10` |
+| A friend's remark | none, good ("was good and quick"), bad ("long line") | `heard` | `heard_good`, `heard_bad` |
+| Star rating | none, 3.5, 4.0, 4.5 | `rating` | `new_rating35` to `new_rating45` |
+| Message from the shop | none, 20% off everything today | `offers`, and `offerPrice` at 80% of today's price | `promo20` |
+
+Not offered, because Jev does not respond to them (§20d): how the wait ended, a free head start on the card, and anything that presents a rise as worse than an equal cut.
+
+**Neutral controls.** A sentence added to a record is never compared with no sentence, because any added sentence moves Jev's answers (§17). The comparison record is the ordinary morning plus a plain version of every sentence the page added.
+
+| The page adds | The comparison carries | From |
+|---|---|---|
+| A deal | The message "open 7 am to 3 pm today, as usual" | the probe's `msg_plain` |
+| A friend's remark | A remark about something else: "the farmers market on Oak Street was busy" | the probe's `heard_other` |
+| A changed price | "$5.00 (the same as last week)" | the probe's `price_same` |
+| A stamp card | A card at 2 of 10 | the probe's test: 8 of 10 against 2 of 10 |
+| A star rating | 3.5 stars | the probe's test: 4.5 stars against 3.5 |
+
+- A card at 2 of 10 or a rating of 3.5 stars, chosen alone, shows no change: it is its own comparison.
+- The last visit is replaced, not added, so it needs no plain version.
+- Under a deal a person is told the offer price against today's price ("$4.40 with the offer (usually $5.50)") and last week's price is not mentioned (`morningCost`, §20a). The comparison then has no "last week" clause either.
+- The page states what the comparison carries under the headline whenever it carries anything, and a person's details show both records as told.
+
+**Someone who has never been inside** has no last visit, no last week's price and no stamp card. Those controls are left out of her record, and she is told the world's price. When the page changed only those, her row says so and shows no bar (`applies: false`). When it also changed a remark, the rating or the message, her bar shows what those did, and her details say the rest is not in her record (`partly: true`).
+
+**Bars.** `MORNING_NOISE` is 5 points for the room's share, as in §17. `MORNING_NOISE_PERSON` is 10 points for one person: two asks of the morning question differed by 1.2 points on average and by 8.0 at most (§20d, 1,892 pairs). A change of 5 to 9 points is drawn in grey and labelled "too small to tell". The share is the mean chance over the returning customers only, as the probe reports them. A person who has never been is a different question and is read on her own row.
+
+**Server.** `GET /api/room` also returns `morning`: this mode's view, or `null` when the world has no usable pool file. `POST /api/room/morning` takes `{ world?, scenario, only?, offline? }` and returns each person's `before` and `now` (the chance of going today), `returning`, `visits`, `applies`, `partly`, what they were `told` in both records, and `source`, with `share`, `changed`, `compare` (the plain sentences in play, in the words people were told), `asked`, `askedLive`, `failed` and `error`. It uses the turn-taking, the record and the live provider of `/api/room/ask`. An ask is two questions per cast member.
+
+**Recorded answers.** `web/room/seed-record.json` also holds 317 morning answers (1,242 in all): the ordinary morning, every morning one control away from it, every last visit that happened yesterday (each wait, served or left), and the 30-minute wait that ended in leaving at each date. So the mode opens with no key and no network, and each control works alone. Two or more controls changed together are asked live. With no key the page keeps the last answers on screen and says why. `node run/room-seed.js` rebuilds the answers of both modes.
+
+**Page.** Each mode keeps its own controls and its last answers. Switching shows them at once and asks again, which sends Jev nothing when they are on record. `?mode=morning` opens the mode directly. A control asks as soon as it is clicked. A person's details show the two records side by side, as told, with the chance for each. A person cannot be rewritten in this mode. The arithmetic is in `web/room/maths.js` (`morningChange`, `morningSummary`, `byMorningChange`) and is tested.
+
+**What the recorded answers show (single asks, Nov 14, jev-1.14.0), against §20d.**
+
+| Change | The page | The probe |
+|---|---|---|
+| The ordinary morning | 59% | 58% |
+| A 30-minute wait, served | 40%; Karen −30, Shanice −29, Ellie −12 against the 5-minute visit | 40% |
+| A 30-minute wait, left without ordering | 32% | 32% |
+| A 50-cent rise | Bill −22, June −8, nobody else more than 6 | Bill −21, June −8, nobody else more than 5 |
+| 8 of 10 stamps against 2 of 10 | +10; Tomas +28, Omar +24; June, Marcus and Bill within 1 | +10.3; Tomas +28, Omar +24 |
+| 20% off today, returning customers | +8; Greta +3 | +7.9; Greta +1 |
+| A friend's remark, returning customers | bad −7, good +8 | bad −7.5, good +6.8 |
+
+**What it does not show.**
+- **One morning's decision, not a simulated week.** §21 runs days.
+- **The level.** Jev squeezes it toward the middle: occasional customers are given about 1.5 times the chance their visit count implies (§20d). The page says so under the headline, and asks the reader for the direction and who reacts. It does not apply the correction of §20d decision 3.
+- **The size of a wait's effect.** It is unchecked and may be too large (§20d).
+- **Combinations.** The probe changed one fact at a time. The page lets several be changed together, and those answers are unchecked.
+- **The rating for returning customers.** The probe checked a rating on newcomers only. The page tells it to everyone.
+- **Newcomers.** Nobody is switched between "returning" and "never been". The seven cast members the pool marks `newcomer` are asked as returning customers, so the page shows a deal's effect on regulars and on Greta, not the newcomer effect of §20d.
+- **The probe's visit counts for June and Marcus.** The page takes the count from the pool (20 visits each). The probe told them 28 and 40.
+- **Other shops.** The plain message ("7 am to 3 pm"), the other remark ("Oak Street") and the card's reward ("a free coffee") are the probe's words for this café.
+- **Repeats.** Each recorded answer is one ask.
+
 ## 18. Seats, and the sushi restaurant as a third place in the scope display (Nov 14)
 
 **Why.** The scope display had two places: a building and a parking lot. The team's audience is now independent local businesses (`INDEPENDENT_BUSINESS_SPEC.md`), so the third place is one of those: a small sushi restaurant, drawn by hand as one room with a kitchen, four counter seats and four seats at a table. In a room this small the picture an owner reads is who is in which seat and who is standing by the door. The engine had no notion of a seat: people being served were drawn as a cluster on the place.

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ask the room · Swarmscope</title>
-<meta name="description" content="Change a price, a line or a sign and see how each simulated customer reacts.">
+<meta name="description" content="Change a price, a line or a sign and see how each simulated customer reacts, at the counter or the next morning.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" href="data:,">
@@ -16,6 +16,10 @@
   <header class="top">
     <a class="brand" href="../scope/" aria-label="Swarmscope display">Swarmscope</a>
     <h1 class="title">Ask the room</h1>
+    <div class="modes" role="group" aria-label="When they are asked">
+      <button type="button" id="modeCounter" aria-pressed="true" title="They have just arrived and see a line, a price and a sign.">At the counter</button>
+      <button type="button" id="modeMorning" aria-pressed="false" title="The morning after: given what they remember and what they are told today, do they go back?">Next morning</button>
+    </div>
     <span class="badge" id="mode" role="status">Loading…</span>
     <button class="btn ghost small" id="langBtn" type="button" data-i18n-skip lang="zh-Hans" aria-label="切换到简体中文">中文</button>
     <button class="btn ghost small" id="themeBtn" type="button">Light</button>
@@ -31,6 +35,7 @@
       </div>
 
       <form id="form" autocomplete="off">
+        <div id="counterControls">
         <fieldset>
           <legend id="signLegend">A sign on the door</legend>
           <label class="visually-hidden" for="sign">Sign text</label>
@@ -54,6 +59,30 @@
           <legend>The line when they arrive</legend>
           <div id="lines"></div>
         </fieldset>
+        </div>
+
+        <div id="morningControls" hidden>
+        <fieldset>
+          <legend>Their last visit</legend>
+          <div class="opt"><span class="opt-label" id="mWaitLabel">Minutes in line</span><div class="seg" id="mWait" role="group" aria-labelledby="mWaitLabel"></div></div>
+          <div class="opt"><span class="opt-label" id="mOutcomeLabel">Then</span><div class="seg" id="mOutcome" role="group" aria-labelledby="mOutcomeLabel"></div></div>
+          <div class="opt"><span class="opt-label" id="mWhenLabel">When</span><div class="seg" id="mWhen" role="group" aria-labelledby="mWhenLabel"></div></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Price and stamp card</legend>
+          <div class="opt"><span class="opt-label" id="mPriceLabel">Price today, against last week</span><div class="seg" id="mPrice" role="group" aria-labelledby="mPriceLabel"></div></div>
+          <div class="opt"><span class="opt-label" id="mCardLabel">Stamp card</span><div class="seg" id="mCard" role="group" aria-labelledby="mCardLabel"></div></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>What they are told today</legend>
+          <div class="opt"><span class="opt-label" id="mRemarkLabel">A friend’s remark</span><div class="seg" id="mRemark" role="group" aria-labelledby="mRemarkLabel"></div></div>
+          <div class="opt"><span class="opt-label" id="mRatingLabel">Star rating</span><div class="seg" id="mRating" role="group" aria-labelledby="mRatingLabel"></div></div>
+          <div class="opt"><span class="opt-label" id="mMessageLabel">Message from the shop</span><div class="seg" id="mMessage" role="group" aria-labelledby="mMessageLabel"></div></div>
+          <p class="hint" id="morningHint"></p>
+        </fieldset>
+        </div>
 
         <div class="ask-bar">
           <div class="actions">
@@ -73,7 +102,7 @@
         <p class="honest" id="honest"></p>
       </div>
       <div class="bar-key">
-        <span aria-hidden="true"><i class="k now"></i> chooses the shop now</span>
+        <span aria-hidden="true"><i class="k now"></i> <span id="nowKey">chooses the shop now</span></span>
         <span aria-hidden="true"><i class="k tick"></i> <span id="tickKey">before</span></span>
         <span aria-hidden="true"><i class="k up"></i> more likely</span>
         <span aria-hidden="true"><i class="k down"></i> less likely</span>
