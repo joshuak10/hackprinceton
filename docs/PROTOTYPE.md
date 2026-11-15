@@ -1397,7 +1397,7 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 **One result.**
 - **The headline** names the change and states only what every run agrees on, in this order: people seated, people turned away or giving up; if neither, the wait for a seat; if not that, first-time visitors. When nothing agrees it reads "no clear change in who gets a seat".
 - **The second line is always the regulars:** the change with its range when every run agrees, "no change", or "no clear change (24 before, 24 after; the runs disagree)".
-- **The table** has people seated, turned away or gave up, average wait for a seat, first-time visitors and regulars: before, after, and the change as a range across runs. Where the runs disagree the change reads "no clear change".
+- **The table** has people seated, turned away or gave up, average wait for a seat, first-time visitors and regulars: before, after, and the change as a range across runs. Where the runs disagree the change reads "unclear".
 - **Under it:** what a regular is ("A regular came on at least 2 of the last 4 Fridays", from the pool), and one caution line: simulated diners, assumed visit rates, who decided, sizes not validated, read the direction and the range.
 - The main view never says "seed", "requests" or "pool".
 

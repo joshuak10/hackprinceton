@@ -130,7 +130,7 @@ async function refreshRuns() {
   const place = placeParam();
   const filter = sampleOnly(c) ? { notTitles, max: 0 } : c?.runTitle ? { title: c.runTitle, max: 200, notTitles }
     : place ? { title: place, max: 200, notTitles } : { notTitles };
-  const { runs, metas, worlds } = await apiBuildingRuns(filter);
+  const { runs, metas, worlds } = await apiBuildingRuns({ ...filter, home: st.cases.building?.homeTitle || null });
   st.runs = runs;
   st.metas = sampleOnly(c) ? [] : metas;
   // The building's name for the list, where another place is on screen: the world its page would open with.

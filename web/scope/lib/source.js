@@ -72,9 +72,10 @@ export async function apiHealth() {
 // `title` keeps only runs of the world with that title (a case's runTitle, or a world opened with ?place=); without
 // it the runs are the building's. `notTitles` are the worlds of the cases that have a title: they are never the
 // building's, so one place's many runs cannot push another place's runs off the list.
+// `home` is the title of the building's own world, when its case names one (homeTitle).
 // `worlds` says which recorded walled worlds are which, as { building: [...], others: [...] } of
 // { title, placeName }: `others` are neither a titled case nor the building, and open with ?place=<title>.
-export async function apiBuildingRuns({ max = 18, title = null, notTitles = [] } = {}) {
+export async function apiBuildingRuns({ max = 18, title = null, notTitles = [], home = null } = {}) {
   const metas = await getJson('/api/runs');
   const visits = metas.filter(m => m.status === 'done' && m.mode === 'visit')
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -90,7 +91,10 @@ export async function apiBuildingRuns({ max = 18, title = null, notTitles = [] }
   const firstOf = new Map();
   for (const m of visits) if (!notTitles.includes(m.title) && !firstOf.has(m.title)) firstOf.set(m.title, m);
   const scanned = [];
-  for (const [worldTitle, meta] of [...firstOf].slice(0, 16)) {
+  // The newest 16 worlds are looked at, and the building's own world however old its last run is.
+  const look = [...firstOf].slice(0, 16);
+  if (home && firstOf.has(home) && !look.some(([t]) => t === home)) look.push([home, firstOf.get(home)]);
+  for (const [worldTitle, meta] of look) {
     const spec = await specOf(meta);
     if (!walled(spec)) continue;
     scanned.push({
@@ -99,7 +103,11 @@ export async function apiBuildingRuns({ max = 18, title = null, notTitles = [] }
     });
   }
   const fromPlan = scanned.filter(w => w.matterport);
-  const building = fromPlan.length ? fromPlan : scanned;
+  // `home` pins the building to one world by title (its case's homeTitle). While that world has a recorded run it
+  // alone is the building, and every other walled world is another place, from a Matterport plan or not: a second
+  // scanned building does not take the front page by being newer.
+  const pinned = home ? scanned.filter(w => w.title === home) : [];
+  const building = pinned.length ? pinned : fromPlan.length ? fromPlan : scanned;
   const keep = new Set(building.map(w => w.title));
   const candidates = visits.filter(m => (title ? m.title === title : keep.has(m.title)));
   const out = [];

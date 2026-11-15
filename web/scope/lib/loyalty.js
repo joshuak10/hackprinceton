@@ -48,14 +48,17 @@ export const valueWords = (kind, v) => (Number.isFinite(v) ? `${round(kind, v) <
 // How one number moved, for the last column. A change is given only where every run agrees, with its range.
 //   'none'    nothing moved on any run
 //   'clear'   every run moved the same way: "+4", or "+4 to +6"
-//   'unclear' the runs disagree: "no clear change"
+//   'unclear' the runs disagree: "unclear"
 export function changeOf(kind, e) {
   if (!e || !Number.isFinite(e.min) || !Number.isFinite(e.max)) return { state: 'unclear', words: 'n/a' };
   const lo = round(kind, e.min), hi = round(kind, e.max);
   if (e.min === 0 && e.max === 0) return { state: 'none', words: 'no change' };
-  if (!e.agrees) return { state: 'unclear', words: 'no clear change' };
+  if (!e.agrees) return { state: 'unclear', words: 'unclear' };
   if (lo === 0 && hi === 0) return { state: 'none', words: 'no change' };            // agrees, but smaller than the rounding
-  return { state: 'clear', words: lo === hi ? signed(kind, lo) : `${signed(kind, lo)} to ${signed(kind, hi)}` };
+  if (lo === hi) return { state: 'clear', words: signed(kind, lo) };
+  // A range of minutes names the unit once: "−2.6 to −1.5 min".
+  const end = v => (kind === 'minutes' ? `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1)}` : signed(kind, v));
+  return { state: 'clear', words: `${end(lo)} to ${kind === 'minutes' ? `${end(hi)} min` : end(hi)}` };
 }
 
 // The table: before, after and the change with its range, per Friday.

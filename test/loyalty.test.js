@@ -34,8 +34,8 @@ describe('the loyalty buttons', () => {
   test('a change is stated only where every run agrees', () => {
     assert.deepEqual(changeOf('count', effect(23.6, 27.8, 4, 4.4, true)), { state: 'clear', words: '+4' });
     assert.deepEqual(changeOf('count', effect(9, 7, -2.6, -1.4, true)), { state: 'clear', words: '−3 to −1' });
-    assert.deepEqual(changeOf('minutes', effect(8.1, 6.2, -2.44, -1.21, true)), { state: 'clear', words: '−2.4 min to −1.2 min' });
-    assert.deepEqual(changeOf('count', effect(24, 24.3, -3, 4, false)), { state: 'unclear', words: 'no clear change' });
+    assert.deepEqual(changeOf('minutes', effect(8.1, 6.2, -2.44, -1.21, true)), { state: 'clear', words: '−2.4 to −1.2 min' });
+    assert.deepEqual(changeOf('count', effect(24, 24.3, -3, 4, false)), { state: 'unclear', words: 'unclear' });
     assert.deepEqual(changeOf('count', effect(1, 1, 0, 0, false)), { state: 'none', words: 'no change' });
     assert.equal(changeOf('count', effect(1, 1.2, 0.1, 0.3, true)).state, 'none');
     assert.equal(changeOf('count', undefined).words, 'n/a');

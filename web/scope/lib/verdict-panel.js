@@ -151,7 +151,7 @@ export function createVerdict(root, { onTest, onCancel, onPick, onChoose = () =>
         set([back, el('h2', null, missing.headline), el('p', 'why', missing.why), missing.command ? el('pre', 'cmd', missing.command) : null]);
         return;
       }
-      const table = el('table', 'vt');
+      const table = el('table', 'vt saved');
       const thead = el('thead'), hr = el('tr');
       for (const [i, text] of ['', 'Before', 'After', 'Change'].entries()) {
         const th = el(i ? 'th' : 'td', null, text);

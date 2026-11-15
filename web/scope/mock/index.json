@@ -5,7 +5,8 @@
       "question": "Where do people get stuck moving through this building at lunchtime, and which change helps most?",
       "file": "mock/building-synthetic.json",
       "place": "Synthetic office and retail building",
-      "source": "synthetic"
+      "source": "synthetic",
+      "homeTitle": "Weekday lunch on the ground floor: food hall and market (proposed fit-out)"
     },
     "parking": {
       "label": "Retail parking lot",
