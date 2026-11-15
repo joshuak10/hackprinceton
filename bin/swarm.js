@@ -777,8 +777,8 @@ async function cmdServe(_args, flags) {
   const port = intFlag(flags, 'port', 4173, 0);
   const { startServer } = await import('../server/server.js');
   const server = await startServer({ port, root: process.cwd() });
-  print(`Swarmscope viewer at ${server?.url ?? `http://127.0.0.1:${port}`}  (Ctrl-C to stop)`);
-  print(`Custom environments: ${server.url}/scope/?mode=environment`);
+  print(`Swarmscope at ${server?.url ?? `http://127.0.0.1:${port}`}/  (Ctrl-C to stop)`);
+  print(`Also, from the More menu: step diagrams ${server.url}/scope/?mode=environment · ask the room ${server.url}/room/ · the first viewer ${server.url}/classic`);
   const stop = async () => { await server.close(); };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);

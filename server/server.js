@@ -52,7 +52,7 @@ async function lib(path) {
 }
 
 // `roomFetch` stands in for the network on the Ask-the-room route, so its live path can be tested without Jev.
-export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch, environmentOptions, rootRedirect = null } = {}) {
+export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch, environmentOptions, rootRedirect = '/scope/' } = {}) {
   const base = resolve(root);
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
@@ -135,8 +135,13 @@ async function handle(ctx, req, res) {
       res.writeHead(302, { Location: ctx.rootRedirect, 'Cache-Control': 'no-store' });
       return res.end();
     }
+    // The dashboard is the front door. The first viewer keeps its files at the root and opens at /classic.
+    if (url.pathname === '/classic/') {
+      res.writeHead(302, { Location: '/classic', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     const environmentView = ['/scope', '/scope/'].includes(url.pathname) && url.searchParams.get('mode') === 'environment';
-    return serveStatic(req, res, environmentView ? '/studio/index.html' : url.pathname);
+    return serveStatic(req, res, environmentView ? '/studio/index.html' : url.pathname === '/classic' ? '/index.html' : url.pathname);
   }
   const parts = url.pathname.slice(5).split('/').map(decodeSegment);
   const allowed = [];
