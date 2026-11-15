@@ -1,5 +1,8 @@
-// Generalist Studio: data-only environment editing and recorded workflow playback.
+// User-defined environments in the original Scope shell.
 // All generated/user content enters the DOM as text; no generated markup or code is executed.
+import { createWorkflowRenderer } from './render.js';
+import { createTimeline } from '../scope/lib/timeline.js';
+import { readPalette } from '../scope/lib/palette.js';
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries([
   'examples', 'status', 'jobPanel', 'jobType', 'jobText', 'jobProgress', 'cancelBtn', 'briefForm',
@@ -7,10 +10,67 @@ const ui = Object.fromEntries([
   'environmentSelect', 'refreshBtn', 'modelEmpty', 'modelOverview', 'environmentTitle', 'environmentDescription',
   'modelNumbers', 'definitionDetails', 'assumptions', 'warnings', 'specEditor', 'editorDetails', 'saveBtn', 'saveNote',
   'savedTag', 'provider', 'seed', 'maxRequests', 'providerHelp', 'runBtn', 'runSelect', 'replayEmpty',
-  'replayContent', 'runTitle', 'runMeta', 'downloadRun', 'runWarning', 'metrics', 'playBtn', 'scrubber',
-  'tickLabel', 'roleFilter', 'resources', 'workflow', 'agentSelect', 'agentInfo', 'decisions', 'events', 'worldState'
+  'replayContent', 'runTitle', 'runMeta', 'downloadRun', 'runWarning', 'metrics', 'playBtn',
+  'roleFilter', 'resources', 'agentSelect', 'agentInfo', 'decisions', 'events', 'worldState',
+  'askForm', 'askIn', 'askBtn', 'environmentDrawer', 'environmentBtn', 'drawerClose', 'themeBtn',
+  'sourceBadge', 'editEnvironmentBtn', 'mapTools', 'legendMini', 'map', 'mapbox', 'timeline', 'sideEmpty',
+  'colorBy', 'eventCount', 'exampleSelect'
 ].map(id => [id, $(id)]));
-const state = { artifact: null, dirty: false, run: null, job: null, poll: null, playing: null, health: null, agentId: '', frame: 0, download: null, opening: 0 };
+ui.scrubber = $('scrub'); ui.tickLabel = $('clock');
+const state = { artifact: null, dirty: false, run: null, job: null, poll: null, playing: null, health: null,
+  ready: false, pending: false, agentId: '', frame: 0, download: null, opening: 0, speed: 1, briefSnapshot: '',
+  autoRun: false, theme: 'dark', preview: null, examples: [] };
+try { state.theme = new URLSearchParams(location.search).get('theme') || localStorage.getItem('scope-theme') || 'dark'; } catch {}
+document.documentElement.dataset.theme = state.theme;
+ui.themeBtn.setAttribute('aria-label', state.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+const renderer = createWorkflowRenderer(ui.map, { onSelect: id => { state.agentId = id; ui.agentSelect.value = id; renderFrame(); } });
+const timeline = createTimeline({ root: ui.timeline, onPlay: () => state.playing ? pause() : play(),
+  onSeek: tick => {
+    pause();
+    const frames = state.run?.result?.frames || [];
+    let nearest = 0;
+    for (let i = 1; i < frames.length; i++) if (Math.abs(frames[i].tick - tick) < Math.abs(frames[nearest].tick - tick)) nearest = i;
+    state.frame = nearest; renderFrame();
+  },
+  onSpeed: speed => { const wasPlaying = Boolean(state.playing); pause(); state.speed = speed;
+    ui.timeline.querySelectorAll('[data-speed]').forEach(button => { const selected = Number(button.dataset.speed) === speed; button.classList.toggle('on', selected); button.setAttribute('aria-pressed', String(selected)); });
+    if (wasPlaying) play();
+  }
+});
+new ResizeObserver(() => { if (state.run) { timeline.layout(); updateTimeline(); } }).observe(ui.mapbox);
+function drawer(open) { ui.environmentDrawer.hidden = !open; ui.environmentBtn.setAttribute('aria-expanded', String(open)); }
+function updateTimeline() {
+  if (!state.run) return;
+  const tick = currentFrame()?.tick || 0;
+  timeline.update(tick, Boolean(state.playing));
+  ui.tickLabel.textContent = 'Tick ' + tick;
+  ui.scrubber.setAttribute('aria-valuetext', 'Tick ' + tick + ' of ' + state.run.spec.ticks);
+  $('span').textContent = '0 to ' + state.run.spec.ticks + ' ticks · recorded actions';
+}
+function setTimeline() {
+  const bins = Array.from({ length: state.run.spec.ticks + 1 }, () => ({ total: 0, decision: 0, congestion: 0, complaint: 0 }));
+  for (const event of state.run.result?.events || []) {
+    const bin = bins[event.tick]; if (!bin) continue;
+    const category = event.type === 'completed' ? 'complaint' : event.type === 'blocked' || event.type === 'rejected' ? 'congestion' : 'decision';
+    bin[category]++; bin.total++;
+  }
+  const palette = readPalette(); palette['i-complaint'] = palette['a-serve'];
+  timeline.setRun({ duration: state.run.spec.ticks, clockStart: 0, bins, pal: palette });
+  ui.scrubber.step = '1'; updateTimeline();
+}
+function previewDefinition(spec) {
+  const agents = spec.roles.flatMap(role => Array.from({ length: role.count }, (_, index) => ({
+    id: role.id + '_' + (index + 1), role: role.id, state: role.initialState, status: 'idle', action: null
+  })));
+  state.preview = { tick: 0, agents, world: spec.world || {}, resources: [] };
+  if (!state.run) {
+    ui.map.hidden = false; renderer.resize();
+    renderer.setRun(spec, { agents });
+    renderer.draw(state.preview, { colorBy: ui.colorBy.value, role: ui.roleFilter.value });
+    ui.replayEmpty.hidden = true; ui.mapTools.hidden = false; ui.legendMini.hidden = false;
+    ui.runTitle.textContent = spec.title; ui.runMeta.textContent = 'Environment definition · initial states · not yet simulated';
+  }
+}
 const number = value => Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
 const enc = encodeURIComponent;
 const date = value => value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
@@ -47,17 +107,22 @@ function fillBrief(value = {}) {
   ui.objectives.value = value.objectives || '';
   ui.guidelines.value = Array.isArray(value.guidelines) ? value.guidelines.join('\n') : value.guidelines || '';
   ui.constraints.value = value.constraints || '';
+  ui.askIn.value = ui.description.value;
 }
 function controls() {
-  const busy = Boolean(state.job);
-  ui.buildBtn.disabled = busy;
+  const busy = Boolean(state.job) || state.pending || !state.ready;
+  const briefChanged = Boolean(state.artifact) && JSON.stringify(brief()) !== state.briefSnapshot;
+  ui.buildBtn.disabled = busy; ui.askBtn.disabled = busy;
   ui.saveBtn.disabled = busy || !ui.specEditor.value.trim();
-  ui.runBtn.disabled = busy || !state.artifact?.id || state.dirty;
+  ui.runBtn.disabled = busy || !state.artifact?.id || state.dirty || briefChanged;
   ui.environmentSelect.disabled = busy;
+  ui.exampleSelect.disabled = busy;
   ui.backend.disabled = busy;
+  ui.refreshBtn.disabled = busy;
+  if (!state.run && !state.job) ui.sourceBadge.textContent = ui.provider.value === 'jev' ? 'Jev agents' : 'Rules baseline';
   ui.savedTag.textContent = state.dirty ? 'Unsaved changes' : state.artifact?.id ? 'Saved' : state.artifact ? 'Example' : 'No model';
   ui.savedTag.classList.toggle('saved', Boolean(state.artifact?.id) && !state.dirty);
-  ui.saveNote.textContent = state.dirty ? 'Save this version before running.' : state.artifact?.id ? 'This version is ready to run.' : state.artifact ? 'Save the example to run it.' : 'Paste JSON or choose an example.';
+  ui.saveNote.textContent = briefChanged ? 'Brief changed. Simulate will rebuild the environment.' : state.dirty ? 'Save this version before running.' : state.artifact?.id ? 'This version is ready to run.' : state.artifact ? 'Save the example to run it.' : 'Paste JSON or choose an example.';
   ui.maxRequests.disabled = ui.provider.value !== 'jev' || busy;
   ui.providerHelp.textContent = ui.provider.value === 'jev'
     ? `${state.health?.jev ? 'Jev is configured.' : 'Requires TYPESAFE_API_KEY in .env.local.'} Starts live API requests up to your budget. Any fallback decisions are labeled in the record.`
@@ -78,11 +143,18 @@ function disclosure(title, rows) {
   details.append(list); return details;
 }
 function loadArtifact(artifact, { useBrief = true } = {}) {
+  pause(); state.run = null; state.agentId = '';
+  ui.timeline.hidden = true; ui.replayContent.hidden = true; ui.sideEmpty.hidden = false;
+  ui.sourceBadge.classList.remove('live');
+  ui.roleFilter.replaceChildren(option('', 'All roles'), ...(artifact.spec.roles || []).map(role => option(role.id, role.name)));
   state.artifact = artifact; state.dirty = !artifact.id;
   ui.environmentSelect.value = artifact.id || '';
   ui.specEditor.value = stringify(artifact.spec);
   if (useBrief) fillBrief(artifact.brief || { description: artifact.spec.description, guidelines: artifact.spec.guidelines });
   const spec = artifact.spec;
+  state.briefSnapshot = JSON.stringify(brief());
+  ui.askIn.value = ui.description.value;
+  previewDefinition(spec);
   ui.modelEmpty.hidden = true; ui.modelOverview.hidden = false;
   ui.environmentTitle.textContent = spec.title;
   ui.environmentDescription.textContent = spec.description;
@@ -117,10 +189,16 @@ async function save() {
   let spec;
   try { spec = JSON.parse(ui.specEditor.value); } catch (error) { throw new Error(`Definition is not valid JSON: ${error.message}`); }
   const enteredBrief = brief();
-  const saved = await api('environments', { spec, ...(enteredBrief.description ? { brief: enteredBrief } : {}) });
-  loadArtifact(saved, { useBrief: false });
-  await refreshLibraries(); message(`Saved “${saved.spec.title}”. Ready to simulate.`);
-  return saved;
+  // Editing JSON saves that definition; uncompiled prose edits must not become its build provenance.
+  const definitionBrief = state.artifact && state.briefSnapshot ? JSON.parse(state.briefSnapshot) : enteredBrief;
+  state.pending = true; controls();
+  try {
+    const saved = await api('environments', { spec, ...(definitionBrief.description ? { brief: definitionBrief } : {}) });
+    loadArtifact(saved, { useBrief: false });
+    state.briefSnapshot = JSON.stringify(definitionBrief);
+    await refreshLibraries(); message(`Saved “${saved.spec.title}”. Ready to simulate.`);
+    return saved;
+  } finally { state.pending = false; controls(); }
 }
 function describeProgress(job) {
   if (job.status === 'queued') return 'Queued. Waiting to start.';
@@ -132,7 +210,7 @@ function describeProgress(job) {
   return job.type === 'run' ? 'Running agents…' : 'Claude is building and validating your environment…';
 }
 async function followJob(job) {
-  clearTimeout(state.poll); state.job = job;
+  clearTimeout(state.poll); state.job = job; drawer(false);
   ui.jobPanel.hidden = false; ui.jobType.textContent = job.type === 'run' ? 'Simulation running' : 'Building environment';
   ui.jobText.textContent = describeProgress(job); ui.cancelBtn.disabled = false;
   ui.jobProgress.removeAttribute('value'); controls();
@@ -150,9 +228,10 @@ async function followJob(job) {
         ui.jobText.textContent = 'Loading the completed record…';
         await refreshLibraries();
         if (current.status === 'done') {
-          if (current.environmentId) {
+          if (job.type === 'build' && current.environmentId) {
             loadArtifact(await api(`environments/${enc(current.environmentId)}`));
-            message('Environment built and saved. Review its assumptions and rules, then run the agents.');
+            message('Environment built and saved.');
+            if (!state.autoRun) drawer(true);
           }
           if (current.runId) { await openRun(current.runId); message('Simulation recorded. Scrub through the workflow and inspect any agent.'); }
         } else {
@@ -160,6 +239,10 @@ async function followJob(job) {
           message(current.status === 'cancelled' ? 'Operation cancelled. Any partial run remains in the record.' : current.error || 'The operation failed.', current.status === 'error');
         }
         state.job = null; controls(); ui.jobPanel.hidden = true;
+        if (job.type === 'build' && current.status === 'done' && state.autoRun) {
+          state.autoRun = false;
+          try { await startRun(); } catch (error) { message(error.message, true); drawer(true); }
+        } else state.autoRun = false;
       } else state.poll = setTimeout(poll, 700);
     } catch (error) {
       // Keep the active job and the cancel control accessible when polling temporarily fails.
@@ -169,18 +252,40 @@ async function followJob(job) {
   };
   await poll();
 }
-function pause() { clearInterval(state.playing); state.playing = null; ui.playBtn.textContent = 'Play'; }
+function pause() { clearInterval(state.playing); state.playing = null; updateTimeline(); }
+function play() {
+  const last = (state.run?.result?.frames?.length || 1) - 1;
+  if (last < 1) return;
+  if (state.frame >= last) state.frame = 0;
+  state.playing = setInterval(() => { state.frame++; renderFrame(); if (state.frame >= last) pause(); }, Math.max(35, 350 / state.speed));
+  renderFrame();
+}
 async function openRun(id) {
   const opening = ++state.opening;
   const record = await api(`environment-runs/${enc(id)}`);
   if (opening !== state.opening) return;
-  pause(); state.run = record; state.frame = 0; state.agentId = '';
+  pause();
+  loadArtifact({ id: record.environmentId, spec: record.spec, brief: record.brief,
+    builder: record.builder, warnings: record.warnings || [] });
+  state.preview = null;
+  state.run = record; state.frame = 0; state.agentId = '';
+  ui.provider.value = record.provider === 'jev' ? 'jev' : 'rules';
+  ui.seed.value = record.seed;
+  if (Number.isFinite(record.maxRequests)) ui.maxRequests.value = record.maxRequests;
   ui.runSelect.value = record.id;
-  ui.replayEmpty.hidden = true; ui.replayContent.hidden = false;
+  ui.replayEmpty.hidden = true; ui.replayContent.hidden = false; ui.sideEmpty.hidden = true;
+  ui.timeline.hidden = false; ui.mapTools.hidden = false; ui.legendMini.hidden = false; drawer(false);
+  ui.map.hidden = false; renderer.resize();
+  renderer.setRun(record.spec, record.result || {});
   ui.runTitle.textContent = record.title || record.spec.title;
   ui.runMeta.textContent = `${record.provider} · seed ${record.seed} · ${record.status} · ${date(record.createdAt)}`;
   const result = record.result || {}, stats = result.providerStats || {}, metrics = result.metrics || {};
   const warnings = [...(record.warnings || [])];
+  const fallbackRate = (stats.fallbacks || 0) / Math.max(1, stats.decisions || result.decisions?.length || stats.requests || 0);
+  ui.sourceBadge.textContent = record.provider === 'jev' ? fallbackRate > .2 ? 'Heavy rules fallback' : stats.fallbacks ? 'Jev + rules fallback' : 'Jev agents' : 'Rules baseline';
+  ui.sourceBadge.classList.toggle('live', record.provider === 'jev' && fallbackRate <= .2);
+  ui.sourceBadge.title = record.provider === 'jev' ? String(stats.fallbacks || 0) + ' decisions fell back to rules.' : 'Offline action weights; prose guidelines are not interpreted.';
+  if (record.provider === 'jev' && stats.fallbacks) ui.runMeta.textContent += fallbackRate > .2 ? ' · heavy rules fallback' : ' · mixed Jev/rules decisions';
   if (record.status !== 'done') warnings.push(`This is a ${record.status} record; results may be partial.`);
   if (record.provider === 'rules') warnings.push('Offline rules baseline: actions are sampled from declared weights. Prose guidelines do not affect this run.');
   if (stats.fallbacks) warnings.push(`${stats.fallbacks} decisions fell back to rules. This record includes mixed decision providers.`);
@@ -192,20 +297,37 @@ async function openRun(id) {
   ].map(([label, value]) => { const node = el('div', '', 'metric'); node.append(el('b', number(value)), el('span', label)); return node; }));
   ui.roleFilter.replaceChildren(option('', 'All roles'), ...(record.spec?.roles || []).map(role => option(role.id, role.name)));
   ui.agentSelect.replaceChildren(option('', 'Choose an agent'), ...(result.agents || []).map(agent => option(agent.id, agent.name || agent.id)));
-  ui.scrubber.max = Math.max(0, (result.frames?.length || 1) - 1); ui.scrubber.value = 0;
+  setTimeline();
   ui.playBtn.disabled = !(result.frames?.length > 1); ui.scrubber.disabled = !(result.frames?.length > 1);
   if (state.download) URL.revokeObjectURL(state.download);
   state.download = URL.createObjectURL(new Blob([stringify(record)], { type: 'application/json' }));
   ui.downloadRun.href = state.download; ui.downloadRun.download = `${record.id}.json`;
   history.replaceState(null, '', `#run=${enc(record.id)}`);
-  renderFrame(); renderAgent();
+  controls(); renderFrame(); renderAgent();
 }
 function currentFrame() { return state.run?.result?.frames?.[state.frame]; }
 function renderFrame() {
   const frame = currentFrame();
-  if (!frame) { ui.workflow.replaceChildren(el('p', 'No frames were recorded.', 'help')); return; }
-  ui.scrubber.value = state.frame;
-  ui.tickLabel.textContent = `Tick ${frame.tick} / ${state.run.spec.ticks}`;
+  if (!frame) {
+    if (state.preview) renderer.draw(state.preview, { role: ui.roleFilter.value, colorBy: ui.colorBy.value });
+    else {
+      ui.resources.replaceChildren(el('p', 'No recorded resource state.', 'hint'));
+      ui.events.replaceChildren(el('li', 'No recorded frames.', 'hint'));
+      ui.worldState.textContent = '';
+      ui.eventCount.textContent = '';
+    }
+    return;
+  }
+  updateTimeline();
+  renderer.draw(frame, { role: ui.roleFilter.value, selectedAgent: state.agentId, colorBy: ui.colorBy.value });
+  const eventsSoFar = (state.run.result.events || []).filter(event => event.tick <= frame.tick);
+  ui.metrics.replaceChildren(...[
+    ['Agents', frame.agents.length],
+    ['Completed actions', eventsSoFar.filter(event => event.type === 'completed').length],
+    ['Finished agents', frame.agents.filter(agent => agent.status === 'terminal').length],
+    ['Blocked decisions', eventsSoFar.filter(event => event.type === 'blocked').length],
+    ...(state.run.result.metrics?.custom || []).map(metric => ['Final: ' + metric.label, metric.value])
+  ].map(([label, value]) => { const node = el('div', '', 'metric'); node.append(el('b', number(value)), el('span', label)); return node; }));
   ui.worldState.textContent = stringify(frame.world);
   ui.resources.replaceChildren(...(frame.resources || []).map(resource => {
     const node = el('div', '', 'resource-chip'), label = el('div', '', 'resource-label'), bar = el('progress');
@@ -214,25 +336,8 @@ function renderFrame() {
     bar.setAttribute('aria-label', `${resource.name || resource.id}: ${resource.used} of ${resource.capacity} reserved`);
     node.append(label, bar); return node;
   }));
-  const chosen = frame.agents.filter(agent => !ui.roleFilter.value || agent.role === ui.roleFilter.value);
-  const states = [...new Set([
-    ...(state.run.spec.roles || []).filter(role => !ui.roleFilter.value || role.id === ui.roleFilter.value).map(role => role.initialState),
-    ...(state.run.spec.actions || []).filter(action => !ui.roleFilter.value || !action.roles?.length || action.roles.includes(ui.roleFilter.value)).flatMap(action => [...action.from, action.to])
-  ])];
-  ui.workflow.replaceChildren(...states.map(name => {
-    const agents = chosen.filter(agent => agent.state === name), lane = el('div', '', 'state-lane'), heading = el('div', '', 'state-heading');
-    heading.append(el('span', name), el('b', agents.length)); lane.append(heading);
-    const grid = el('div', '', 'agent-grid');
-    for (const agent of agents.slice(0, 100)) {
-      const dot = el('button', agent.id.split('_').at(-1), `agent-dot ${agent.status}${agent.id === state.agentId ? ' selected' : ''}`);
-      dot.type = 'button'; dot.title = `${agent.id} · ${agent.status}${agent.action ? ` · ${agent.action}` : ''}`;
-      dot.setAttribute('aria-label', dot.title); dot.setAttribute('aria-pressed', agent.id === state.agentId ? 'true' : 'false');
-      dot.addEventListener('click', () => { state.agentId = agent.id; ui.agentSelect.value = agent.id; renderFrame(); renderAgent(); }); grid.append(dot);
-    }
-    if (agents.length > 100) grid.append(el('span', `+${agents.length - 100} more · choose an agent below`, 'agent-overflow'));
-    lane.append(grid); return lane;
-  }));
-  const events = (state.run.result.events || []).filter(event => event.tick <= frame.tick).slice(-80).reverse();
+  const events = eventsSoFar.slice(-80).reverse();
+  ui.eventCount.textContent = 'through tick ' + frame.tick;
   ui.events.replaceChildren(...events.map(event => {
     const item = el('li', '', event.type), content = el('div');
     content.append(el('span', `${event.agentId || 'Environment'} · ${event.type} ${event.action || ''}`));
@@ -269,23 +374,57 @@ function renderAgent() {
   if (!decisions.length) ui.decisions.append(el('p', 'No decisions for this agent through the selected tick.', 'help'));
 }
 
-ui.briefForm.addEventListener('submit', event => {
+async function startBuild(autoRun = false) {
+  if (!state.ready || state.job || state.pending) return;
+  if (!ui.description.value.trim()) { drawer(true); ui.description.focus(); throw new Error('Describe the environment you want to simulate.'); }
+  state.autoRun = autoRun; state.pending = true; controls(); message();
+  try {
+    const job = await api('environment-builds', { brief: brief(), backend: ui.backend.value, ...(ui.model.value.trim() ? { model: ui.model.value.trim() } : {}) });
+    state.pending = false;
+    await followJob({ ...job, type: 'build' });
+  } catch (error) { state.autoRun = false; throw error; }
+  finally { state.pending = false; controls(); }
+}
+async function startRun() {
+  if (!state.ready || state.job || state.pending || !state.artifact?.id || state.dirty) return;
+  for (const input of [ui.seed, ui.maxRequests]) if (!input.reportValidity()) { drawer(true); return; }
+  state.pending = true; controls(); message();
+  try {
+    const job = await api('environment-runs', { environmentId: state.artifact.id, provider: ui.provider.value, seed: Number(ui.seed.value), maxRequests: Number(ui.maxRequests.value) });
+    state.pending = false;
+    await followJob({ ...job, type: 'run' });
+  } finally { state.pending = false; controls(); }
+}
+ui.briefForm.addEventListener('submit', event => { event.preventDefault(); safely(() => startBuild(false))(); });
+ui.askForm.addEventListener('submit', event => {
   event.preventDefault();
   safely(async () => {
-    if (!ui.briefForm.reportValidity()) return;
-    message();
-    const job = await api('environment-builds', { brief: brief(), backend: ui.backend.value, ...(ui.model.value.trim() ? { model: ui.model.value.trim() } : {}) });
-    await followJob({ ...job, type: 'build' });
+    if (state.job || state.pending || !state.ready) return;
+    const prompt = ui.askIn.value.trim();
+    if (prompt) ui.description.value = prompt;
+    const changedBrief = JSON.stringify(brief()) !== state.briefSnapshot;
+    if (state.artifact && !changedBrief) {
+      if (state.dirty || !state.artifact.id) await save();
+      await startRun();
+    } else await startBuild(true);
   })();
 });
 ui.saveBtn.addEventListener('click', safely(save));
-ui.runBtn.addEventListener('click', safely(async () => {
-  if (!state.artifact?.id || state.dirty) return;
-  for (const input of [ui.seed, ui.maxRequests]) if (!input.reportValidity()) return;
-  message();
-  const job = await api('environment-runs', { environmentId: state.artifact.id, provider: ui.provider.value, seed: Number(ui.seed.value), maxRequests: Number(ui.maxRequests.value) });
-  await followJob({ ...job, type: 'run' });
-}));
+ui.runBtn.addEventListener('click', safely(startRun));
+ui.environmentBtn.addEventListener('click', () => drawer(ui.environmentDrawer.hidden));
+ui.editEnvironmentBtn.addEventListener('click', () => drawer(true));
+ui.drawerClose.addEventListener('click', () => drawer(false));
+ui.description.addEventListener('input', () => { ui.askIn.value = ui.description.value; });
+for (const input of [ui.description, ui.objectives, ui.guidelines, ui.constraints]) input.addEventListener('input', controls);
+ui.themeBtn.addEventListener('click', () => {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = state.theme;
+  ui.themeBtn.setAttribute('aria-label', state.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+  try { localStorage.setItem('scope-theme', state.theme); } catch {}
+  if (state.run) setTimeline();
+  renderFrame();
+});
+document.addEventListener('keydown', event => { if (event.key === 'Escape') drawer(false); });
 ui.cancelBtn.addEventListener('click', safely(async () => {
   if (!state.job) return;
   ui.cancelBtn.disabled = true;
@@ -299,34 +438,45 @@ ui.environmentSelect.addEventListener('change', safely(async () => {
   const artifact = await api(`environments/${enc(id)}`);
   if (ui.environmentSelect.value === id) { loadArtifact(artifact); message(); }
 }));
+function chooseExample(example) {
+  if (!example || state.job || state.pending || !state.ready) return;
+  loadArtifact({ spec: example.spec, source: 'example', warnings: [] });
+  ui.exampleSelect.value = example.id;
+  drawer(true); message('Example loaded. Review its rules, then press Simulate.');
+}
+ui.exampleSelect.addEventListener('change', () => chooseExample(state.examples.find(example => example.id === ui.exampleSelect.value)));
 ui.refreshBtn.addEventListener('click', safely(refreshLibraries));
 ui.runSelect.addEventListener('change', safely(async () => { if (ui.runSelect.value) { message(); await openRun(ui.runSelect.value); } }));
 ui.provider.addEventListener('change', controls); ui.backend.addEventListener('change', controls);
-ui.scrubber.addEventListener('input', () => { pause(); state.frame = Number(ui.scrubber.value); renderFrame(); });
 ui.roleFilter.addEventListener('change', renderFrame);
+ui.colorBy.addEventListener('change', renderFrame);
 ui.agentSelect.addEventListener('change', () => { state.agentId = ui.agentSelect.value; renderFrame(); });
-ui.playBtn.addEventListener('click', () => {
-  if (state.playing) { pause(); return; }
-  const last = (state.run?.result?.frames?.length || 1) - 1;
-  if (state.frame >= last) state.frame = 0;
-  ui.playBtn.textContent = 'Pause'; renderFrame();
-  state.playing = setInterval(() => { state.frame++; renderFrame(); if (state.frame >= last) pause(); }, 350);
-});
-window.addEventListener('pagehide', () => { pause(); clearTimeout(state.poll); if (state.download) URL.revokeObjectURL(state.download); });
+window.addEventListener('pagehide', () => { pause(); clearTimeout(state.poll); if (state.download) URL.revokeObjectURL(state.download); renderer.destroy(); });
 
 await safely(async () => {
-  const results = await Promise.allSettled([api('health'), api('environment-examples'), refreshLibraries()]);
-  if (results[0].status === 'fulfilled') state.health = results[0].value;
-  if (results[1].status === 'fulfilled') {
-    ui.examples.replaceChildren(...(results[1].value.examples || []).map(example => {
-      const button = el('button', `${example.title} ↗`, 'example-button'); button.type = 'button';
+  controls();
+  state.health = await api('health');
+  if (!state.health.capabilities?.environments) {
+    message('This server is running an older version. Restart npm run serve, then reload.', true);
+    ui.examples.replaceChildren(el('p', 'Restart the server to load environments.', 'hint'));
+    drawer(false); return;
+  }
+  state.ready = true;
+  ui.provider.value = state.health.jev ? 'jev' : 'rules';
+  const results = await Promise.allSettled([api('environment-examples'), refreshLibraries()]);
+  if (results[0].status === 'fulfilled') {
+    state.examples = results[0].value.examples || [];
+    ui.exampleSelect.replaceChildren(option('', 'Choose an example'), ...state.examples.map(example => option(example.id, example.title)));
+    ui.examples.replaceChildren(...state.examples.map(example => {
+      const button = el('button', '', 'environment-case'); button.type = 'button';
+      const icon = el('span', '↗', 'case-icon'); icon.setAttribute('aria-hidden', 'true');
+      button.append(icon, el('b', example.title), el('small', 'Inspect the definition · run with rules or Jev'));
       button.addEventListener('click', () => {
-        if (state.job) { message('Wait for the current operation to finish or cancel it first.'); return; }
-        loadArtifact({ spec: example.spec, source: 'example', warnings: [] });
-        message('Example loaded. Inspect or edit it, then validate & save to run without a key.');
+        if (state.job || state.pending) { message('Wait for the current operation to finish or cancel it first.'); return; }
+        chooseExample(example);
       }); return button;
     }));
-  } else ui.examples.replaceChildren(el('span', 'Examples could not be loaded.', 'help'));
+  } else ui.examples.replaceChildren(el('span', 'Examples could not be loaded.', 'hint'));
   const failures = results.filter(result => result.status === 'rejected');
   if (failures.length) message(failures.map(result => result.reason.message).join('\n'), true);
   controls();

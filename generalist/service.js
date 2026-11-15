@@ -136,6 +136,7 @@ export function createEnvironmentService({ root = process.cwd(), builder = build
     const record = { type, controller, promise: null };
     jobs.set(job.id, job); active.set(job.id, record); PROCESS_JOBS.add(job.id);
     record.promise = (async () => {
+      let outcome = 'done';
       try {
         await init();
         controller.signal.throwIfAborted();
@@ -144,14 +145,17 @@ export function createEnvironmentService({ root = process.cwd(), builder = build
         const result = await work({ job, signal: controller.signal, onProgress: progress });
         // Work checks cancellation before committing artifacts. A late cancel during the final
         // atomic write must not relabel an already saved successful run as cancelled.
-        Object.assign(job, result, { status: 'done' });
+        Object.assign(job, result);
       } catch (error) {
-        job.status = controller.signal.aborted || error.name === 'AbortError' ? 'cancelled' : 'error';
-        job.error = job.status === 'cancelled' ? 'Job cancelled.' : error.message;
+        outcome = controller.signal.aborted || error.name === 'AbortError' ? 'cancelled' : 'error';
+        job.error = outcome === 'cancelled' ? 'Job cancelled.' : error.message;
         if (error.errors) job.errors = error.errors;
       } finally {
-        job.finishedAt = now();
-        try { await persist(job); } catch (error) { job.status = 'error'; job.error = `Could not persist job: ${error.message}`; }
+        const finished = { ...job, status: outcome, finishedAt: now() };
+        // Publish completion only after the record is durable and the slot can be released.
+        // Otherwise a client observing "done" can immediately hit a spurious "already active".
+        try { await persist(finished); Object.assign(job, finished); }
+        catch (error) { job.status = 'error'; job.error = `Could not persist job: ${error.message}`; }
         active.delete(job.id);
         PROCESS_JOBS.delete(job.id);
         for (const [key, old] of jobs) {

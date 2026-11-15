@@ -16,7 +16,7 @@ const valid = () => ({
 });
 const brief = { description: 'An insurance claims workflow.', guidelines: ['Never invent source data.'], objectives: 'Measure reviewed claims.', constraints: 'One reviewer.' };
 
-function fakeSpawn(replies, { stalled = false, exitCode = 0, chunkSize = Infinity } = {}) {
+function fakeSpawn(replies, { stalled = false, exitCode = 0, chunkSize = Infinity, stderr = '' } = {}) {
   const calls = [];
   function spawn(executable, args, options) {
     const call = { executable, args, options, prompt: '', signals: [] };
@@ -33,6 +33,7 @@ function fakeSpawn(replies, { stalled = false, exitCode = 0, chunkSize = Infinit
           const reply = replies[Math.min(calls.length - 1, replies.length - 1)];
           const bytes = Buffer.from(typeof reply === 'string' ? reply : JSON.stringify(reply));
           for (let at = 0; at < bytes.length; at += chunkSize) child.stdout.write(bytes.subarray(at, at + chunkSize));
+          if (stderr) child.stderr.write(stderr);
           child.stdout.end(); child.emit('close', exitCode);
         });
       }
@@ -96,7 +97,7 @@ test('headless backend fixes permissions, tools and settings and sends user data
   assert.equal(call.executable, '/test/claude');
   assert.equal(call.options.shell, false);
   assert.notEqual(call.options.cwd, process.cwd());
-  for (const option of ['--print', '--safe-mode', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence']) assert.ok(call.args.includes(option));
+  for (const option of ['-p', '--safe-mode', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence']) assert.ok(call.args.includes(option));
   assert.equal(call.args[call.args.indexOf('--tools') + 1], '');
   assert.equal(call.args[call.args.indexOf('--setting-sources') + 1], '');
   assert.equal(call.args[call.args.indexOf('--permission-mode') + 1], 'dontAsk');
@@ -123,6 +124,24 @@ test('headless output preserves Unicode when a character crosses pipe chunks', a
   const { spawn } = fakeSpawn([{ structured_output: spec }], { chunkSize: 1 });
   const result = await buildEnvironment(brief, { spawn });
   assert.equal(result.spec.title, '索赔审核');
+});
+
+test('known Claude login failures are actionable and diagnostics never reach the error', async () => {
+  for (const failure of [
+    { output: '', stderr: 'Not logged in · Please run /login. Credential-debug: SECRET-123' },
+    { output: { is_error: true, result: 'Authentication required. Private value SECRET-123' }, stderr: '' }
+  ]) {
+    const { spawn, calls } = fakeSpawn([failure.output], { exitCode: 1, stderr: failure.stderr });
+    await assert.rejects(buildEnvironment(brief, { spawn }), error => {
+      assert.equal(error.code, 'BUILDER_AUTH_REQUIRED');
+      assert.match(error.message, /claude auth login/);
+      assert.ok(!error.message.includes('SECRET-123'));
+      return true;
+    });
+    assert.equal(calls.length, 1);
+  }
+  const unknown = fakeSpawn([''], { exitCode: 1, stderr: 'Transport-specific internal failure SECRET-123' });
+  await assert.rejects(buildEnvironment(brief, { spawn: unknown.spawn }), error => error.code === 'BUILDER_FAILED' && !error.message.includes('SECRET-123') && !error.message.includes('no usable authentication'));
 });
 
 test('headless timeouts and cancellation terminate the child and remove its temporary workspace', async () => {

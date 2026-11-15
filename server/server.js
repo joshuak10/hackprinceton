@@ -51,11 +51,11 @@ async function lib(path) {
 }
 
 // `roomFetch` stands in for the network on the Ask-the-room route, so its live path can be tested without Jev.
-export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch, environmentOptions } = {}) {
+export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch, environmentOptions, rootRedirect = null } = {}) {
   const base = resolve(root);
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
-    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null,
+    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null, rootRedirect,
     roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomChain: Promise.resolve(), roomWaiting: 0, roomFetch
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
@@ -129,7 +129,14 @@ function environmentEndpoint(operation, status = 200) {
 async function handle(ctx, req, res) {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/walls.js') return serveWalls(ctx, req, res);
-  if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url.pathname);
+  if (!url.pathname.startsWith('/api/')) {
+    if (url.pathname === '/' && ctx.rootRedirect && ['GET', 'HEAD'].includes(req.method)) {
+      res.writeHead(302, { Location: ctx.rootRedirect, 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+    const environmentView = ['/scope', '/scope/'].includes(url.pathname) && url.searchParams.get('mode') === 'environment';
+    return serveStatic(req, res, environmentView ? '/studio/index.html' : url.pathname);
+  }
   const parts = url.pathname.slice(5).split('/').map(decodeSegment);
   const allowed = [];
   for (const [method, pattern, handler] of ROUTES) {
@@ -265,7 +272,10 @@ async function serveWalls(ctx, req, res) {
 // ---------- worlds ----------
 
 function getHealth(ctx, req, res) {
-  send(res, 200, { ok: true, insights: true, jev: hasKey('TYPESAFE_API_KEY'), claude: hasKey('ANTHROPIC_API_KEY') });
+  send(res, 200, {
+    ok: true, insights: true, jev: hasKey('TYPESAFE_API_KEY'), claude: hasKey('ANTHROPIC_API_KEY'),
+    capabilities: { environments: 1, spatialWorlds: 1 }
+  });
 }
 
 async function postInsights(ctx, req, res) {

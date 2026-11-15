@@ -5,13 +5,22 @@ Users supply the environment, guidelines, objectives and constraints. Claude bui
 definition; Jev chooses actions for each actor; the runtime owns every state mutation and resource
 reservation. The existing spatial crowd engine remains separate and compatible.
 
-## Start in the Studio
+## Start in Scope
 
-Run `npm install`, then `npm run serve` and open `http://127.0.0.1:4173/studio/`.
+Run `npm install`, then `npm run serve` and open `http://127.0.0.1:4173/scope/?mode=environment`.
+Custom environments reuse the original Scope layout and theme: prompt bar, canvas, right-hand
+metrics and incidents, and playback timeline. Definition editing and guidelines live in the
+Environment drawer. `/studio/` opens the same interface. Workflow states are drawn as a logical
+layout, not as an inferred floor plan; physical cases still use their existing geometry.
 Build from a brief, use a bundled example, or import a definition. Inspect the roles, resources,
 action graph and assumptions before running. Choose Jev for language-driven decisions or rules
 for an offline baseline. Jobs report real progress and can be cancelled. Saved runs provide
 state playback and individual decision inspection without further model calls.
+
+The health endpoint advertises `capabilities.environments: 1`. If the frontend detects an older
+server, it asks you to restart `npm run serve` and reload. Both `npm run serve` (4173) and
+`npm run web` (4174) provide the full API. Reloading a page cannot update a Node process that was
+started before its routes changed.
 
 The included environments demonstrate two unrelated domains:
 

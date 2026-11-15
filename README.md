@@ -2,11 +2,11 @@
 
 **Define the environment. Claude builds it. Jev agents make the decisions.**
 
-Swarmscope now supports user-defined workflow environments as well as its existing crowd simulations. Describe a situation, guidelines, objectives and constraints; headless Claude writes a validated environment with roles, shared state, resources, actions and metrics. Jev chooses each agent's actions, while the deterministic runtime enforces conditions and capacity. The Studio records and replays what happened, including the inputs and probabilities behind each decision. Incident response and warehouse fulfillment are included as examples.
+Swarmscope now supports user-defined workflow environments as well as its existing crowd simulations. Describe a situation, guidelines, objectives and constraints; headless Claude writes a validated environment with roles, shared state, resources, actions and metrics. Jev chooses each agent's actions, while the deterministic runtime enforces conditions and capacity. The Scope interface records and replays what happened, including the inputs and probabilities behind each decision. Incident response and warehouse fulfillment are included as examples.
 
 The original visit/route engine remains available for places, queues, roads, buildings and restaurants, including walls, floor plans, seats and crowd-specific reports. The new general engine models bounded workflows; it does not generate arbitrary executable code or pretend to simulate unsupported mechanics. See [the general engine guide](docs/GENERALIST.md) for the contract and limits.
 
-## General environment Studio
+## Custom environments in Scope
 
 Requires Node 22 or newer. Install dependencies and start the local application:
 
@@ -15,9 +15,11 @@ npm install
 npm run serve
 ```
 
-Open **http://127.0.0.1:4173/studio/**. Describe your environment and guidelines, build with Claude, inspect the definition and assumptions, and run the agents. You can also load an included example or import environment JSON without a model call.
+Open **http://127.0.0.1:4173/scope/?mode=environment**. It uses the same Scope layout as the physical simulations: prompt bar, simulation canvas, right sidebar and playback timeline. Describe your environment, set guidelines in the Environment drawer, build with Claude, inspect the definition and run the agents. You can also load an included example or import environment JSON without a model call. `/studio/` remains an alias for this interface.
 
-The default builder uses the installed, authenticated **Claude Code CLI** in headless mode with tools disabled. Alternatively select the Anthropic API backend and set `ANTHROPIC_API_KEY` in `.env.local`. Jev runs need `TYPESAFE_API_KEY`; the seeded rules baseline works offline. Optional `SWARM_CLAUDE_BIN` and `SWARM_BUILDER_MODEL` configure the builder.
+The default builder uses the installed, authenticated **Claude Code CLI** via `claude -p`, with tools disabled. Sign in with `claude auth login` if needed. Alternatively select the Anthropic API backend and set `ANTHROPIC_API_KEY` in `.env.local`. Jev runs need `TYPESAFE_API_KEY`; the seeded rules baseline works offline. Optional `SWARM_CLAUDE_BIN` and `SWARM_BUILDER_MODEL` configure the builder.
+
+After pulling backend changes, restart the running server. Browser reloads alone refresh the page files, not Node's API routes. `npm run web` also serves the full application and API on port 4174.
 
 ```sh
 # Free example, with a persisted decision trace

@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.27 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.28 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Direction (Nov 14, v0.27):** Swarmscope is a **general environment simulation engine**. Users define an environment, objectives and guidelines; headless Claude builds a validated declarative environment; individual Jev agents choose actions while the engine enforces state transitions, shared resource capacities and conditions. Independent businesses and physical crowds remain examples, rather than the product boundary. The legacy physical engine remains governed by [docs/PROTOTYPE.md](docs/PROTOTYPE.md); the new workflow contract lives in `generalist/schema.json` and `docs/GENERALIST.md`.
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
@@ -22,6 +22,8 @@
 Swarmscope accepts a user's environment, objectives, guidelines and constraints. Headless Claude builds a validated declarative workflow: roles, actor goals, shared state, resource capacities, timed actions and metrics. **Jev**, TypeSafe's structured-decision model, chooses an action for each actor; deterministic code enforces eligibility, capacity and state changes. Definitions and decision traces remain inspectable. This general engine supports bounded operational workflows such as incident response and fulfillment; it does not execute arbitrary generated code. The earlier physical engine still answers questions such as "which ER gets overwhelmed on a Friday night?" using places, queues, routes and people. Historical physical-engine plans, including the optimizer, remain below.
 
 ### Decisions to date
+
+- **Scope continuity (Nov 14, v0.28):** general environments reuse the existing Scope presentation: prompt bar, simulation canvas, right-hand metrics and incidents, playback timeline, theme, and a details drawer. The separate card-based Studio presentation is superseded. Logical workflow positions are labeled as such rather than invented physical geometry. Custom environments and original spatial cases share the product's visual format. Headless generation uses the explicit `claude -p` invocation. Server health advertises environment capabilities so a stale process produces a useful restart instruction instead of missing-endpoint errors.
 
 - **Generalist direction (Nov 14, v0.27):** supersedes the v0.24 audience restriction. Add a separate versioned workflow environment contract and runtime alongside physical visit/route worlds. Environment definitions contain roles, scalar world and actor state, actions, durations, resource reservations, conditions, effects and metrics. User guidelines are behavioral context; hard constraints must be represented as executable declarative conditions and resource limits. Generated JavaScript is never executed. Headless Claude Code runs without tools in an isolated working directory, with bounded output, time and repair attempts; an Anthropic API backend is also available. Persist the brief, definition, assumptions, build metadata and per-agent decision traces. A Studio provides build, inspect, edit, run and replay; a rules provider makes this flow usable offline. Results remain exploratory, not forecasts. Existing demos and physical runs remain available.
 
@@ -418,6 +420,14 @@ Pitch lines:
 ---
 
 ## 14. Change log
+
+### v0.28 · Nov 14, 2026 · Reuse Scope and verify headless generation
+
+- Respond to the requested UI continuity by reusing Scope's existing shell, colors, typography, sidebar and timeline for custom environments, with setup in a drawer.
+- Keep physical visit/route definitions and general workflow definitions distinct internally; do not depict logical states as measured floor plans.
+- Use `claude -p` explicitly and verify the local headless generation path. Preserve provider authentication without loading customization hooks or granting model tools.
+- Advertise API capabilities and restart the outdated local server that was serving new frontend files with old routes.
+- Make both local server entrypoints expose the same APIs; publish terminal job states only after their records are saved and their execution slots are available.
 
 ### v0.27 · Nov 14, 2026 · General environment engine
 

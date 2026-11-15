@@ -140,7 +140,7 @@ export async function cmdEnvironmentRun([file], flags, {
         out(`${artifact.spec.title} · ${provider} · seed ${seed}`);
         out(`Run: ${meta.id ?? meta.runId ?? job.runId ?? job.id}`);
         out(JSON.stringify(result.metrics, null, 2));
-        out(`Replay in the Studio: /studio/`);
+        out(`Replay in Scope: /scope/?mode=environment`);
       }
       return 0;
     });

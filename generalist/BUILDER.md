@@ -17,16 +17,26 @@ Two backends are available:
   `SWARM_CLAUDE_BIN` can point to an executable; `SWARM_BUILDER_MODEL` selects a model. Without a
   model override Claude Code chooses its default. Explicitly configured provider credentials must
   be supplied through the environment, because user/project settings are disabled for this job.
+  Check login with `claude auth status`; use `claude auth login` if it reports no authentication.
+  A Claude Code subscription login works without a separate `ANTHROPIC_API_KEY`.
 - `anthropic`: uses `ANTHROPIC_API_KEY` and the repository's existing compiler model default,
   overridable by `model` or `SWARM_BUILDER_MODEL`.
 
-The Claude Code command uses `--print --output-format json --json-schema …`, with safe mode,
+The Claude Code command uses `claude -p --output-format json --json-schema …`, with safe mode,
 an empty tool list, disabled slash commands, no loaded settings, an empty strict MCP config,
 `dontAsk` permission mode, and no session persistence or Chrome connection. It starts in a fresh
 temporary directory and receives the brief through stdin. No shell interpolation, generated
 program execution, permission bypass, user-provided executable, or user-provided CLI flags are
 accepted through the application API. These flags were verified with the installed CLI's help;
 older Claude Code versions without them must be upgraded.
+
+The integration invokes the installed CLI directly through `spawn('claude', ['-p', ...])`; it does
+not use the Claude Code bridge or substitute an API call when `claude-code` is selected.
+
+Development verification launched this exact headless path with Claude Code 2.1.286 and a tiny
+two-actor brief. The CLI started but the development machine had no Claude login or provider
+credentials, so live environment generation remains unverified there until sign-in. Offline tests
+cover structured replies, repair, missing-login diagnostics, cancellation and process limits.
 
 Each attempt has a three-minute timeout (programmatic maximum five minutes). The CLI output is
 capped at 2 MB, diagnostics at 64 KB. Cancellation or limits terminate the process group; temporary

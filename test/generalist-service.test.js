@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTimeout as pause } from 'node:timers/promises';
+import { setTimeout as pause, setImmediate as nextTurn } from 'node:timers/promises';
 import { createEnvironmentService } from '../generalist/service.js';
 
 const spec = JSON.parse(await readFile(new URL('../environments/incident-response.json', import.meta.url), 'utf8'));
@@ -89,6 +89,23 @@ test('invalid generated environments fail without saving an artifact', async t =
   assert.equal(job.status, 'error');
   assert.match(job.error, /invalid/);
   assert.deepEqual(await service.listEnvironments(), []);
+});
+
+test('a terminal job is durable and immediately permits the next build', async t => {
+  const { root, service } = await fixture(t, { builder: async () => { throw new Error('fixture failure'); } });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const started = service.build({ brief: { description: 'test retry' } });
+    let job;
+    for (let poll = 0; poll < 10000; poll++) {
+      job = await service.getJob(started.id);
+      if (job.status === 'error') break;
+      await nextTurn();
+    }
+    assert.equal(job.status, 'error');
+    const saved = JSON.parse(await readFile(join(root, 'data', 'environment-jobs', `${job.id}.json`), 'utf8'));
+    assert.equal(saved.status, 'error');
+    assert.equal(saved.finishedAt, job.finishedAt);
+  }
 });
 
 test('failed runs retain partial state and reject concurrent runs', async t => {

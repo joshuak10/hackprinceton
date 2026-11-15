@@ -72,11 +72,20 @@ class OutputError extends Error {
   constructor(message) { super(message); this.code = 'INVALID_BUILDER_OUTPUT'; }
 }
 
+// Match only known authentication failures. Never return model output or CLI diagnostics: either
+// can contain keys, file paths or other sensitive context. Unknown failures keep a generic error.
+function authenticationFailure(text) {
+  if (!/(?:not logged in|please (?:log|sign) in|(?:run|use)\s+["'`]*(?:claude\s+auth\s+login|\/login)|authentication required|no (?:api key|authentication|credentials)|missing (?:required )?(?:anthropic[_ ]?)?api[_ ]?key)/i.test(text)) return null;
+  return fail('Claude Code has no usable authentication. Run "claude auth login", or configure credentials for your selected provider, then build again.', 'BUILDER_AUTH_REQUIRED');
+}
+
 function parseClaudeOutput(text) {
   let envelope;
   try { envelope = JSON.parse(text); } catch { throw new OutputError('Claude returned invalid JSON.'); }
   if (!object(envelope)) throw new OutputError('Claude returned no structured environment.');
   if (envelope.is_error || (envelope.type === 'result' && envelope.subtype && envelope.subtype !== 'success')) {
+    const auth = authenticationFailure(text);
+    if (auth) throw auth;
     throw fail('Claude did not finish the build. Check its authentication, model availability and output budget.', 'BUILDER_FAILED');
   }
   if (object(envelope.structured_output)) return envelope.structured_output;
@@ -93,7 +102,7 @@ async function claudeCodeGenerate({ prompt, schema, model, signal, timeoutMs, sp
   const cwd = await mkdtemp(join(tmpdir(), 'swarmscope-builder-'));
   try {
     const args = [
-      '--print', '--output-format', 'json', '--json-schema', JSON.stringify(schema),
+      '-p', '--output-format', 'json', '--json-schema', JSON.stringify(schema),
       '--safe-mode', '--setting-sources', '', '--tools', '', '--disable-slash-commands',
       '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
       '--permission-mode', 'dontAsk', '--no-session-persistence', '--no-chrome',
@@ -101,7 +110,7 @@ async function claudeCodeGenerate({ prompt, schema, model, signal, timeoutMs, sp
     ];
     if (model) args.push('--model', model);
     const output = await new Promise((resolve, reject) => {
-      let child, timer, forceTimer, settled = false, failure = null, stdout = '', outputBytes = 0, errorBytes = 0;
+      let child, timer, forceTimer, settled = false, failure = null, stdout = '', diagnostics = '', outputBytes = 0, errorBytes = 0;
       const clear = () => {
         clearTimeout(timer); clearTimeout(forceTimer);
         signal?.removeEventListener('abort', onAbort);
@@ -138,7 +147,7 @@ async function claudeCodeGenerate({ prompt, schema, model, signal, timeoutMs, sp
       child.once('error', () => finish(fail('Could not start Claude Code. Install it or set SWARM_CLAUDE_BIN to its executable path.', 'BUILDER_UNAVAILABLE')));
       child.once('close', code => {
         if (failure) return finish(failure);
-        if (code !== 0) return finish(fail(`Claude Code exited with code ${code ?? 'unknown'}. Check Claude authentication and model configuration.`, 'BUILDER_FAILED'));
+        if (code !== 0) return finish(authenticationFailure(stdout + '\n' + diagnostics) || fail(`Claude Code exited with code ${code ?? 'unknown'}. Check authentication with "claude auth status" and verify the configured model.`, 'BUILDER_FAILED'));
         finish(null, stdout);
       });
       // UTF-8 characters may straddle OS pipe chunks (including names and non-English briefs).
@@ -152,6 +161,7 @@ async function claudeCodeGenerate({ prompt, schema, model, signal, timeoutMs, sp
         // Do not expose subprocess diagnostics: they can contain credentials or machine paths.
         errorBytes += Buffer.byteLength(chunk);
         if (errorBytes > MAX_STDERR_BYTES) stop(fail('Claude diagnostics exceeded the build limit.', 'BUILDER_OUTPUT_LIMIT'));
+        else diagnostics += chunk.toString();
       });
       child.stdin.on('error', () => stop(fail('Could not send the brief to Claude Code.', 'BUILDER_FAILED')));
       timer = setTimeout(() => stop(fail(`Claude build timed out after ${timeoutMs} ms.`, 'BUILDER_TIMEOUT')), timeoutMs);
