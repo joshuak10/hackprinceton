@@ -485,6 +485,51 @@ The owner's view: try one change on simulated customers and see whether it helpe
 
 **Screens.** A 13-inch laptop, Chrome full screen, about 1280×832 and up. Light theme by default; dark is a toggle. No mobile layout. This overrides the 390 px target in §9 for this display only.
 
+### 9c. Tell Jev what just happened, and ask again (Nov 15)
+
+**Why.** A judge has to see that a person's answer comes from who they are and how their evening is going, and that nobody wrote a rule for it. Reading a recorded choice shows one example. Changing the person's evening in your own words and watching the answer move shows it cannot have been written ahead of time.
+
+**What the viewer does.** Open a person (a dot on the map, or "See this person" from an incident). Under their details is "Tell Jev what just happened, and ask again", with the moment asked about ("At 7:03 pm: Just reached Table. The line is long, about 40 min."), a text box and three ready sentences (a kindness, a slight, a pull from elsewhere). On Ask again the box shows:
+- the sentence, and a headline for the answer that moved most, such as "Comes back next week: 29% without your sentence, 45% with it. More likely by 16 points.";
+- how they feel, in one word each way: "Feels impatient without it, touched with it.";
+- **Stays to eat here tonight**, without the sentence and with it;
+- then, without another click, **the same sentence for every kind of diner**: one of each, each at their own moment, listed with who they are, the largest change first, and greyed where the change is inside noise. Who moves and who does not is the evidence that Jev reads the person. When the sentence hardly moved the person who is open, a line says who it mattered to most ("It mattered most to Claire Dubois (brought her two children after a swim meet): 85% without it, 51% with it.").
+
+The headline is always tonight's answer. "Comes back next week" is still answered by the server when a pool is named, and is not shown: a second round of judges (below) found it the least believable number.
+
+A change of 10 points or more is stated plainly, 5 to 9 is "a small change, and it can be chance", under 5 is "no real change". On Nov 15 some 20 repeats of unchanged versions stayed within 4 points of each other. While a person is open the verdict panel steps aside, so the person has the whole side panel.
+
+**What is asked.** `POST /api/runs/:id/agents/:agentId/ask` with `{ decision, today, pool? }` reads that choice from the run's `decisions.jsonl` and sends Jev two or four requests (`run/ask-again.js`), all now:
+- **Tonight, three times each way** (`REPEATS`), each by a provider of its own so no answer is reused. The chance shown is their mean, and the feeling is the word most of them gave; with three different words no feeling is shown. What the person was told at that moment, with `Just now: <sentence>.` added to `now`, against the same with `Just now: Nothing else has happened.` The question is `stay_tonight` ("Does the person stay to eat here tonight?"), with their frustration and `feeling_now`, one word from `FEELING_WORDS` (content, relieved, touched, hopeful, impatient, worried, embarrassed, sad, hurt, angry).
+- **Next week, twice**, when `pool` names the place's pool of diners. The morning question of §20 for the same cast member, whose one memory is this evening as it went for them in the run ("found people waiting for a seat at the sushi restaurant and left without eating"), followed by the sentence or by "Nothing else happened that evening."
+- The two versions of each differ only in that last sentence, and the options go in the same order. Nothing is written. A few hundredths of a cent.
+
+**Three decisions, from a first version judged on Nov 15.** Three judges (a hackathon judge, a sceptical engineer, a restaurant owner) typed about 250 sentences of their own into a first version that re-asked the recorded question ("Join the line at Table?") against the recorded request unchanged. All three were convinced a model reads the person (9, 9 and 8 of 10). They scored "feelings drive decisions" 5, 5 and 4, and found three faults, each fixed here:
+- **Good news read as a walk-away.** "The host says your table is ready" lowered "join the line?" by about 30 points, because a person with a table does not join a line. Asking whether they stay to eat removes it: the same sentence now raises staying by 17 points and coming back by 19.
+- **Any sentence at all raised the answer by about 5 points.** The unchanged version now ends with a neutral sentence of the same shape. A pigeon on the awning now moves nobody by more than 2 points, and a babysitter's text no longer moves a student who has no babysitter.
+- **Feeling was one scale of annoyance.** Grief and tenderness came out as "mildly annoyed". Jev is now asked for the feeling in one word.
+
+**What it shows now** (one run of each, jev-1.14.0, sizes not validated). For Julian Reyes ("Tenth anniversary tonight. The babysitter leaves at nine."), facing a 40-minute line:
+
+| Sentence | Stays tonight | Comes back next week | Feels |
+|---|---|---|---|
+| The host apologises warmly and brings two glasses of sparkling wine for their anniversary | +13 | +17 | impatient to touched |
+| The host says their table is ready | +17 | +19 | impatient |
+| The babysitter texted that she can stay as late as they like | +15 | +5 | impatient to relieved |
+| The host laughs when he mentions it is their anniversary | −1 | −8 | impatient |
+| A pigeon lands on the awning across the street | +2 | 0 | impatient |
+
+- **Feelings are read, and move the answer less than circumstances do.** Walter Brandt, a widower, told "today would have been their forty-fifth wedding anniversary" feels sad and stays just the same (+1). Told nobody recognises him, he feels hurt and is 6 points less likely to stay. A table, a time limit or a price moves people by 15 to 47 points. The claim this supports is that each person's situation and feelings shape the answer in a way no table could cover, with situation the larger part.
+- **Where the sentence goes** was checked first (36 requests): added to who the person is ("Today: …" at the end of `about`) it moved answers by under 10 points; added to `now` the same sentences moved them further in the same direction.
+- **A second round of three judges** tried this version with their own sentences: feelings 6, 7 and 7 of 10 (from 5, 5, 4), not hard-coded 8, 9, 8, the demo 6, 7, 7, all "good", none "very good". They confirmed the three faults gone. What they still found, and what was done:
+  - "Comes back next week" rose by 34 points for "the restaurant closes for good tomorrow", and regulars start at 40%. It is no longer shown on the page.
+  - The feeling word flipped between asks of the same unchanged question. Each version is now asked three times and the majority word shown.
+  - A judge's own sentence can leave the open person unmoved, which is a flat ending. Every kind of diner is now asked straight away, with a line naming who it mattered to most.
+  - Still true: a pure feeling (a hand squeeze, a memory) changes the feeling word and leaves the choice inside noise, and Jev does not commit at the extremes (a ready table is about 90%, not 99%).
+- `[open]` The come-back answer uses one memory and a fixed history of visits, not the person's place in a multi-day run.
+
+**Code.** `run/ask-again.js` (the requests), `providers/jev.js` (`stay_tonight`, `feeling_now`), `server/server.js` (`postAskAgain`), `web/scope/lib/ask-again.js` (which moment, and the words), `web/scope/lib/ask-panel.js` (the box, one node kept across redraws so typing survives the replay), `web/scope/app.js` (`drawInspector`, `askEveryone`). Test: `test/ask-again.test.js`.
+
 ## 10. Compile, schema, slash command, MCP
 
 - `worlds/SCHEMA.md`: the world format for humans and Claude. Every field with type, range and default, both modes, how to write a good cast (10–20 people with concrete situations, constraints, loyalties, who they listen to, app or not), how to set patience and `needs`/`tags`, and one compact example per mode. `worlds/schema.json`: the same as JSON Schema (draft 2020-12), used as the Claude tool input schema.
@@ -1432,3 +1477,26 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 **A result that is not saved on this computer** says so and shows the command, for example `node bin/swarm.js days pools/sushi-restaurant.json --days 8 --seeds 3 --provider jev --change seats+2 --out data/days/seats.json`. All four at once: `--change promo20,seats+2,faster15,sorry --out data/days/sushi-all.json` (about 43 cents and 11,000 Jev requests). Results are saved per computer, so a teammate's numbers differ a little: Jev does not answer the same question the same way twice.
 
 **Code.** `run/days-saved.js` (reading and merging), `server/server.js` (`getDays`), `web/scope/lib/loyalty.js` (the words and the table, no DOM), `web/scope/lib/verdict-panel.js` (`choices`, `saved`), `web/scope/app.js` (`showChoices`, `showSaved`). Tests: `test/server-days.test.js`, `test/loyalty.test.js`.
+
+### 21g. The owner's view (Nov 15)
+
+**Decision (Ryan).** The sushi page showed too much for a business owner, and mixed time scales: one evening on the map, two months in the panel. It now opens on an owner's view with one period for the whole screen.
+
+**What is on the screen.**
+- **Over:** one control sets the period for everything: 1 Friday, 2 Fridays, 1 month, 2 months (as far as the saved runs go; a place open every day gets 1 day, 1 week, 2 weeks, 1 month, 2 months).
+- **Try:** one change at a time: More seats, Faster meals, Sorry card.
+- **One sentence**, stating only what every run agrees on: "Over 2 months, two more seats means $1,132 more revenue and 32 more customers seated."
+- **Two columns, Today and With the change, four numbers each:** revenue, customers seated, average stay (the wait for a seat plus the meal), and returning customers as a share of the people seated. Under each number on the right is the change, or "about the same" when the runs disagree or nothing shows.
+- **The left side follows the period.** For 1 Friday it is the map with the evening's replay. For anything longer a chart takes its place and the replay controls step aside: one pair of bars per evening, today and with the change, stacked as returning customers, new customers and people turned away.
+- **People on the map are coloured by new or returning customer**, not by what they are doing (View still offers the other colourings).
+- **Everything else is one step away:** "Show the evening in detail" brings back the live counts, bottlenecks and incidents; "See the promotion test" (or "Test a promotion") opens the earlier panel, with "Back to the comparison".
+- In the person view, the ask-again box (§9c) shows the sentence's effect in one line and the list of diners, without the table and the notes.
+
+**Where the numbers come from.** `GET /api/days` now also returns, for each saved change, `series` (per run and per day, before and after: `seated`, `fresh`, `away`, `revenue`, `waited`), `meal` (the average meal in minutes across the business's seats, before and after) and, once for the pool, `newcomers`.
+- All of it is from the saved runs of the multi-day loop (§21), so every period is the first n evenings of the same runs.
+- **A new customer** is one of a kind the pool marks `newcomer` (a first date, a walk-in, a student treating herself). The map and the numbers use the same rule, so the picture and the percentage agree. It is an assumption of the pool, like its visit rates; a first visit in the strict sense is rarer (about 1 a Friday).
+- **Average stay** is the minutes waited by the people seated, divided by them, plus the meal. The meal is the world's service time averaged over the seats, with the change applied to the first place (two more seats, or 15% quicker).
+- **Revenue** is what the people seated paid in the runs.
+- The replay on the map for 1 Friday is one recorded evening, not the first evening of the loop, so its live counts (hidden by default) differ a little from the panel.
+
+**Code.** `run/days-saved.js` (`daySeries`, `mealMinutes`), `web/scope/lib/owner.js` (periods, totals, words; no DOM), `web/scope/lib/owner-panel.js` (the panel and the chart), `web/scope/app.js` (`showOwner`, `ownerLayout`), `web/scope/lib/render.js` (`colorBy: 'customer'`). Tests: `test/owner.test.js`, `test/server-days.test.js`.

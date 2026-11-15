@@ -107,6 +107,7 @@ const ROUTES = [
   ['POST', ['runs'], postRun],
   ['GET', ['runs', ':id', 'status'], getStatus],
   ['GET', ['runs', ':id', 'agents', ':agentId'], getAgent],
+  ['POST', ['runs', ':id', 'agents', ':agentId', 'ask'], postAskAgain],
   ['GET', ['runs', ':id', 'advice'], getAdvice],
   ['GET', ['runs', ':id', ':file'], getRunFile]
 ];
@@ -473,7 +474,7 @@ async function getDays(ctx, req, res) {
   const pool = new URL(req.url, 'http://localhost').searchParams.get('pool') || '';
   const { savedDays, validPool } = await lib('../run/days-saved.js');
   if (!validPool(pool)) throw new HttpError(400, 'Name the pool as ?pool=pools/<name>.json.');
-  send(res, 200, await savedDays(ctx.daysDir, pool));
+  send(res, 200, await savedDays(ctx.daysDir, pool, { root: join(ctx.worldsDir, '..') }));
 }
 
 async function getRuns(ctx, req, res) {
@@ -516,6 +517,39 @@ async function getAgent(ctx, req, res, { id, agentId }) {
   const agent = Array.isArray(agents) ? agents.find(a => a.id === n) : null;
   if (!agent) throw new HttpError(404, `Run ${id} has no agent ${n}.`);
   send(res, 200, { agent, decisions: await agentDecisions(join(runDir(ctx, id), 'decisions.jsonl'), n) });
+}
+
+// Ask Jev about one person again, with one more sentence about what has just happened to them (§9c): do they stay
+// to eat tonight, and, when the place has a pool of diners, do they come back next week.
+// Body: { decision: "<choice id>", today: "<the sentence>", pool?: "pools/<name>.json" }. Two or four Jev requests;
+// nothing is written.
+async function postAskAgain(ctx, req, res, { id, agentId }) {
+  if (!/^\d{1,9}$/.test(agentId)) throw new HttpError(400, 'The agent id must be a whole number.');
+  const body = await readJsonBody(req);
+  const { askAgain, cleanToday, TODAY_MIN, TODAY_MAX } = await lib('../run/ask-again.js');
+  const today = cleanToday(body.today);
+  if (today.length < TODAY_MIN || today.length > TODAY_MAX) throw new HttpError(400, `Write what has just happened to them in ${TODAY_MIN} to ${TODAY_MAX} characters.`);
+  if (typeof body.decision !== 'string' || !body.decision) throw new HttpError(400, 'Send { "decision": "<choice id>", "today": "<one sentence>" }.');
+  if (!hasKey('TYPESAFE_API_KEY')) throw new HttpError(501, 'Asking Jev again needs TYPESAFE_API_KEY in .env.local.');
+  const recorded = (await agentDecisions(join(runDir(ctx, id), 'decisions.jsonl'), Number(agentId))).find(d => d.id === body.decision);
+  if (!recorded) throw new HttpError(404, `Run ${id} has no choice ${body.decision} for agent ${agentId}.`);
+  if (!recorded.observation?.person) throw new HttpError(409, 'This choice was recorded without what the person was told, so it cannot be asked again.');
+  const spec = await readRunJson(ctx, id, 'spec').catch(() => null);
+  const agents = await readRunJson(ctx, id, 'agents').catch(() => null);
+  const agent = Array.isArray(agents) ? agents.find(a => a.id === Number(agentId)) || null : null;
+  let pool = null;
+  if (body.pool != null) {
+    const { validPool } = await lib('../run/days-saved.js');
+    if (!validPool(body.pool)) throw new HttpError(400, 'Name the pool as pools/<name>.json.');
+    pool = await readFile(join(ctx.worldsDir, '..', body.pool), 'utf8').then(JSON.parse).catch(() => null);
+  }
+  let result;
+  try {
+    result = await askAgain(recorded, today, { spec, agent, pool });
+  } catch (err) {
+    throw new HttpError(502, `Jev could not answer: ${err?.message || err}`);
+  }
+  send(res, 200, result);
 }
 
 async function allDecisions(file) {

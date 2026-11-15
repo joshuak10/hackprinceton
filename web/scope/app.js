@@ -11,11 +11,16 @@ import { createHeat, calibrate, advance } from './lib/heat.js';
 import { createRenderer, readPalette, FRUSTRATION } from './lib/render.js';
 import { createTimeline } from './lib/timeline.js';
 import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, el } from './lib/panels.js';
+import { targetChoice } from './lib/ask-again.js';
+import { createAskPanel } from './lib/ask-panel.js';
+import { clockText } from './lib/frames.js';
 import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
-import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiScan, apiDays } from './lib/source.js';
+import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile, apiScan, apiDays, apiAskAgain } from './lib/source.js';
 import { foundLine, noScanLine, buildNote, fitoutFailure } from './lib/scan.js';
 import { LOYALTY, suggestionWords, savedResult, loyaltyRows, loyaltyWords, regularWords, captionWords, cautionWords, missingWords } from './lib/loyalty.js';
+import { OWNER_CHANGES, ownerChange, resultFor, periodsFor, compareFor, figureRows, dayBars, ownerHeadline, cautionWords as ownerCaution } from './lib/owner.js';
+import { createOwner, renderPeriodChart } from './lib/owner-panel.js';
 import {
   chooseRun, findTest, findOfferTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords,
   verdictWords, whySentence, busiestWindow, providerWords, placeName, runLabel, isJev, windowNoun, hasPromotion
@@ -47,6 +52,9 @@ const st = {
   // The loyalty buttons (§21f): the saved results, the change that is open, and whether the changes are shown
   // in place of a promotion test's result.
   loyalty: { saved: undefined, open: null, home: false, runId: null },
+  // The owner's view (§21g): the period for the whole screen in days, the change being tried, whether the
+  // evening's detail is shown, and whether the promotion test has taken the panel.
+  owner: { n: 1, change: 'seats', details: false, promo: false }, newcomers: new Set(),
   worlds: { building: [], others: [], buildingName: '' }
 };
 
@@ -98,6 +106,7 @@ function drawState() {
     selectedIncident: st.selectedIncident, selectedAgent: st.selectedAgent, frame: frameAt(st.F, st.t),
     nodes: st.bundle.frames.nodes || [], colorBy: st.colorBy, frustration: st.run.frustration.at,
     archIndex: st.archIndex, agentArch: st.agentArch, reducedMotion,
+    isNew: id => st.newcomers.has(st.agentsById.get(id)?.personaId),
     ringNode: st.ringNode, hoverNode: st.hoverNode, cursorAgent: st.cursorAgent,
     edit: editor.active ? editor.drawState() : null
   };
@@ -211,6 +220,7 @@ function setBundle(bundle) {
   st.selectedAgent = null;
   $('inspector').hidden = true;
   $('sideBody').hidden = false;
+  $('verdict').hidden = false;
   rebuildHeat();
 
   const geo = bundle.geometry, meta = bundle.meta;
@@ -306,11 +316,11 @@ function refreshVerdict() {
   st.dirty = true;
   // The loyalty buttons (§21f): the place opens on three changes to try; a promotion test's result keeps its
   // place and leads to them.
-  if (st.loyalty.runId !== meta.runId) Object.assign(st.loyalty, { open: null, home: false, runId: meta.runId });
-  if (st.caseInfo?.pool) {
-    if (st.loyalty.open) { showSaved(st.loyalty.open); return; }
-    if (!test || st.loyalty.home) { if (showChoices(bundle, test, change)) return; }
-  }
+  // The owner's view (§21g): a place with a pool of customers opens on today next to one change, over one period.
+  // The promotion test keeps its panel, one step away.
+  ownerLayout(false);
+  const back = st.caseInfo?.pool ? { label: 'Back to the comparison', onClick: () => { st.owner.promo = false; refreshVerdict(); } } : null;
+  if (st.caseInfo?.pool && !st.owner.promo) { showOwner(test, change); return; }
   if (!change) { verdict.message('This run has no counters with a line, so there is no change to test.'); return; }
   if (!test) {
     const words = change.kind === 'promotion' ? promotionWords(bundle.spec, bundle.metrics, change, timing) : worstLineWords(bundle.spec, bundle.metrics, timing);
@@ -320,7 +330,8 @@ function refreshVerdict() {
       cannotWhy: providerWords(meta) === 'Sample data'
         ? 'This is sample data, so a change cannot be tested on it. Start the Swarmscope engine and record a run to test one.'
         : 'The Swarmscope engine is not running here, so a change cannot be tested on this recorded run.',
-      note: isJev(meta) ? 'The numbers above are from the Jev run on screen.' : ''
+      note: isJev(meta) ? 'The numbers above are from the Jev run on screen.' : '',
+      more: back
     });
     return;
   }
@@ -344,7 +355,7 @@ function refreshVerdict() {
       why: whySentence(result, change, { clockStart: meta.clockStart, window }), caution: words.caution,
       // The promotion can be tested as often as you like: Jev answers differently each time (§18).
       again: change.kind === 'promotion' && Boolean(st.live && baseWorld()),
-      more: st.caseInfo?.pool ? { label: 'Other changes to try', onClick: () => { st.loyalty.home = true; refreshVerdict(); } } : null,
+      more: back,
       toggle: {
         baseline: pair.baseline, change: pair.change, labels: words.toggle, selected: meta.runId,
         note: shown ? '' : `The map shows the ${providerWords(meta) === 'Jev' ? 'Jev run' : 'run you opened'}. Pick a side to watch the test; the time on the slider is kept.`
@@ -354,6 +365,64 @@ function refreshVerdict() {
     if (st.bundle !== bundle) return;
     verdict.message(`The test results could not be loaded: ${err.message}`);
     showNotice(`The test results could not be loaded: ${err.message}`);
+  });
+}
+
+// ---------- the owner's view (§21g) ----------
+const owner = createOwner($('verdict'), {
+  onPeriod: n => { st.owner.n = n; refreshVerdict(); },
+  onChange: id => { st.owner.change = id; refreshVerdict(); },
+  onDetails: () => { st.owner.details = !st.owner.details; refreshVerdict(); },
+  onPromo: () => { st.owner.promo = true; refreshVerdict(); }
+});
+// on: the owner's view has the side panel. many: the period is longer than one day, so a chart takes the map's place.
+function ownerLayout(on, many = false) {
+  $('side').classList.toggle('owner', on);
+  $('side').classList.toggle('details', on && st.owner.details);
+  document.querySelector('.stage').classList.toggle('period-many', on && many);
+  $('periodView').hidden = !(on && many);
+}
+async function showOwner(test, change) {
+  const pool = st.caseInfo.pool, bundle = st.bundle;
+  ownerLayout(true);
+  if (st.loyalty.saved === undefined) {
+    verdict.message('Loading the saved results…');
+    st.loyalty.saved = st.live ? await apiDays(pool).catch(() => null) : null;
+    if (st.bundle !== bundle) return;
+    // Who is new to the place comes with the results: colour people by it from the start.
+    st.newcomers = new Set(st.loyalty.saved?.newcomers || []);
+    $('colorCustomer').hidden = !st.newcomers.size;
+    if (st.newcomers.size) {
+      st.colorBy = 'customer';
+      document.querySelector('input[name="colorBy"][value="customer"]').checked = true;
+      renderLegend();
+      st.dirty = true;
+    }
+  }
+  const saved = st.loyalty.saved, c = ownerChange(st.owner.change), result = resultFor(saved, c.id);
+  const periods = periodsFor(saved?.meta, result?.days || 0);
+  if (!periods.some(p => p.n === st.owner.n)) st.owner.n = periods[0]?.n || 1;
+  const period = periods.find(p => p.n === st.owner.n) || { n: 1, label: '1 evening' };
+  const cmp = result ? compareFor(result, st.owner.n) : null;
+  const canPromo = Boolean(test) || (Boolean(st.live && baseWorld()) && change?.kind === 'promotion');
+  const title = `With ${c.name}`;
+  owner.show({
+    periods: periods.length ? periods : [period], n: st.owner.n, changes: OWNER_CHANGES, change: c.id, title,
+    headline: cmp ? ownerHeadline(cmp, c, period.label) : '', rows: figureRows(cmp), caution: ownerCaution(result),
+    missing: cmp ? null : {
+      text: `No saved result for ${c.name} on this computer.`,
+      command: `node bin/swarm.js days ${pool} --days 8 --seeds 3 --provider jev --change ${c.flag} --out data/days/${c.id}.json`
+    },
+    details: st.owner.details, promo: canPromo ? (test ? 'See the promotion test' : 'Test a promotion') : ''
+  });
+  const many = Boolean(cmp) && st.owner.n > 1;
+  ownerLayout(true, many);
+  if (!many) return;
+  pause();
+  const day = String(saved.meta?.dayName || 'Day').split(' ')[0];
+  renderPeriodChart($('periodView'), {
+    bars: dayBars(result, st.owner.n), labels: Array.from({ length: st.owner.n }, (_, i) => `${day} ${i + 1}`),
+    names: ['Today', title], title: `${period.label.charAt(0).toUpperCase()}${period.label.slice(1)} at ${st.place.charAt(0).toLowerCase()}${st.place.slice(1)}`
   });
 }
 
@@ -668,7 +737,7 @@ function renderPanels() {
   };
   renderCounters($('counters'), ps);
   updateFloorCounts();
-  if (st.selectedAgent != null) { renderInspector($('inspector'), inspectorState(), st.selectedAgent, closeInspector); return; }
+  if (st.selectedAgent != null) { drawInspector(st.selectedAgent); return; }
   renderRank($('rank'), ps, id => {
     const n = st.run.nodes.get(id);
     if (n) { if ((n.floor || 0) !== st.floor) setFloor(n.floor || 0); flyTo(n.x, n.y, 1.8); }
@@ -681,6 +750,45 @@ function inspectorState() {
     agentsById: st.agentsById, personas: st.personas, decisions: st.bundle.decisions, nodeName: st.nodeName,
     visibleAgents: st.allAgents || agentsAt(st.F, st.t), archNames: st.archNames, t: st.t, clockStart: st.bundle.meta.clockStart
   };
+}
+// The person view, with the box that asks Jev one of their choices again with a sentence about what just happened (§9c).
+// The box is one node kept across redraws, so typing in it survives the replay moving on.
+const askPanel = createAskPanel({
+  onAsk: (decision, today) => apiAskAgain(st.bundle.meta.runId, st.selectedAgent, decision, today),
+  onAskAll: askEveryone
+});
+// The same sentence asked of one of each kind of diner, each at their own moment at the time on the slider. The
+// person who is open stands for their own kind. Tonight's question only: two Jev requests each.
+async function askEveryone(today) {
+  const runId = st.bundle.meta.runId, picked = new Map();
+  const open = st.agentsById.get(st.selectedAgent);
+  for (const a of [open, ...st.agentsById.values()]) {
+    if (!a || picked.has(a.personaId)) continue;
+    const d = targetChoice(st.bundle.decisions, a.id, st.t);
+    if (d) picked.set(a.personaId, { agent: a, decision: d });
+  }
+  const jobs = [...picked.values()].slice(0, 16).map(async ({ agent, decision }) => {
+    const result = await apiAskAgain(runId, agent.id, decision.id, today).catch(() => null);
+    return result && { name: agent.personaName || `Person ${agent.id}`, about: st.personas.get(agent.personaId)?.about || '', result };
+  });
+  const list = (await Promise.all(jobs)).filter(Boolean);
+  if (!list.length) throw new Error('Jev could not be asked.');
+  return list;
+}
+askPanel.input.addEventListener('focus', () => pause());
+function drawInspector(id) {
+  const meta = st.bundle.meta;
+  const d = targetChoice(st.bundle.decisions, id, st.t);
+  const recordedHere = Boolean(st.live) && providerWords(meta) !== 'Sample data';
+  askPanel.update({
+    key: d ? `${meta.runId}/${id}/${d.id}` : null, decision: d,
+    name: st.agentsById.get(id)?.personaName || '', when: d ? clockText(meta.clockStart, d.t) : '', situation: d?.observation?.now || '',
+    why: !d ? '' : !recordedHere ? 'Asking again needs a run recorded by the Swarmscope engine on this computer.'
+      : !st.live.jev ? 'Asking again needs a Jev key on the server.' : ''
+  });
+  const typing = document.activeElement === askPanel.input, at = typing ? [askPanel.input.selectionStart, askPanel.input.selectionEnd] : null;
+  renderInspector($('inspector'), inspectorState(), id, closeInspector, askPanel.node);
+  if (typing) { askPanel.input.focus(); askPanel.input.setSelectionRange(at[0], at[1]); }
 }
 // Run details: the recorded runs of this place (a changed room says so), and the other places the display opens.
 function drawDrawer() {
@@ -798,7 +906,10 @@ function selectAgent(id, { focus = false, returnTo = null } = {}) {
   st.selectedAgent = id;
   st.inspectorReturn = returnTo;
   $('sideBody').hidden = true;
-  renderInspector($('inspector'), inspectorState(), id, closeInspector);
+  // A person takes the whole side panel: the verdict steps aside while they are open, so their choices and the
+  // ask-again box are in view without scrolling.
+  $('verdict').hidden = true;
+  drawInspector(id);
   if (focus) $('inspector').querySelector('.back')?.focus();
   st.dirty = true;
 }
@@ -807,6 +918,7 @@ function closeInspector() {
   st.selectedAgent = null;
   $('inspector').hidden = true;
   $('sideBody').hidden = false;
+  $('verdict').hidden = false;
   st.dirty = true;
   if (st.bundle) renderPanels();
   if (had) (st.inspectorReturn || $('rankMode').querySelector('button')).focus();
@@ -1006,6 +1118,8 @@ function renderLegend() {
   const items = !st.layers.agents ? []
     : st.colorBy === 'frustration'
       ? [[FRUSTRATION[0], 'Calm'], [FRUSTRATION[1], 'Annoyed'], [FRUSTRATION[2], 'Frustrated'], [FRUSTRATION[4], 'Furious']]
+      : st.colorBy === 'customer'
+        ? [['var(--a-serve)', 'Returning customers'], ['var(--a-queue)', 'New customers']]
       : st.colorBy === 'archetype'
         ? (st.bundle?.spec.archetypes || []).slice(0, 5).map((a, i) => [`var(--g-${i + 1})`, a.name])
         : [['var(--a-walk)', 'Walking'], ['var(--a-queue)', 'In a line'], ['var(--a-serve)', 'Being served'], ['var(--a-leave)', 'Leaving']];

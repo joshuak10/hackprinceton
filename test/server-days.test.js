@@ -33,7 +33,7 @@ describe('GET /api/days', () => {
   test('nothing saved on this computer', async () => {
     const { status, body } = await get(`?pool=${POOL}`);
     assert.equal(status, 200);
-    assert.deepEqual(body, { pool: POOL, found: false, meta: null, results: [] });
+    assert.deepEqual(body, { pool: POOL, found: false, meta: null, newcomers: [], results: [] });
   });
 
   test('results are merged across files, and the newest wins for a repeated label', async () => {
