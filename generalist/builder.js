@@ -79,13 +79,13 @@ class OutputError extends Error {
 
 // Match only known CLI failures. Never return model output or CLI diagnostics: either
 // can contain keys, file paths or other sensitive context. Unknown failures keep a generic error.
-function authenticationFailure(text) {
+export function authenticationFailure(text) {
   if (!/(?:not logged in|please (?:log|sign) in|(?:run|use)\s+["'`]*(?:claude\s+auth\s+login|\/login)|authentication required|no (?:api key|authentication|credentials)|missing (?:required )?(?:anthropic[_ ]?)?api[_ ]?key)/i.test(text)) return null;
   return fail('Claude Code has no usable authentication. Run "claude auth login", or configure credentials for your selected provider, then build again.', 'BUILDER_AUTH_REQUIRED');
 }
 
 // The result line of `claude -p --output-format json`: whether the agent finished, and what it cost.
-function parseClaudeResult(text) {
+export function parseClaudeResult(text) {
   let envelope;
   try { envelope = JSON.parse(text); } catch { throw new OutputError('Claude returned no readable result.'); }
   if (!object(envelope)) throw new OutputError('Claude returned no result.');
@@ -102,7 +102,7 @@ function parseClaudeResult(text) {
 }
 
 // One bounded process lifecycle for the headless builder; it never runs a shell.
-function runHeadless({ args, prompt, cwd, spawn, executable, env = process.env,
+export function runHeadless({ args, prompt, cwd, spawn, executable, env = process.env,
   label, executableSetting, classifyFailure, signal, timeoutMs }) {
   return new Promise((resolve, reject) => {
     let child, timer, forceTimer, settled = false, failure = null, stdout = '', diagnostics = '', outputBytes = 0, errorBytes = 0;

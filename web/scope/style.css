@@ -243,7 +243,7 @@ a.btn.quiet:hover { color: var(--text); }
 }
 .ask-card h2 { font-size: var(--fs-l); font-weight: 600; line-height: 1.3; margin-bottom: 8px; }
 .ask-card p { margin-bottom: 8px; color: var(--muted); max-width: 60ch; }
-.ask-card .row { display: flex; gap: 8px; margin-top: 14px; }
+.ask-card .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 /* The places the card can open: rows as in Run details' lists (.runs), with a note at the right. */
 .ask-card h3 { margin: 14px 0 6px; font-size: var(--fs-m); font-weight: 600; }
 .ask-card .places .row { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; align-items: baseline; margin-top: 0; }

@@ -80,7 +80,7 @@ Run as `node bin/swarm.js <command>` (or `npm run swarm -- <command>`). `<world>
 | `report <run>` | Markdown digest: KPIs, ranked bottlenecks, outcomes by group, remarks, torn decisions, provider stats |
 | `agent <run> <agentId>` | One agent's persona, decisions with probabilities, and trace |
 | `runs` | List recorded runs |
-| `compile "<description>"` | Write a world with Claude (needs `ANTHROPIC_API_KEY`) |
+| `compile "<description>"` | Write a world with Claude: the Anthropic API with `ANTHROPIC_API_KEY`, otherwise a headless Claude Code agent (`claude -p`), which draws it as a floor plan |
 | `building --model ID \| --plan-raw FILE --profile FILE` | Compose a walled building world from a Matterport floor plan and a CoStar profile |
 | `import-matterport`, `import-mesh` | Starter worlds with walls from a Matterport model or a 3D mesh |
 | `serve [--port 4173]` | Start the local viewer |
@@ -93,8 +93,9 @@ A Jev run prints its provider stats: requests, cache hits, fallback rate, tokens
 Anything that can be written as places with lines (`visit` mode) or a network of capacity-limited links (`route` mode) can be simulated: clinics, food halls, checkouts, security lanes, roads, building lobbies, elevators, stadium exits.
 
 1. **In Claude Code (no extra key):** open this repo and run `/swarm <the place and the question>`. Claude reads the schema, writes `worlds/<slug>.json`, validates it, estimates the cost (and asks before spending over $1), runs it with Jev, reports findings, and tests 1-3 fixes with `compare`. The command lives in [`.claude/commands/swarm.md`](.claude/commands/swarm.md).
-2. **From the CLI:** with `ANTHROPIC_API_KEY` in `.env.local`, `node bin/swarm.js compile "<description>"` writes and validates a world.
-3. **By hand:** write JSON per [`worlds/SCHEMA.md`](worlds/SCHEMA.md) (JSON Schema in [`worlds/schema.json`](worlds/schema.json)), then `node bin/swarm.js validate <file>`.
+2. **From the CLI:** `node bin/swarm.js compile "<description>"` writes and validates a world. It uses `ANTHROPIC_API_KEY` from `.env.local` when set, otherwise your Claude Code login (`claude -p`).
+3. **From the dashboard:** at `/scope/`, describe a place in the prompt box, press Simulate, then **Build this place**. Claude Code draws the floor plan and the people, the engine runs it with Jev, and the place opens on the map.
+4. **By hand:** write JSON per [`worlds/SCHEMA.md`](worlds/SCHEMA.md) (JSON Schema in [`worlds/schema.json`](worlds/schema.json)), then `node bin/swarm.js validate <file>`.
 
 An MCP server (`npm run mcp`, registered in `.mcp.json` as `swarmscope`) exposes the same steps as tools for other agents.
 

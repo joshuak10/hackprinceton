@@ -13,7 +13,7 @@ import { createTimeline } from './lib/timeline.js';
 import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, el } from './lib/panels.js';
 import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
-import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics } from './lib/source.js';
+import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics, apiCompile } from './lib/source.js';
 import {
   chooseRun, findTest, findOfferTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords,
   verdictWords, whySentence, busiestWindow, providerWords, placeName, runLabel, isJev, windowNoun, hasPromotion
@@ -455,6 +455,42 @@ async function newRun(provider, question) {
   }
 }
 
+// ---------- a new place from the prompt ----------
+// Claude draws the place the words describe (its floor plan, its counters and the people who come), the engine runs
+// it, and the page opens it like any other recorded place.
+async function buildPlace(text) {
+  if (st.loading || !st.live) return;
+  hideCard($('askCard'));
+  busy(true);
+  pause();
+  const jev = Boolean(st.live.jev);
+  const p = showProgress($('progress'), [{ label: 'Claude is drawing the place' }, { label: 'People are arriving' }, { label: 'Opening the place' }],
+    'Claude draws the floor plan and writes the people from your words. This takes two or three minutes.');
+  p.set(0);
+  const started = performance.now();
+  const clock = setInterval(() => p.set(0, `Claude is drawing the place (${Math.round((performance.now() - started) / 1000)} s)`), 1000);
+  try {
+    const { spec } = await apiCompile(text);
+    clearInterval(clock);
+    p.set(1, jev ? 'Jev is deciding for every person' : 'The rule model is deciding for every person');
+    const runId = await apiStartRun({
+      spec, provider: jev ? 'jev' : 'rules', seed: 7,
+      onStatus: s => p.set(1, `Simulating: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% of the time window`)
+    });
+    p.set(2);
+    // The recorded title is the one the place opens by.
+    const title = (await loadEngineRun(runId)).meta.title;
+    const carry = ['theme', 'lang'].filter(k => params.get(k)).map(k => `${k}=${encodeURIComponent(params.get(k))}`);
+    location.assign(`./?${[`place=${encodeURIComponent(title)}`, ...carry].join('&')}`);
+  } catch (err) {
+    showNotice(`The place could not be built: ${err.message}`);
+    p.done();
+    busy(false);
+  } finally {
+    clearInterval(clock);
+  }
+}
+
 // ---------- the places the card under the prompt box can open ----------
 // Every place this page can show: the cases (?case=<id>), the other walled worlds recorded on this machine
 // (?place=<title>), and last the page that builds a new environment. The place on screen is marked and is not a link.
@@ -490,27 +526,37 @@ $('askForm').addEventListener('submit', e => {
   const text = $('askIn').value.trim();
   const cancel = () => { hideCard($('askCard')); $('askIn').focus(); };
   const places = { heading: 'Places', items: placeItems() };
+  // Typed words can become a new place: Claude draws it on the server, where the engine and Claude Code run.
+  const canBuild = Boolean(st.live?.claude) && text.length >= 12;
+  const build = canBuild ? [{ label: 'Build this place', solid: true, onClick: () => buildPlace(text) }] : [];
+  const buildLine = canBuild
+    ? `Build this place: Claude draws its floor plan and its people from your words, then ${st.live.jev ? 'Jev' : 'the rule model'} decides for each person. About three minutes${st.live.jev ? ', and a few cents' : ''}.`
+    : null;
   if (!baseWorld() || !st.live) {
     const sample = providerWords(st.bundle.meta) === 'Sample data';
     showCard($('askCard'), {
-      title: sample ? 'This page is showing sample data' : 'This page is showing a recorded run',
-      lines: [sample && st.live ? 'This is sample data, so it cannot be simulated again. You can still replay it.'
+      title: canBuild ? 'Build a new place from your words?' : sample ? 'This page is showing sample data' : 'This page is showing a recorded run',
+      lines: [buildLine, sample && st.live ? 'This is sample data, so it cannot be simulated again. You can still replay it.'
         : `A new simulation needs the Swarmscope engine, which is not running here. You can still replay the ${sample ? 'sample' : 'run'}.`],
       places,
+      actions: build,
       onCancel: cancel
     });
     return;
   }
   showCard($('askCard'), {
-    title: `Simulate ${st.place} again?`,
+    title: canBuild ? 'Build a new place from your words?' : `Simulate ${st.place} again?`,
     lines: [
-      'This screen shows one place at a time. Pick another from the list below. A question does not change who comes in or what they do yet.',
-      text ? `Your question will show above the map: “${text}”` : null
+      buildLine,
+      canBuild ? `Or keep ${st.place}: run it again and your words show above its map as the question. That does not change who comes in or what they do yet.`
+        : 'This screen shows one place at a time. Pick another from the list below. A question does not change who comes in or what they do yet.',
+      text && !canBuild ? `Your question will show above the map: “${text}”` : null
     ],
     places,
     actions: [
-      { label: 'Run it again', solid: true, onClick: () => newRun('rules', text) },
-      ...(st.live.jev ? [{ label: 'Run it with Jev', onClick: () => newRun('jev', text) }] : [])
+      ...build,
+      { label: canBuild ? 'Run this one again' : 'Run it again', solid: !canBuild, onClick: () => newRun('rules', text) },
+      ...(st.live.jev ? [{ label: canBuild ? 'Run this one with Jev' : 'Run it with Jev', onClick: () => newRun('jev', text) }] : [])
     ],
     onCancel: cancel
   });

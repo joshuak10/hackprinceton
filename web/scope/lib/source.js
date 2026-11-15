@@ -130,6 +130,16 @@ export async function apiLoadRun(runId, { modelId = null } = {}) {
 
 // Start a run of a world spec on the server and wait for it. Returns the new run id.
 // `link` marks the run as one side of a test of one change; the server checks it and stores it in meta.json.
+// Words -> a world with a floor plan, written by Claude on the server (POST /api/compile). It takes a few minutes.
+export async function apiCompile(description, { signal } = {}) {
+  const res = await fetch('/api/compile', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description, plan: true }), signal
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Writing the place failed (${res.status}).`);
+  return body;
+}
+
 export async function apiStartRun({ spec, provider = 'rules', seed = 7, link = null, onStatus, signal }) {
   const res = await fetch('/api/runs', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

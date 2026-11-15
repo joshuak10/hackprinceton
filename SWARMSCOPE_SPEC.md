@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.31 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.32 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Direction (Nov 14, v0.27):** Swarmscope is a **general environment simulation engine**. Users define an environment, objectives and guidelines; headless Claude builds a validated declarative environment; individual Jev agents choose actions while the engine enforces state transitions, shared resource capacities and conditions. Independent businesses and physical crowds remain examples, rather than the product boundary. The legacy physical engine remains governed by [docs/PROTOTYPE.md](docs/PROTOTYPE.md); the new workflow contract lives in `generalist/schema.json` and `docs/GENERALIST.md`.
 > **Worked example (v0.24):** the first audience is **independent local businesses**, starting with counter-service food and drink. Owners can test a change on a simulated copy of their own customers before trying it on real ones. The use case is specified in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md). Everything below still describes the engine and the earlier building work, and [docs/PROTOTYPE.md](docs/PROTOTYPE.md) still governs the code.
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
@@ -424,6 +424,10 @@ Pitch lines:
 
 ## 14. Change log
 
+- **v0.32 · Nov 14, 2026.** Typed words become a place with a floor plan. **Decision (Ryan):** "when I prompt something into the prompt box here, I want to get something like that [the food hall map], but of course according to the prompt".
+  - **The dashboard's prompt box builds places.** Typed words and Simulate offer "Build this place": a headless Claude Code agent (`claude -p` given `/goal`) draws the place as a map world (walls, doors, rooms, counters, seats, people with their situation today), the engine runs it with Jev, and the dashboard opens it like the food hall. Asking about the place on screen is still offered next to it. The placeholder now reads "Describe a place to build, or ask about this one".
+  - **No API key needed.** `POST /api/compile` and `swarm compile` use the headless agent when `ANTHROPIC_API_KEY` is not set, so the old viewer's Compile box works too.
+  - **Checked once, live:** a laundromat built in 53 seconds on the first attempt (about $0.19) and ran with Jev in 20 seconds (560 decisions, about 2 cents). Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §10.
 - **v0.31 · Nov 14, 2026.** One codebase again, and the builder is a headless Claude agent with a goal. **Decisions (Ryan):**
   - **The general environment engine is merged into main.** main's dashboard is kept as it is ("do not overwrite the new UI in main"): the environment page takes main's look, and the dashboard header gains one link, Environments.
   - **Places are chosen from the Simulate card.** v0.27 said "one place, no picker". Ryan asked for every place to be selectable from the card under the prompt box, so the card now lists the building, the sushi restaurant, the parking sample, any other recorded walled place on the machine, and "Build a new environment". There is still no picker in the top bar. Josh should confirm this is acceptable for the design.

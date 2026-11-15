@@ -272,9 +272,18 @@ async function serveWalls(ctx, req, res) {
 
 // ---------- worlds ----------
 
-function getHealth(ctx, req, res) {
+// How a description becomes a world here: the Anthropic API when a key is set, otherwise a headless Claude Code
+// agent (`claude -p`) when the CLI is installed, otherwise nothing.
+async function compiler() {
+  if (hasKey('ANTHROPIC_API_KEY')) return 'anthropic';
+  const { claudeCliAvailable } = await lib('../compile/headless.js');
+  return claudeCliAvailable() ? 'claude-code' : null;
+}
+
+async function getHealth(ctx, req, res) {
+  const how = await compiler().catch(() => null);
   send(res, 200, {
-    ok: true, insights: true, jev: hasKey('TYPESAFE_API_KEY'), claude: hasKey('ANTHROPIC_API_KEY'),
+    ok: true, insights: true, jev: hasKey('TYPESAFE_API_KEY'), claude: Boolean(how), compiler: how,
     capabilities: { environments: 1, spatialWorlds: 1 }
   });
 }
@@ -353,15 +362,27 @@ async function postCompile(ctx, req, res) {
   const description = typeof body.description === 'string' ? body.description.trim() : '';
   if (!description) throw new HttpError(400, 'Send { "description": "a place and a question" }.');
   if (description.length > 4000) throw new HttpError(400, 'Keep the description under 4000 characters.');
-  if (!hasKey('ANTHROPIC_API_KEY')) {
-    throw new HttpError(501, 'Compiling a world needs ANTHROPIC_API_KEY in .env.local. Without it, run /swarm in Claude Code to write the world, then paste it here.');
+  // `plan: true` asks for a world drawn as a floor plan, which only the headless agent is told how to draw.
+  const how = await compiler();
+  const headless = how === 'claude-code' || (body.plan === true && (await lib('../compile/headless.js')).claudeCliAvailable());
+  if (!how) {
+    throw new HttpError(501, 'Writing a world from words needs Claude Code on this machine (claude auth login) or ANTHROPIC_API_KEY in .env.local. Without either, run /swarm in Claude Code to write the world, then paste it here.');
   }
-  const { compileWorld } = await lib('../compile/compile.js');
+  // Closing the page stops the agent.
+  const stop = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) stop.abort(new Error('The request was closed.')); });
   let result;
   try {
-    result = await compileWorld(description, { apiKey: process.env.ANTHROPIC_API_KEY });
+    if (headless) {
+      const { compileWorldHeadless } = await lib('../compile/headless.js');
+      result = await compileWorldHeadless(description, { signal: stop.signal });
+    } else {
+      const { compileWorld } = await lib('../compile/compile.js');
+      result = await compileWorld(description, { apiKey: process.env.ANTHROPIC_API_KEY });
+    }
   } catch (err) {
-    throw new HttpError(502, `Claude could not compile a valid world: ${err?.message || err}`);
+    if (stop.signal.aborted) return;
+    throw new HttpError(502, `Claude could not write a valid world: ${err?.message || err}`);
   }
   send(res, 200, result);
 }

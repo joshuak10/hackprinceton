@@ -92,6 +92,16 @@ export const EXACT = {
   "As sketched": "草图中的房间",
   "Ask a question above, or start from one of these.": "在上方输入问题，或从下面的场景开始。",
   "Ask about this place, for example: where do people give up at lunch?": "就这个地方提问，例如：午餐时人们在哪里放弃？",
+  "Describe a place to build, or ask about this one": "描述一个要建的地点，或就当前地点提问",
+  "Build this place": "建这个地点",
+  "Run this one again": "重新运行当前地点",
+  "Run this one with Jev": "用 Jev 运行当前地点",
+  "Build a new place from your words?": "用你的描述建一个新地点？",
+  "Claude is drawing the place": "Claude 正在绘制这个地点",
+  "Opening the place": "正在打开这个地点",
+  "Jev is deciding for every person": "Jev 正在为每个人做决定",
+  "The rule model is deciding for every person": "规则模型正在为每个人做决定",
+  "Claude draws the floor plan and writes the people from your words. This takes two or three minutes.": "Claude 根据你的描述绘制平面图并写出人物。这需要两三分钟。",
   "Ask everyone": "问所有人",
   "Ask the room": "问问全场",
   "Ask the room · Swarmscope": "问问全场 · Swarmscope",
@@ -950,6 +960,8 @@ export const EXACT = {
 };
 
 export const PATTERNS = [
+  ["^Claude is drawing the place \\((\\d+) s\\)$", "Claude 正在绘制这个地点（$1 秒）"],
+  ["^The place could not be built: (.+)$", "无法建成这个地点：$1"],
   ["^(.+?) still gets about (\\d+)% of these (\\d+) people \\((\\d+)% with a plain sign\\)\\. Each bar is compared with the same moment and a plain sign about restrooms, so this is the sign’s own effect\\. Before any change it was (\\d+)%\\. A rewritten person is compared with the same moment as they were first written\\.$", "在这 $3 人中，$1 仍吸引约 $2%（挂普通告示时为 $4%）。每个条形都是与同一时刻、换成一块关于洗手间的普通告示时相比，所以这就是告示本身的效果。未做任何改动前为 $5%。被改写的人是与同一时刻、按其原始设定作答时相比。"],
   ["^Less likely: ([^.]+)\\. More likely: ([^.]+)\\. (\\d+) of (\\d+) did not move\\. Each bar is compared with the same moment and a plain sign about restrooms, so this is the sign’s own effect\\. Before any change it was (\\d+)%\\. A rewritten person is compared with the same moment as they were first written\\.$", "可能性降低：$1。可能性升高：$2。$4 人中有 $3 人没有变动。每个条形都是与同一时刻、换成一块关于洗手间的普通告示时相比，所以这就是告示本身的效果。未做任何改动前为 $5%。被改写的人是与同一时刻、按其原始设定作答时相比。"],
   ["^No one moved by (\\d+) points or more\\. Each bar is compared with the same moment and a plain sign about restrooms, so this is the sign’s own effect\\. Before any change it was (\\d+)%\\. A rewritten person is compared with the same moment as they were first written\\.$", "没有人的变动达到 $1 个百分点。每个条形都是与同一时刻、换成一块关于洗手间的普通告示时相比，所以这就是告示本身的效果。未做任何改动前为 $2%。被改写的人是与同一时刻、按其原始设定作答时相比。"],

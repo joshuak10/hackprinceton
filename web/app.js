@@ -195,7 +195,7 @@ async function loadHealth() {
     ui.compileBtn.disabled = !hl.claude;
     ui.compileNote.textContent = hl.claude
       ? 'Claude writes the world JSON here; check it, validate, then run it.'
-      : 'Compiling needs ANTHROPIC_API_KEY on the server. Without it, run /swarm in Claude Code to write the world, then paste it above.';
+      : 'Compiling needs Claude Code on the server (claude auth login) or ANTHROPIC_API_KEY. Without either, run /swarm in Claude Code to write the world, then paste it above.';
   } catch {
     ui.healthJev.textContent = 'server unreachable';
     ui.healthJev.className = 'pill off';
@@ -427,7 +427,7 @@ async function compileDescription() {
   const description = ui.describeIn.value.trim();
   if (!description) { ui.compileNote.textContent = 'Describe a place and a question first.'; return; }
   ui.compileBtn.disabled = true;
-  ui.compileNote.textContent = 'Claude is writing the world. This can take a minute…';
+  ui.compileNote.textContent = 'Claude is writing the world. This can take two or three minutes…';
   try {
     const result = await api('/api/compile', { method: 'POST', body: { description } });
     ui.pasteIn.value = JSON.stringify(result.spec, null, 2);

@@ -104,7 +104,7 @@ Keys come from .env.local: TYPESAFE_API_KEY (Jev) and ANTHROPIC_API_KEY (compile
 Set SWARM_DEBUG=1 to print stack traces.
 `;
 
-const COMPILE_WITHOUT_KEY = `swarm compile needs ANTHROPIC_API_KEY in .env.local.
+const COMPILE_WITHOUT_KEY = `swarm compile needs Claude Code on this machine (claude auth login) or ANTHROPIC_API_KEY in .env.local.
 
 Without a key, let Claude Code write the world instead: open this repo in Claude Code and run
   /swarm <the place and the question>
@@ -616,12 +616,22 @@ function cmdRuns(_args, flags) {
 }
 
 async function cmdCompile(words, flags) {
-  if (!hasKey('ANTHROPIC_API_KEY')) {
-    process.stderr.write(COMPILE_WITHOUT_KEY + '\n');
-    return 1;
+  // With an API key the Anthropic API writes the world; without one, a headless Claude Code agent does, and draws
+  // it as a floor plan (compile/headless.js).
+  let compiled;
+  if (hasKey('ANTHROPIC_API_KEY')) {
+    const { compileWorld } = await import('../compile/compile.js');
+    compiled = await compileWorld(words.join(' '), { apiKey: process.env.ANTHROPIC_API_KEY });
+  } else {
+    const { compileWorldHeadless, claudeCliAvailable } = await import('../compile/headless.js');
+    if (!claudeCliAvailable()) {
+      process.stderr.write(COMPILE_WITHOUT_KEY + '\n');
+      return 1;
+    }
+    if (!flags.json) process.stderr.write('Claude Code is drawing the world (claude -p). This takes a minute or two.\n');
+    compiled = await compileWorldHeadless(words.join(' '));
   }
-  const { compileWorld } = await import('../compile/compile.js');
-  const { spec, attempts, warnings } = await compileWorld(words.join(' '), { apiKey: process.env.ANTHROPIC_API_KEY });
+  const { spec, attempts, warnings } = compiled;
   const out = resolve(flags.out ?? join('worlds', `${slug(spec.title, 0).replace(/_/g, '-')}.json`));
   if (existsSync(out) && !flags.force) throw new CliError(`${shortPath(out)} already exists; pass --force to overwrite or --out to choose another file`);
   mkdirSync(dirname(out), { recursive: true });
