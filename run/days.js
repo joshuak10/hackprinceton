@@ -396,11 +396,14 @@ export function realism(run) {
 const METRICS = ['visitsPerWeek', 'servedPerWeek', 'walkAwaysPerWeek', 'firstTimersPerWeek', 'avgWait', 'cameBack', 'regulars', 'goodRemarksPerWeek', 'badRemarksPerWeek'];
 
 // The baseline and each change on the same seeds. Effects are seed by seed, so what the arms share cancels.
-// `changes` is a list of change objects (changeFor); the baseline is run once per seed.
-export async function compareDays({ pool, spec, days = 10, seeds = [7, 8, 9], provider, changes = [], onProgress = null }) {
+// `changes` is a list of change objects (changeFor); the baseline is run once per seed. `baselines` reuses
+// the baselines of an earlier result (same pool, world, days and seeds) instead of running them again.
+export async function compareDays({ pool, spec, days = 10, seeds = [7, 8, 9], provider, changes = [], baselines: saved = null, onProgress = null }) {
   const baselines = [];
   for (const seed of seeds) {
-    const run = await runDays({ pool, spec, days, seed, provider, onDay: d => onProgress?.({ seed, arm: 'baseline', day: d }) });
+    const kept = saved?.find(b => b.seed === seed && b.run?.days?.length === days);
+    if (saved && !kept) throw new Error(`The saved baselines have no ${days}-day run for seed ${seed}.`);
+    const run = kept ? kept.run : await runDays({ pool, spec, days, seed, provider, onDay: d => onProgress?.({ seed, arm: 'baseline', day: d }) });
     baselines.push({ seed, run, summary: summarize(run), realism: realism(run) });
   }
   const results = [];

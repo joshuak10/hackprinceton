@@ -361,6 +361,19 @@ describe('days: comparing a change with its baseline', () => {
     assert.ok(Math.abs(staff.walkAwaysPerWeek.after - staff.walkAwaysPerWeek.before - staff.walkAwaysPerWeek.mean) < 1e-9);
   });
 
+  test('saved baselines are reused, and must cover the same days and seeds', async () => {
+    const first = await compareDays({ pool: POOL, spec: WORLD, days: 6, seeds: [7, 8], provider: rules(), changes: [] });
+    let ran = 0;
+    const counting = { name: 'rules', external: false, async decideMany(reqs) { ran++; return reqs.map(() => ({ provider: 'rules', action: 'yes' })); }, stats() { return {}; } };
+    const saved = JSON.parse(JSON.stringify(first.baselines));
+    const second = await compareDays({ pool: POOL, spec: WORLD, days: 6, seeds: [7, 8], provider: rules(), changes: [changeFor('staff+1', spec, 'bakery', 6)], baselines: saved });
+    assert.deepEqual(second.baselines.map(b => b.summary), first.baselines.map(b => b.summary));
+    const fresh = await compareDays({ pool: POOL, spec: WORLD, days: 6, seeds: [7, 8], provider: rules(), changes: [changeFor('staff+1', spec, 'bakery', 6)] });
+    assert.deepEqual(second.results[0].effects, fresh.results[0].effects);
+    await assert.rejects(compareDays({ pool: POOL, spec: WORLD, days: 8, seeds: [7], provider: counting, changes: [], baselines: saved }), /saved baselines/);
+    assert.equal(ran, 0);
+  });
+
   test('the summary and the realism checks describe one run', async () => {
     const run = await runDays({ pool: POOL, spec: WORLD, days: 10, seed: 7, provider: rules() });
     const s = summarize(run), r = realism(run);

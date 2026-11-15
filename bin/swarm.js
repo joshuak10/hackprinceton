@@ -85,6 +85,7 @@ Usage: swarm <command> [options]
   serve [--port 4173]               Start the local viewer
   days <pool.json> [--days 10] [--seeds 3] [--seed 7] [--provider rules|jev]
        [--change staff+1,price+0.5,promo20,card10] [--out data/days/<name>.json]
+       [--baseline-from data/days/<earlier>.json]
                                     The same people over days (docs/PROTOTYPE.md §21): the baseline and
                                     each change on the same seeds. Unvalidated; with rules it is a dry run
   sanity [--model jev-latest]       Live Jev checks (makes a few hundred API calls)
@@ -149,7 +150,7 @@ const COMMANDS = {
   },
   'import-mesh': { min: 1, max: 1, flags: ['out', 'up'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
   serve: { min: 0, max: 0, flags: ['port'], run: cmdServe },
-  days: { min: 1, max: 1, flags: ['days', 'seeds', 'seed', 'provider', 'change', ...JEV_FLAGS, 'out', 'json'], run: cmdDays },
+  days: { min: 1, max: 1, flags: ['days', 'seeds', 'seed', 'provider', 'change', 'baseline-from', ...JEV_FLAGS, 'out', 'json'], run: cmdDays },
   sanity: { min: 0, max: 0, flags: ['model'], run: cmdSanity }
 };
 
@@ -532,7 +533,16 @@ async function cmdDays([ref], flags) {
     last = Date.now();
     process.stderr.write(`  seed ${seed} · ${arm} · day ${day.day + 1} of ${days}: ${day.went} came, ${day.left} walked away\n`);
   };
-  const result = await compareDays({ pool, spec, days, seeds, provider, changes, onProgress });
+  // --baseline-from: the baselines of an earlier --out file, so only the changes are run.
+  let baselines = null;
+  if (flags['baseline-from']) {
+    const from = resolve(flags['baseline-from']);
+    if (!existsSync(from)) throw new CliError(`No results file at ${flags['baseline-from']}`);
+    baselines = JSON.parse(readFileSync(from, 'utf8')).baselines;
+  }
+  let result;
+  try { result = await compareDays({ pool, spec, days, seeds, provider, changes, baselines, onProgress }); }
+  catch (err) { if (/saved baselines/.test(err.message)) throw new CliError(err.message); throw err; }
   const providerStats = provider.stats();
   if (flags.out) {
     const out = resolve(flags.out);
