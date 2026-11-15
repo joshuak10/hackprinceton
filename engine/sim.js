@@ -166,7 +166,14 @@ export class Sim {
     this.remarks = [];
 
     this.buildPersonas();
-    this.schedule = this.buildSchedule(seedRng(seed, 'arrivals')); this.si = 0;
+    // opts.arrivals (§21b, visit mode): a list of who arrives and when, in place of the random schedule.
+    // Each entry is { t, persona, first, tag }: the minute, a cast member's id, the service place the person
+    // walks to first (they already decided to go there), and a tag that comes back in agentsSummary().
+    this.arrivalList = this.mode === 'visit' && Array.isArray(opts.arrivals)
+      ? opts.arrivals.filter(e => e && Number.isFinite(Number(e.t))).map(e => ({ ...e, t: Number(e.t) })).sort((a, b) => a.t - b.t)
+      : null;
+    this.schedule = this.arrivalList ? this.arrivalList.map(e => e.t) : this.buildSchedule(seedRng(seed, 'arrivals'));
+    this.si = 0;
 
     // Walls: one navigator for the whole run. Without walls nothing below changes the prototype's behavior.
     this.walls = (Array.isArray(this.spec.walls) ? this.spec.walls : []).map(wallObj);
@@ -379,6 +386,9 @@ export class Sim {
     const r = rng() * this.personaTot;
     let pi = this.personaCum.findIndex(c => r <= c);
     if (pi < 0) pi = this.personas.length - 1;
+    // A listed arrival (§21b) names its cast member; the draw above is still made, so the stream keeps its order.
+    const listed = this.arrivalList ? this.arrivalList[id] : null;
+    if (listed) { const named = this.personas.findIndex(p => p.id === listed.persona); if (named >= 0) pi = named; }
     const P = this.personas[pi], arch = P.arch;
     const a = {
       id, persona: P, arch, rng, state: 'new', born: this.t, trace: [], waitTotal: 0, served: 0, abandons: 0,
@@ -399,6 +409,12 @@ export class Sim {
       });
       arch.count++; this.agents.push(a); this.active.push(a);
       this.log(a, `Arrived at ${entry.name}`);
+      if (listed) {
+        // Their line log: what happened at each line they met, for the evening's memory (§21b).
+        a.tag = listed.tag ?? null; a.lines = [];
+        const first = listed.first != null ? this.byId.get(listed.first) : null;
+        if (first && this.isCandidate(a, first)) { a.decisions++; this.noteOffers(a); this.goTo(a, first); return; }
+      }
       this.decide(a, 'start', null);
       return;
     }
@@ -640,9 +656,12 @@ export class Sim {
     if (n.queue.length > n.maxQueue) n.maxQueue = n.queue.length;
   }
 
-  walkAway(a, n) {
+  // `waited` is the time spent in this line before leaving: 0 for someone who turned away on seeing it, and
+  // then `ahead` is the line they saw.
+  walkAway(a, n, waited = 0) {
     n.abandoned++; n.walkLog.push(this.t); if (n.walkLog.length > 400) n.walkLog.splice(0, 200);
     a.abandons++; this.abandonedTotal++;
+    a.lines?.push({ place: n.id, wait: round2(waited), ahead: waited > 0 ? null : n.queue.length, outcome: 'left' });
   }
 
   // The nearest of `list` by walking distance, or null when none can be reached on foot.
@@ -676,7 +695,7 @@ export class Sim {
   finish(a) { a.state = 'done'; a.tDone = this.t; this.finished++; }
 
   giveUp(a, n, waited) {
-    a.waitTotal += waited; this.walkAway(a, n);
+    a.waitTotal += waited; this.walkAway(a, n, waited);
     this.log(a, `Gave up on ${n.name} after ${Math.round(waited)} min in line`);
     this.decide(a, 'gaveup', n);
   }
@@ -731,6 +750,7 @@ export class Sim {
       while (n.busy.length < n.servers && n.queue.length) {
         const a = n.queue.shift(), wt = t - a.enq;
         n.waitSum += wt; n.waitN++; a.waitTotal += wt; a.state = 'serve';
+        a.lines?.push({ place: n.id, wait: round2(wt), ahead: null, outcome: 'served' });
         a.tf = t + this.serviceTime(n, a);
         if (wt >= 1) this.log(a, `Waited ${Math.round(wt)} min at ${n.name}`);
         // Seats (§18): the person keeps the first free seat until they finish. With more servers than seats,
@@ -1070,7 +1090,7 @@ export class Sim {
       else a.longLimit = waited + this.tolerance(a);
       return `kept waiting at ${n.name}`;
     }
-    n.queue.splice(i, 1); a.waitTotal += waited; this.walkAway(a, n);
+    n.queue.splice(i, 1); a.waitTotal += waited; this.walkAway(a, n, waited);
     const m = this.placeFor(a, s.action);
     if (m) { this.goTo(a, m, true, t); return `gave up on ${n.name} after ${Math.round(waited)} min for ${m.name}`; }
     this.leave(a);
@@ -1244,6 +1264,8 @@ export class Sim {
       };
       if (this.mode === 'route' && a.trip != null) { o.trip = round2(a.trip); o.delay = round2(a.delay); }
       if (this.mode === 'visit') { o.spent = round2(a.spent); o.visits = a.servedAt.slice(); }
+      // Listed arrivals only (§21b), so an ordinary run's agents.json is unchanged.
+      if (a.lines) { o.tag = a.tag; o.lines = a.lines.map(l => ({ ...l })); }
       return o;
     });
   }

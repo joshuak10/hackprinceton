@@ -1,0 +1,27 @@
+{
+  "title": "Alder & Pine Coffee: the people of Maple Street (fictional)",
+  "world": "worlds/alder-pine-cafe.json",
+  "shop": "cafe",
+  "size": 420,
+  "note": "Every number here is an assumption written to fit the cast's bios. An owner's sales data replaces usualPerWeek, knows and weight. A week is 5 weekday mornings.",
+  "people": {
+    "june": {"usualPerWeek": 5, "knows": 1, "weight": 0.4},
+    "marcus": {"usualPerWeek": 5, "knows": 1, "weight": 0.4},
+    "priyanka": {"usualPerWeek": 2, "knows": 1},
+    "tomas": {"usualPerWeek": 0.75, "knows": 1, "weight": 1.5},
+    "ellie": {"usualPerWeek": 2.5, "knows": 0.35, "weight": 1.5, "newcomer": true},
+    "dev": {"usualPerWeek": 1.5, "knows": 0.35, "weight": 1.5, "newcomer": true},
+    "karen": {"usualPerWeek": 2, "knows": 0.35, "weight": 1.5, "newcomer": true},
+    "bill": {"usualPerWeek": 5, "knows": 1, "weight": 0.4},
+    "shanice": {"usualPerWeek": 1.5, "knows": 0.35, "weight": 1.5, "newcomer": true},
+    "omar": {"usualPerWeek": 1, "knows": 0.3, "weight": 1.5, "newcomer": true},
+    "lucy": {"usualPerWeek": 1, "knows": 0.3, "weight": 1.5, "newcomer": true},
+    "greta": {"usualPerWeek": 0, "knows": 0, "newcomer": true, "dayVisitor": true}
+  },
+  "ordinaryWait": 5,
+  "trialPerWeek": 0.75,
+  "walkPast": 0.02,
+  "tellReach": 0.3,
+  "habit": [0.25, 0.62, 0.83, 0.93, 1],
+  "rules": {"lossAversion": 2}
+}

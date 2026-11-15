@@ -1115,3 +1115,192 @@ There is no patience verdict in this mode, because the verdict compares a wait i
 - The translations were produced by machine on Nov 14 and have not been read by a native speaker. `zh.js` holds about 940 phrases and 590 patterns; a line the app joins from several sentences is translated sentence by sentence.
 - A feeling's sentence in a person's box and what a person was told stay in English, because that is what Jev read.
 - The older run viewer at `/` has no language button.
+
+---
+
+## 20. The morning question and the return probe (Nov 14)
+
+**Why.** [REPEAT_CUSTOMERS_SPEC.md](../REPEAT_CUSTOMERS_SPEC.md) simulates the same people over days. Each morning every person is asked whether they go to the shop today, and what they are told includes their memory of earlier visits. Before any of that is built, one thing has to be known: does Jev read a memory and answer the way real customers were measured to? This section defines the question, the words, and a probe that checks them. Nothing here changes a run: the Sim never asks this question.
+
+### 20a. What a person is told
+
+`morningObservation(ctx)` in `engine/observe.js` builds the state. Every fact is written by code as a fact in words, never as a verdict (§16).
+
+| Field | Content | Example |
+|---|---|---|
+| `setting`, `time`, `person` | As in every observation (§5). `person` has no app field. | |
+| `now` | Fixed sentence naming the shop. | "Deciding whether to go to Alder & Pine Coffee today." |
+| `shop` | `name`, `known_for`, `offers` (tags), `cost`, `rating`. | `cost`: "$5.50 (it was $5.00 last week)"; "$4.00 with the offer (usually $5.00)". `rating`: "4.5 out of 5 stars from online reviews". |
+| `other_places` | The world's other service places: `name`, `known_for`, `cost`. No lines: nobody can see a line from home. | |
+| `history` | How well they know the shop. | "Has been to Alder & Pine Coffee 8 times in the last 4 weeks." "Has never been to Alder & Pine Coffee; has walked past it." |
+| `memory` | Up to 5 remembered events, newest first, from `memoryWords`. | "Yesterday: waited about 20 minutes in line at Alder & Pine Coffee, then left without ordering." |
+| `card` | Stamp-card progress. | "Stamp card for Alder & Pine Coffee: 8 of 10 stamps filled. A full card earns a free coffee." |
+| `heard` | Remarks from people they listen to, as strings. | "A friend (yesterday): long line at Alder & Pine Coffee" |
+| `offers` | Messages from the shop (§15b's field). | "Alder & Pine Coffee: 20% off everything today." |
+
+- **Prices are exact here** ("$5.50"), unlike the "about $5" used inside a visit, because a 50-cent change is the fact being remembered.
+- **A memory record** is `{ daysAgo, wait, outcome: "served" | "left", ending: "fast" | "slow", paid, promo, first }` for a visit to the shop, or `{ daysAgo, text }` for anything else. `wait` is the worst wait of that visit in minutes; `ending` says how the line moved at the end (the peak-end rule: people remember the worst and the last moment). The evening update of the multi-day loop will write these records from `agents.json`; today only the probe writes them.
+- A field with nothing in it is left out, and the question names only the fields that are present.
+
+### 20b. The question
+
+A new yes/no question in `providers/jev.js`, `visit_today`, asked alone:
+
+> Does the person in `person` go to the shop in `shop` today, given `history`, `memory`, …?
+> true: "They go to this shop today." false: "They do not: they go somewhere else or go without."
+
+- **Yes/no, not a choice between places.** Jev leans toward the first option of a choice (§6), and the option order is shuffled by a seed taken from the state. Two versions of a memory would then be asked with different orders, and the order effect would be mixed into the difference being measured. A yes/no question has no order.
+- `run/morning.js` builds the DecisionRequest: `morningRequest({ spec, shopId, mind, state })`, kind `morning`, `asks: { yesNo: "visit_today" }`, rule answer yes. `state` is one person's record: `{ history, memory, card, heard, offers, price, wasPrice, offerPrice, rating }`.
+- Adding the question changes no existing request body or hash.
+
+### 20c. The return probe
+
+`validation/jev-return-probe.js`, built like the line probe (§16b). World: `worlds/alder-pine-cafe.json`, shop Alder & Pine Coffee, with Brewline across the street. It asks the morning question for the café's cast and changes one fact at a time.
+
+- **Who is asked what.** A person's written bio decides which states they can be put in without contradicting it. 11 of the 12 can be a returning customer (everyone but Greta, who is in town for one day). 7 can be a newcomer (Ellie, Dev, Karen, Shanice, Greta, Omar, Lucy). A returning customer's `history` gives a visit count that fits their bio (June 28 times in 4 weeks, Tomas 3).
+- **Repeats.** Jev does not answer the same question the same way twice (§17), so every question is asked 5 times and the answers averaged. Each pass uses a fresh provider, so nothing comes from a cache.
+- **Reference.** A returning customer's reference memory is "Yesterday: waited about 5 minutes in line at Alder & Pine Coffee, then was served." A newcomer's reference is no memory. Each condition differs from its reference, or from the condition it is compared with, by one fact.
+- **Neutral controls.** Any added sentence moves Jev's answers by about 5 points (§17). A message from the shop is compared with a message that carries no offer ("open 7 am to 3 pm today, as usual"), a friend's remark with a remark about something else, and a memory with a sentence about the weather.
+
+**Tests.** Each compares two conditions person by person. The effect is the average difference in the chance of going, with a 95% interval from resampling people.
+
+| Test | Compares | Passes when | From |
+|---|---|---|---|
+| Reads a memory at all | A very good last visit against a very bad one | Good is clearly higher | sanity |
+| A neutral sentence does nothing | A sentence about the weather against no memory | Within 5 points | §17 |
+| Same fact, other words | "waited about 20 minutes" against a paraphrase | Within 5 points | sanity |
+| Turned away at the door | "found 9 people in line … and left without ordering" against an ordinary visit | Lower | the loop's wording (§21b) |
+| Longer last wait | Last wait 0, 5, 10, 20, 30 minutes, served | The chance falls as the wait grows | de Vries et al. 2018 |
+| Walked away | Left without ordering against served, same wait | Left is lower | de Vries et al. 2018 |
+| How it ended | 15 minutes ending fast against ending slow | Fast is higher | peak-end rule |
+| Price rise | $5.50 against $5.00 | Lower | Hardie et al. 1993 |
+| Loss aversion | The drop from +50¢ against the gain from −50¢ | The drop is larger | Hardie et al. 1993 |
+| Near the reward | 8 of 10 stamps against 2 of 10 | Higher, and visits 10 to 30% closer together | Kivetz et al. 2006 |
+| Head start | 2 of 10 stamps given free against 0 of 8 | Higher | Nunes & Drèze 2006 |
+| A deal brings newcomers | 20% off today against the plain message, newcomers | Higher | Dholakia 2011 |
+| A deal buys no loyalty | First visit on a deal against first visit at full price, both at full price today | Not higher | REPEAT_CUSTOMERS_SPEC §9 |
+| Rating | 4.5 stars against 3.5, newcomers | Higher; the study saw 5 to 9% more revenue per star | Luca 2016 |
+| A friend's remark | Good against neutral against bad, newcomers | Good above neutral above bad | Trusov et al. 2009 |
+
+Also measured, with no pass rule: how fast a bad memory fades (yesterday, 1 week, 4 weeks), whether bad visits add up (0, 1 or 3 of the last 3), what a deal does for regulars, and what a stamp card does by being there.
+
+- **Verdicts.** Pass: the interval is wholly on the expected side. Fail: wholly on the wrong side. Unclear: the interval includes zero. "Within 5 points" tests pass when the average difference is under 5 points.
+- **Run it.** `node validation/jev-return-probe.js [--repeats 5] [--only <family>]`. About 2,400 Jev requests and about 10 cents. Results go to `data/validation/jev-return-probe.json` and `.md` (not committed).
+- **What a pass means.** That signal may be given to Jev in the multi-day loop. A fail or a flat response means the loop uses the measured effect as a rule for that signal instead (REPEAT_CUSTOMERS_SPEC §3).
+
+### 20d. What the probe found (Nov 14, jev-1.14.0)
+
+One run: 473 questions asked 5 times each, 2,365 requests, 11 seconds, about 7 cents, none unanswered. Two asks of the same question differed by 1.2 points on average and 8.0 at most. All numbers below are the chance of going today, averaged over 11 returning customers or 7 newcomers; intervals are 95%, from resampling people. Full results: `data/validation/jev-return-probe.md` (not committed; `--from` rescores saved answers without asking Jev again).
+
+**Jev reads memory. All 5 sanity checks pass.**
+- A very good last visit against a very bad one: +34.9 points (29.2 to 40.7), odds ×5.7. Every one of the 11 people moved, by 19 to 53 points.
+- It reads the number: after a last wait of 0, 5, 10, 20 and 30 minutes the chance is 69, 58, 51, 43 and 40%.
+- It reads the outcome: leaving without ordering costs a further 10.0 points after 20 minutes and 13.8 after 10.
+- It reads the date: a 30-minute wait that ended in leaving gives 32% if it was yesterday, 37% a week ago, 44% four weeks ago.
+- It adds visits up: with none, one or three 20-minute waits among the last three visits the chance is 60, 50 and 42%; the same single wait counts for more yesterday (50%) than three days ago (56%).
+- It reads the visit count: people told a higher count get a higher chance (rank correlation 0.91).
+- It ignores what does not matter: a sentence about the weather moves the chance by 0.9 points, and the 20-minute wait in other words by 1.2.
+- It reads the sentence the multi-day loop writes for someone who turned away at the door (a sixth check, added and run afterwards, 495 requests): "found 9 people in line … and left without ordering" costs 24.5 points against an ordinary visit (−32.6 to −16.9), the same as waiting 20 minutes and then leaving. Whether the line was 9 people or 3 moves it by 2.4 points.
+
+**It answers like measured customers on 12 of 16 published effects. None goes the wrong way.**
+
+| Effect | Result | Verdict |
+|---|---|---|
+| Longer last wait | −9.2 points per 10 minutes (−11.2 to −7.2); 30 minutes against no line −28.9 | pass |
+| Walked away against served | −10.0 at 20 minutes, −13.8 at 10 | pass |
+| A 50-cent rise; a 50-cent cut | −4.3 (odds ×0.77); +5.4 (odds ×1.27) | pass |
+| 8 of 10 stamps against 2 of 10 | +10.3; visits 15% closer together (study: about 20%) | pass |
+| 20% off today, newcomers | +11.0 against a message with no offer (regulars: +7.9) | pass |
+| First visit on a deal against at full price | +0.7 (−0.7 to +2.4): a deal buys a first visit, not loyalty | pass |
+| Star rating, newcomers | +4.5 points per star, 13% more likely to come (study: 5 to 9% more revenue per star) | pass |
+| A friend's remark, newcomers | good +20.3 (odds ×2.5), bad −4.9 (odds ×0.76) | pass |
+| The same 15 minutes, ending fast against slow | +0.7 (−0.1 to +1.8) | no response |
+| A rise hurts more than an equal cut helps | 50 cents: 4.3 down, 5.4 up. 1 dollar: 6.0 down, 7.8 up | no response |
+| 2 free stamps of 10 against 0 of 8 | +0.1 (−0.3 to +0.6) | no response |
+
+- **The four it misses are the three human biases in the list:** the peak-end rule, loss aversion (two tests) and the head start. Jev answers them as a calculator would: the same 15 minutes is the same, 50 cents up mirrors 50 cents down, and 8 purchases to go is 8 to go. On the odds scale they are still flat (×1.04, ×1.02, ×1.01).
+- **Who reacts is sensible.** A 30-minute wait costs the most for the people in a hurry (Shanice −46, Karen −44, Lucy −39, Omar −38) and the least for Ellie, Priyanka and Tomas (−13 to −14). A 50-cent rise costs Bill 21 points ("dislikes change and notices it") and June 8, and nobody else more than 5. Stamps near the reward pull Tomas (+28) and Omar (+24), who look for deals, and do nothing for June, Marcus and Bill, who come anyway. The deal brings Omar (+40) and not Greta (+1), who prefers local places whatever the price.
+- **Loss aversion shows in some people and is reversed in others.** Bill and June lose more from a rise than they gain from an equal cut. Omar, Tomas and Dev, who look for the cheapest option, gain more from the cut. Over the cast they cancel.
+
+**Two cautions about size.**
+- **The level is squeezed toward the middle.** Told only their visit count, people who come on half of weekdays or fewer are given 1.5 times the chance the count implies (Tomas: told 3 visits in 4 weeks, given 34%). People who come every weekday are given 0.9 times (85 to 90%). Used as it is, Jev's answer would make occasional customers come about half as often again as they do.
+- **Waits may count for too much.** A 5-minute wait against no line already costs 11 points (odds ×0.61). No published figure gives a size per minute, so this is unchecked, and §16b found Jev turns away from lines more readily than real customers.
+
+**It repeats.** A second full run gave the same verdict on all 21 scored tests, and no effect moved by more than 0.9 points.
+
+**Limits.** One café, 12 written people, one wording per fact (one paraphrase checked), one model version. The intervals rest on 7 to 11 people. A pass means the direction is right and clear of noise; only the stamp and rating tests check a size, loosely.
+
+**Decisions for the multi-day loop (made from these results; not yet reviewed by the team).**
+1. **Jev is given these as words:** the last wait and how it ended (served or left), the date of each memory, up to three recent visits, the price against last week's, stamp-card progress, a message or deal from the shop, the star rating, a friend's remark, and the visit count.
+2. **Three effects are rules in the runner, not Jev's:** how a wait ended (the evening update writes one remembered wait, weighted toward the worst and the last moment, and the "quick at the end" words are dropped), loss aversion (a price rise's shift is scaled up against an equal cut's), and the head start (a card that starts with free stamps gets the study's lift). Sizes come from the studies and are `[open]`.
+3. **The level comes from the person, the change from Jev.** A person's chance today is their own usual rate (from the owner's data, or their group's), moved by the odds between Jev's answer for today's record and Jev's answer for their reference record: `logit(p) = logit(usual) + logit(jev today) − logit(jev reference)`. This keeps what Jev is good at, direction and who reacts, and removes the squeezed level. The reference answer is asked again only when the person's record changes.
+4. **One ask per person per day.** At 1.2 points of noise an ask, averaging is not needed for a pool; results are still reported as ranges over seeds.
+5. `[open]` The size of the wait effect needs a real number: the per-minute figures in de Vries et al., or an owner's data.
+
+---
+
+## 21. The multi-day loop: the same people over days (Nov 14)
+
+**Why.** One run is one morning. Whether a change keeps customers or wins new ones shows only when the same people decide again the next day, with what happened to them in mind. §20 showed Jev reads that memory. This section runs it: a pool of people who persist, the morning question each day, the existing engine for the day, and memory written each evening. [REPEAT_CUSTOMERS_SPEC.md](../REPEAT_CUSTOMERS_SPEC.md) is the product spec.
+
+**Everything here is unvalidated.** The size of the wait effect is unchecked (§20d), and every person's usual rate is an assumption until an owner's data replaces it. Results are reported only as the difference between a baseline and a change on the same seeds, as ranges, and under REPEAT_CUSTOMERS_SPEC §9b's bars.
+
+### 21a. The pool file
+
+`pools/<name>.json` holds what the engine cannot: who the people are between days.
+
+| Field | Meaning |
+|---|---|
+| `world`, `shop` | The world file and the service place being studied. |
+| `size` | People in the pool. Each is a copy of a cast member, drawn by the world's group shares, with their own record. |
+| `people.<castId>.usualPerWeek` | How often this kind of person comes, in visits per 5-day week. An assumption until owner data replaces it. |
+| `people.<castId>.knows` | Share of this kind of person who already come. The rest have never been inside. |
+| `people.<castId>.weight` | How many of this kind of person the pool holds, against the world's group shares (default 1). A street has far more people who rarely or never come than one morning's arrivals show. |
+| `people.<castId>.newcomer` | This person's bio allows putting them in the "has never been" state. |
+| `people.<castId>.dayVisitor` | In town for one day: left out of the pool. |
+| `ordinaryWait` | Minutes of an ordinary wait at the shop: what a person's usual rate already allows for. |
+| `trialPerWeek` | How often someone who knows of the shop but has never been tries it, before Jev moves it. |
+| `walkPast` | Chance per day that someone who does not know the shop notices it. |
+| `tellReach` | People in the same group who hear one remark; may be a fraction (0.3: three remarks in ten reach one person). Jev has about 85% of visitors tell others, so a whole number floods the street. |
+| `habit` | A new customer's rate as a share of their kind's usual rate after 1, 2, 3, 4 and 5 or more visits. The default follows the shape of the vendor visit ladder (REPEAT_CUSTOMERS_SPEC §2b). |
+| `rules.lossAversion` | How many times further a price rise moves the odds than Jev says (§20d found none; 1 turns the rule off). |
+
+### 21b. One day
+
+`run/days.js`, `runDays({ pool, spec, days, seed, provider, change, centers })`. A day is a weekday morning; day 5 is the Monday after day 4, so "3 days ago" is counted on the calendar.
+
+1. **Who hears of the shop.** Someone who does not know it may notice it walking past, hear of it from a remark, or be reached by a promotion.
+2. **The morning question** (§20), for everyone who knows the shop. The person's chance of coming today is their own usual rate, moved on the odds scale:
+
+   `logit(chance) = logit(usual) + (env − center) + factor × delta`
+
+   - **`usual`** is `usualPerWeek ÷ 5`, at most 95% (nobody comes every single morning, and at 100% nothing could move them), times `habit` for a customer with fewer than 5 visits, or `trialPerWeek ÷ 5` for someone who has never been.
+   - **Three records** are built for the person. *Today*: the visit count over the last 4 weeks, up to 3 visits remembered from the last 28 days, up to 2 remarks heard in the last 7 days, the price (with last week's while they have not yet paid the new one), stamp-card progress, and today's message from the shop. *Plain*: today without what the change adds (the changed price, the card, the message), which is what they would know this morning had nothing been changed. *Reference*: the same person on an ordinary day, with the same visits each replaced by an ordinary one (`ordinaryWait`, served) and no remarks.
+   - **`env`** is how this morning's memories and remarks compare with an ordinary day: Jev's answer for the plain record against the reference record, as a difference in log-odds. When the two records are the same, Jev is not asked.
+   - **`center` is the baseline's zero point.** A person's usual rate already allows for ordinary mornings, so an average morning must leave the number of visits where it is. Each morning `center` is the value at which the people who have an `env` are expected to make as many visits as at their usual rates. The baseline works it out; a change on the same seed reuses the baseline's. Without it the baseline drifted: a first live run gained 26% in three mornings, because most real waits are shorter than the reference wait and every such memory nudged people upward.
+   - **There are two zero points each morning:** one for people who have been to the shop and one for people who have not. A friend's remark moves a newcomer far more than a regular (§20d: odds ×2.5 against ×1.3). With one zero point for both, the newcomers' remarks pulled every regular down to pay for them, and one seed's baseline grew 16%.
+   - **`delta`** is what the change adds: Jev's answer for today's record against the plain one. It is not centred.
+   - **`factor` is the loss-aversion rule:** `rules.lossAversion` when today's price is above the reference price, otherwise 1.
+   - Jev's answers are cached by request, within a run and across the arms of a comparison, so the same person with the same record gets the same answer in the baseline and in the change. The draw that decides whether a person goes is also the same in both arms.
+3. **The day runs on the engine.** The people who go are the day's arrivals, each at their own usual time, give or take 10 minutes. They walk to the shop first (they decided to go there); on seeing the line they may still walk away, to another place or home, as in any run. People who do not go are not simulated, so the other places hold only the people who turned away from the shop.
+4. **The evening update.** Each visitor's record gets one remembered visit: the wait at the shop (to the minute when short, to 5 minutes from 10 up) and how it ended. A person who turned away on seeing the line remembers the line: "found 9 people in line at … and left without ordering". The probe checked that sentence (§20c): it costs 24.5 points against an ordinary visit, the same as waiting 20 minutes and then leaving. A served visit adds a stamp and sets the price they last paid. A remark made about the shop reaches `tellReach` people of the same group, and makes the shop known to any of them who did not know it.
+
+- **Peak-end (rule).** A visit is remembered by its worst wait and its ending, served or left. Nothing else of the visit is kept.
+- **The conservative run** (`rules.remember: "outcome"`, or `--remember outcome`). A served visit is remembered as an ordinary one whatever the wait, so only leaving without ordering is remembered. Leaving has a published direction (de Vries et al. 2018) and Jev's answer to it does not hinge on a number of minutes; the size of the wait effect is the unchecked part (§20d). Run both: the conservative run is a floor under the full one.
+- **The head start is not modeled.** Jev gave no response to it (§20d) and no published size per day exists. A stamp card can be tested; a head start on it cannot yet.
+- **The engine changes by one option.** `new Sim(spec, { arrivals: [{ t, persona, first, tag }] })` replaces the random schedule with a list: when each person arrives, which cast member they are, the place they walk to first, and a tag that comes back in `agentsSummary()` with their line log (`lines: [{ place, wait, ahead, outcome }]`). Without the option nothing changes (tested: the same agents, no new fields).
+- **With the rule model** nobody reads memory: the chance is the usual rate, and the loop is a dry run of the plumbing.
+- `[open]` **Nobody lapses except through Jev.** A customer stops coming only when their memories move them. People who discover the shop are added and nothing takes people away, so a long baseline grows slowly; `walkPast` is set low to keep that inside the steadiness check.
+
+### 21c. Changes and results
+
+A change is `{ from, to, patch, card, promo }`: a what-if patch (§15: staff, price), a stamp card (`{ need, reward }`), or a promotion (`{ text, priceOff, reach }`), in force on days `from` to `to`. `compareDays` runs the baseline and the change on the same seeds.
+
+Per arm and seed: visits, first-time visitors, people served, walk-aways and the average wait per day; and over the run, visits per week, first-time visitors per week, first-timers who came back, regulars (3 or more visits in the last 10 days), and good and bad remarks. The effect of a change is the difference from the baseline seed by seed, given as a range, with whether every seed agrees in direction.
+
+**Realism checks on the baseline** (level 2 of REPEAT_CUSTOMERS_SPEC §9), printed with every run:
+- Visits are lopsided: the busiest fifth of customers make at least 40% of the visits.
+- The baseline holds steady: visits in the second half of the run are within 15% of the first half. A drift means the loop loses or gains customers by itself, which is a calibration error, not a finding.
+- New customers come back less often than established ones.
+
+Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 --provider jev --change staff+1 --out data/days/cafe.json`. Changes: `staff+1`, `price+0.5`, `promo20`, `card10`, several at once separated by commas. `--baseline-from <earlier --out file>` reuses saved baselines so only the changes are run; `--remember outcome` is the conservative run. Results go to `data/days/` (not committed). One simulated morning of this café costs about 1 cent and takes about 8 seconds with Jev.

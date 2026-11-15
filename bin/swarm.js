@@ -95,6 +95,11 @@ Usage: swarm <command> [options]
                                     and returns updated advice
       --out DIR                     Runs folder (default runs)
   serve [--port 4173]               Start the local viewer
+  days <pool.json> [--days 10] [--seeds 3] [--seed 7] [--provider rules|jev]
+       [--change staff+1,price+0.5,promo20,card10] [--out data/days/<name>.json]
+       [--baseline-from data/days/<earlier>.json] [--remember outcome]
+                                    The same people over days (docs/PROTOTYPE.md §21): the baseline and
+                                    each change on the same seeds. Unvalidated; with rules it is a dry run
   sanity [--model jev-latest]       Live Jev checks (makes a few hundred API calls)
 
 <world> is a path to a world JSON file or an example name (${exampleNames().join(', ')}).
@@ -165,6 +170,7 @@ const COMMANDS = {
   },
   'import-mesh': { min: 1, max: 1, flags: ['out', 'up'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
   serve: { min: 0, max: 0, flags: ['port'], run: cmdServe },
+  days: { min: 1, max: 1, flags: ['days', 'seeds', 'seed', 'provider', 'change', 'baseline-from', 'remember', ...JEV_FLAGS, 'out', 'json'], run: cmdDays },
   sanity: { min: 0, max: 0, flags: ['model'], run: cmdSanity }
 };
 
@@ -521,6 +527,59 @@ function formatDelta(k, d, base) {
   const amount = k === 'abandonRate' ? `${(abs * 100).toFixed(1)} pts` : formatKpi(k, abs);
   const rel = base ? ` (${sign}${fmtPct(abs / Math.abs(base), 0)})` : '';
   return `${sign}${amount}${rel}`;
+}
+
+// The same people over days (§21). The pool file names its world.
+async function cmdDays([ref], flags) {
+  const providerName = flags.provider ?? 'rules';
+  if (!['rules', 'jev'].includes(providerName)) throw new CliError('days runs with --provider rules or --provider jev');
+  const file = resolve(ref);
+  if (!existsSync(file)) throw new CliError(`No pool file at ${ref}`);
+  let pool;
+  try { pool = JSON.parse(readFileSync(file, 'utf8')); } catch (err) { throw new CliError(`${ref} is not valid JSON: ${err.message}`); }
+  if (!pool.world) throw new CliError(`${ref} has no "world"`);
+  // --remember outcome: the conservative run, where only leaving without ordering is remembered (§21b).
+  if (flags.remember !== undefined) {
+    if (!['wait', 'outcome'].includes(flags.remember)) throw new CliError('--remember is wait or outcome');
+    pool = { ...pool, rules: { ...(pool.rules || {}), remember: flags.remember } };
+  }
+  const { file: worldFile, raw } = readWorld(pool.world);
+  const spec = checkedSpec(raw, shortPath(worldFile));
+  const { compareDays, changeFor, renderDays } = await import('../run/days.js');
+  const days = intFlag(flags, 'days', 10, 2);
+  const seeds = seedRange(intFlag(flags, 'seed', 7), intFlag(flags, 'seeds', 3, 1));
+  const changes = String(flags.change ?? '').split(',').map(x => x.trim()).filter(Boolean).map(name => {
+    try { return changeFor(name, spec, pool.shop, days); } catch (err) { throw new CliError(err.message); }
+  });
+  const provider = providerFor(providerName, { ...flags, 'max-requests': flags['max-requests'] ?? 200000 });
+  let last = 0;
+  const onProgress = ({ seed, arm, day }) => {
+    if (flags.json || Date.now() - last < 2000) return;
+    last = Date.now();
+    process.stderr.write(`  seed ${seed} · ${arm} · day ${day.day + 1} of ${days}: ${day.went} came, ${day.left} walked away\n`);
+  };
+  // --baseline-from: the baselines of an earlier --out file, so only the changes are run.
+  let baselines = null;
+  if (flags['baseline-from']) {
+    const from = resolve(flags['baseline-from']);
+    if (!existsSync(from)) throw new CliError(`No results file at ${flags['baseline-from']}`);
+    baselines = JSON.parse(readFileSync(from, 'utf8')).baselines;
+  }
+  let result;
+  try { result = await compareDays({ pool, spec, days, seeds, provider, changes, baselines, onProgress }); }
+  catch (err) { if (/saved baselines/.test(err.message)) throw new CliError(err.message); throw err; }
+  const providerStats = provider.stats();
+  if (flags.out) {
+    const out = resolve(flags.out);
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, JSON.stringify({ createdAt: new Date().toISOString(), pool: shortPath(file), provider: providerName, providerStats, ...result }, null, 1));
+  }
+  if (flags.json) { printJson({ provider: providerName, providerStats, ...result }); return 0; }
+  for (const line of renderDays(result, { title: pool.title || spec.title, provider: providerName, remember: pool.rules?.remember })) print(line);
+  print();
+  print(`Provider: ${providerStatsLine(providerStats)}`);
+  if (flags.out) print(`Wrote ${shortPath(resolve(flags.out))}`);
+  return 0;
 }
 
 async function cmdCompare([ref], flags) {
