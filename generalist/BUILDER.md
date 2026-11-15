@@ -33,10 +33,20 @@ older Claude Code versions without them must be upgraded.
 The integration invokes the installed CLI directly through `spawn('claude', ['-p', ...])`; it does
 not use the Claude Code bridge or substitute an API call when `claude-code` is selected.
 
-Development verification launched this exact headless path with Claude Code 2.1.286 and a tiny
-two-actor brief. The CLI started but the development machine had no Claude login or provider
-credentials, so live environment generation remains unverified there until sign-in. Offline tests
-cover structured replies, repair, missing-login diagnostics, cancellation and process limits.
+The canonical schema uses JSON Schema draft-07 with `definitions` and local references. Claude
+Code 2.1.286 rejected the former draft-2020-12 declaration during `--json-schema` preflight,
+before contacting a model. This compatibility failure is reported as `BUILDER_SCHEMA_INVALID`;
+it does not ask the user to sign in. Confirmed missing-authentication failures retain the separate
+`BUILDER_AUTH_REQUIRED` error. Raw diagnostics are never returned in either case.
+
+On Nov 14, 2026, an authenticated subscription login and a plain safe-mode `claude -p` request
+were confirmed. After the draft-07 correction, the exact `buildEnvironment` headless path above
+also produced a valid two-worker, three-tick task environment on its first attempt using Claude
+Code 2.1.286 and its default model. Offline tests separately compile the actual emitted schema
+with a draft-07 validator and cover repair, schema/login diagnostics, cancellation and process
+limits. The generated definition was also saved and run through the local HTTP API with the
+rules provider: two completed tasks and four recorded frames. These checks do not establish
+live Jev behavior or simulation accuracy.
 
 Each attempt has a three-minute timeout (programmatic maximum five minutes). The CLI output is
 capped at 2 MB, diagnostics at 64 KB. Cancellation or limits terminate the process group; temporary

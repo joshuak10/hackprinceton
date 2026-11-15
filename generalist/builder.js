@@ -72,8 +72,13 @@ class OutputError extends Error {
   constructor(message) { super(message); this.code = 'INVALID_BUILDER_OUTPUT'; }
 }
 
-// Match only known authentication failures. Never return model output or CLI diagnostics: either
+// Match only known CLI failures. Never return model output or CLI diagnostics: either
 // can contain keys, file paths or other sensitive context. Unknown failures keep a generic error.
+function schemaFailure(text) {
+  if (!/(?:--json-schema\s+is not a valid JSON Schema|no schema with key or ref\s+["'`]?https?:\/\/json-schema\.org\/draft)/i.test(text)) return null;
+  return fail('Claude Code rejected the environment output schema before generation. Update Swarmscope and use a Claude Code version that supports JSON Schema draft-07.', 'BUILDER_SCHEMA_INVALID');
+}
+
 function authenticationFailure(text) {
   if (!/(?:not logged in|please (?:log|sign) in|(?:run|use)\s+["'`]*(?:claude\s+auth\s+login|\/login)|authentication required|no (?:api key|authentication|credentials)|missing (?:required )?(?:anthropic[_ ]?)?api[_ ]?key)/i.test(text)) return null;
   return fail('Claude Code has no usable authentication. Run "claude auth login", or configure credentials for your selected provider, then build again.', 'BUILDER_AUTH_REQUIRED');
@@ -84,9 +89,9 @@ function parseClaudeOutput(text) {
   try { envelope = JSON.parse(text); } catch { throw new OutputError('Claude returned invalid JSON.'); }
   if (!object(envelope)) throw new OutputError('Claude returned no structured environment.');
   if (envelope.is_error || (envelope.type === 'result' && envelope.subtype && envelope.subtype !== 'success')) {
-    const auth = authenticationFailure(text);
-    if (auth) throw auth;
-    throw fail('Claude did not finish the build. Check its authentication, model availability and output budget.', 'BUILDER_FAILED');
+    const known = schemaFailure(text) || authenticationFailure(text);
+    if (known) throw known;
+    throw fail('Claude did not finish the build. Check Claude Code configuration, model availability and output budget.', 'BUILDER_FAILED');
   }
   if (object(envelope.structured_output)) return envelope.structured_output;
   if (typeof envelope.result === 'string') {
@@ -147,7 +152,10 @@ async function claudeCodeGenerate({ prompt, schema, model, signal, timeoutMs, sp
       child.once('error', () => finish(fail('Could not start Claude Code. Install it or set SWARM_CLAUDE_BIN to its executable path.', 'BUILDER_UNAVAILABLE')));
       child.once('close', code => {
         if (failure) return finish(failure);
-        if (code !== 0) return finish(authenticationFailure(stdout + '\n' + diagnostics) || fail(`Claude Code exited with code ${code ?? 'unknown'}. Check authentication with "claude auth status" and verify the configured model.`, 'BUILDER_FAILED'));
+        if (code !== 0) {
+          const detail = stdout + '\n' + diagnostics;
+          return finish(schemaFailure(detail) || authenticationFailure(detail) || fail(`Claude Code exited with code ${code ?? 'unknown'}. Check Claude Code configuration and model availability.`, 'BUILDER_FAILED'));
+        }
         finish(null, stdout);
       });
       // UTF-8 characters may straddle OS pipe chunks (including names and non-English briefs).

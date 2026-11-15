@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
 import { access } from 'node:fs/promises';
+import Ajv from 'ajv';
 import { buildEnvironment, normalizeBrief } from '../generalist/builder.js';
+import { ENVIRONMENT_SCHEMA } from '../generalist/spec.js';
 
 const valid = () => ({
   version: 1, title: 'Claims desk', description: 'A fictional claims desk. One tick is one minute.', ticks: 12,
@@ -107,6 +109,32 @@ test('headless backend fixes permissions, tools and settings and sends user data
   await assert.rejects(access(call.options.cwd), err => err.code === 'ENOENT');
 });
 
+test('the actual CLI output schema compiles with a draft-07 validator and enforces nested references', async () => {
+  const { spawn, calls } = fakeSpawn([{ structured_output: valid() }]);
+  await buildEnvironment(brief, { spawn });
+  const args = calls[0].args;
+  const schema = JSON.parse(args[args.indexOf('--json-schema') + 1]);
+  assert.deepEqual(schema, ENVIRONMENT_SCHEMA, 'the generator and runtime share one canonical schema');
+  assert.equal(schema.$schema, 'http://json-schema.org/draft-07/schema#');
+  assert.ok(schema.definitions);
+  assert.equal(schema.$defs, undefined);
+  const ajv = new Ajv({ strict: true, allowUnionTypes: true });
+  // No 2020-12 meta-schema is installed: this reproduces the installed CLI's preflight failure.
+  assert.throws(() => ajv.compile({ ...schema, $schema: 'https://json-schema.org/draft/2020-12/schema' }), /no schema with key or ref/);
+  const validate = ajv.compile(schema);
+  assert.equal(validate(valid()), true, JSON.stringify(validate.errors));
+  for (const modify of [
+    spec => { spec.roles[0].count = 0; },
+    spec => { spec.actions[0].effects[0].scope = 'unknown'; },
+    spec => { spec.resources[0].capacity = 'one'; },
+    spec => { spec.world.reviewed = { nested: true }; },
+    spec => { spec.actions[0].execute = 'code'; }
+  ]) {
+    const spec = valid(); modify(spec);
+    assert.equal(validate(spec), false, JSON.stringify(spec));
+  }
+});
+
 test('headless invalid JSON repairs; process failures do not retry or expose diagnostics', async () => {
   const repaired = fakeSpawn(['not json', { result: JSON.stringify(valid()) }]);
   const result = await buildEnvironment(brief, { spawn: repaired.spawn });
@@ -141,7 +169,27 @@ test('known Claude login failures are actionable and diagnostics never reach the
     assert.equal(calls.length, 1);
   }
   const unknown = fakeSpawn([''], { exitCode: 1, stderr: 'Transport-specific internal failure SECRET-123' });
-  await assert.rejects(buildEnvironment(brief, { spawn: unknown.spawn }), error => error.code === 'BUILDER_FAILED' && !error.message.includes('SECRET-123') && !error.message.includes('no usable authentication'));
+  await assert.rejects(buildEnvironment(brief, { spawn: unknown.spawn }), error => error.code === 'BUILDER_FAILED' && !error.message.includes('SECRET-123') && !/auth|login/i.test(error.message));
+});
+
+test('schema preflight errors are classified before authentication and never suggest login', async () => {
+  const diagnostic = 'Error: --json-schema is not a valid JSON Schema: no schema with key or ref "https://json-schema.org/draft/2020-12/schema"';
+  for (const failure of [
+    { output: '', exitCode: 1, stderr: `${diagnostic}\nPrivate diagnostics SECRET-123` },
+    { output: { is_error: true, result: diagnostic + '\nPlease run /login. SECRET-123' }, exitCode: 0, stderr: '' },
+    { output: diagnostic, exitCode: 1, stderr: 'SECRET-123' }
+  ]) {
+    const { spawn, calls } = fakeSpawn([failure.output], failure);
+    await assert.rejects(buildEnvironment(brief, { spawn }), error => {
+      assert.equal(error.code, 'BUILDER_SCHEMA_INVALID');
+      assert.match(error.message, /schema before generation/);
+      assert.match(error.message, /draft-07/);
+      assert.doesNotMatch(error.message, /auth|login|SECRET-123/);
+      return true;
+    });
+    assert.equal(calls.length, 1, 'a CLI preflight failure is not a model repair attempt');
+    await assert.rejects(access(calls[0].options.cwd), err => err.code === 'ENOENT');
+  }
 });
 
 test('headless timeouts and cancellation terminate the child and remove its temporary workspace', async () => {

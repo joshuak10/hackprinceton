@@ -80,10 +80,14 @@ Builds validate the generated definition and feed errors back for up to three at
 attempt has a three-minute deadline. Cancellation terminates the child process or aborts the
 SDK request. A missing CLI, unavailable model or missing credentials produces an explicit error;
 there is no silent switch to a different builder. See [the builder contract](../generalist/BUILDER.md).
+Known `--json-schema` preflight failures are reported as schema compatibility errors, separately
+from authentication failures. The canonical draft-07 schema is accepted by the verified Claude
+Code 2.1.286 path; the former draft-2020-12 declaration was rejected before generation began.
 
 ## Definition and execution contract
 
-[`generalist/schema.json`](../generalist/schema.json) describes the JSON structure.
+[`generalist/schema.json`](../generalist/schema.json) describes the JSON structure using JSON
+Schema draft-07, `definitions` and local references for Claude CLI compatibility.
 [`generalist/spec.js`](../generalist/spec.js) additionally checks references, compatible state
 types, declared workflow-state references and resource claims. Unknown fields and executable extensions
 are rejected rather than silently interpreted.
@@ -173,4 +177,9 @@ compare multiple seeds and check meaningful conclusions against real observation
 
 Automated checks use offline provider and process doubles for builder repair, CLI isolation,
 timeouts, cancellation, Unicode output, state invariants, resource contention, persistence and
-HTTP behavior. No live Claude/Jev generation is claimed by those tests.
+HTTP behavior. They also compile the actual CLI schema with a draft-07 validator. Those tests
+make no live model calls. Separately, on Nov 14, 2026, the full authenticated Claude Code 2.1.286
+builder generated and validated a tiny two-worker environment on its first attempt after the
+schema correction. Saving that definition and running it through the HTTP API with rules produced
+two completed tasks across three ticks and four recorded frames. These checks do not verify Jev
+predictions.

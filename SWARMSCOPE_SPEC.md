@@ -1,6 +1,6 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.28 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.29 · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Direction (Nov 14, v0.27):** Swarmscope is a **general environment simulation engine**. Users define an environment, objectives and guidelines; headless Claude builds a validated declarative environment; individual Jev agents choose actions while the engine enforces state transitions, shared resource capacities and conditions. Independent businesses and physical crowds remain examples, rather than the product boundary. The legacy physical engine remains governed by [docs/PROTOTYPE.md](docs/PROTOTYPE.md); the new workflow contract lives in `generalist/schema.json` and `docs/GENERALIST.md`.
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
@@ -420,6 +420,13 @@ Pitch lines:
 ---
 
 ## 14. Change log
+
+### v0.29 · Nov 14, 2026 · Headless builder schema compatibility
+
+- Use JSON Schema draft-07 with `definitions` and local references for the canonical general environment schema. Its validation rules and environment version remain unchanged; the installed Claude Code structured-output validator rejects the draft-2020-12 declaration before contacting a model.
+- Classify known `--json-schema` preflight failures as builder schema errors, without suggesting a login or exposing raw diagnostics. Retain separate authentication errors for confirmed authentication failures.
+- Correct the verification record: local subscription authentication and a plain safe-mode `claude -p` request work. The environment build failed at schema preflight; successful authentication alone does not verify full structured environment generation.
+- Add offline draft-07 schema compatibility and error-classification regression checks. A separate live check with Claude Code 2.1.286 then generated and validated a two-worker, three-tick environment through the complete isolated builder path on the first attempt.
 
 ### v0.28 · Nov 14, 2026 · Reuse Scope and verify headless generation
 
