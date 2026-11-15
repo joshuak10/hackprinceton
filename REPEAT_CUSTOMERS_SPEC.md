@@ -1,8 +1,9 @@
 # Swarmscope: new and returning customers over days (draft spec)
 
-> **Version:** v0.2 draft · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Version:** v0.3 draft · Nov 14, 2026 · HackPrinceton Fall 2026
 > **Scope:** item 1 of [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md) §9, "Repeat visits with memory", worked out in detail. Nothing here is built. The engine contract, [docs/PROTOTYPE.md](docs/PROTOTYPE.md), still governs the code; when this is approved, its engine parts go there as a new section before any code.
-> **Source:** two research passes on Nov 14. The first (one research agent) gathered the published effects in section 4. The second (three read-only agents: one read the engine code, one traced vendor benchmarks to their origin, one worked out capacity and margin) added sections 2b, 4b, 5b, 6b, 6c and 9b. Web sources are listed in section 11. The published figures were gathered from papers, abstracts and summaries and have not all been checked against the full papers. Treat each as "to confirm" until someone reads the source.
+> **Before Sunday's submission:** only the return probe and the "next morning" mode in Ask the room (section 8, steps 1 and 2). The multi-day loop comes after the hackathon.
+> **Source:** two research passes on Nov 14. The first (one research agent) gathered the published effects in section 4. The second (three read-only agents: one read the engine code, one traced vendor benchmarks to their origin, one worked out capacity and margin, removed in v0.3) added sections 2b, 4b, 5b and 9b. Web sources are listed in section 11. The published figures were gathered from papers, abstracts and summaries and have not all been checked against the full papers. Treat each as "to confirm" until someone reads the source.
 
 ## 1. The question
 
@@ -27,7 +28,7 @@ Two owner questions:
 - Dropout: people not seen for N days.
 - Word of mouth: good remarks minus bad ones, counted from what simulated people say, not a survey score.
 
-These match the standard repeat-visit model, BG/NBD (Fader, Hardie & Lee 2005): each person has a visit rate and a chance of dropping out after each visit. An owner's point-of-sale export can be fitted to that model, which gives a real baseline to check the simulation against (section 8).
+These match the standard repeat-visit model, BG/NBD (Fader, Hardie & Lee 2005): each person has a visit rate and a chance of dropping out after each visit. An owner's point-of-sale export can be fitted to that model, which gives a real baseline to check the simulation against (section 9, level 3).
 
 ## 2b. The shape of coming back (vendor data)
 
@@ -135,10 +136,10 @@ The owner reads, as ranges: "+N new customers a week, M more regulars", split by
 
 **Three loyalty mechanisms to try first (second pass).** Each is told to a person as plain words. One evening will not show anyone returning, so these are for the return probe (section 8) and the loop.
 
-| Mechanism | What a person is told | Runs today | What decides whether it pays |
+| Mechanism | What a person is told | Runs today | What it must show |
 |---|---|---|---|
-| Stamp card with a head start | "Stamp card: 2 of 10 stamps are already filled. Tonight's meal adds one. The tenth meal is free." | As an offer with no discount, with Jev only | 18% more seated visits (section 6b). |
-| A message before the second visit, within 30 days | Needs the morning question | No | With 20% off, 12 to 31% of the people who redeem must be people who would not have come back anyway (derived: a $7.09 discount against a second visit worth $61 or $23, section 6c). No measured lift exists (section 4b). |
+| Stamp card with a head start | "Stamp card: 2 of 10 stamps are already filled. Tonight's meal adds one. The tenth meal is free." | As an offer with no discount, with Jev only | The card is finished more often with the head start, and visits come sooner near the reward (Nunes & Drèze 2006; Kivetz et al. 2006). |
+| A message before the second visit, within 30 days | Needs the morning question | No | More first-timers come back than without the message. No measured lift exists to compare with (section 4b). |
 | A third-visit treat | "Come three times in six weeks and the chef adds a piece on the house. Tonight counts as one." | As an offer with no discount, with Jev only | The only evidence for streaks is one vendor case study of people who chose to take part. Visits speed up near a reward and slow after it (Kivetz et al. 2006). |
 
 The stamp-card message as a patch. `applyPatch` accepts it on the sushi world as "a message · to everyone":
@@ -148,59 +149,6 @@ The stamp-card message as a patch. `applyPatch` accepts it on the sushi world as
   { "kind": "offer", "offer": { "id": "stamp_card", "text": "Stamp card: 2 of 10 stamps are already filled. Tonight's meal adds one. The tenth meal is free." } }
 ]
 ```
-
-## 6b. Capacity and margin: when loyalty costs more than it earns
-
-Worked for the sushi restaurant (`worlds/sushi-restaurant.json`). The margin is assumed until an owner gives a food cost. PRODUCT.md keeps money figures off the display, so these numbers belong in the report, not on the screen.
-
-**The room is full for most of the evening (derived).**
-- Seats turn over at 14 covers an hour: 4 counter seats at 30 minutes and 4 table seats at 40.
-- The arrival curve peaks at about 39 an hour, 2.8 times that. It runs above 14 an hour from about 6:20 to 7:30 pm, and 31 of the 36 people arrive in that window.
-- On the arrival curve the eighth person arrives at about 6:37 pm. From then on, an extra arrival adds no seated customer. About 25 people can be seated by the time arrivals end; the recorded Jev run seated 24.
-- So a reward redeemed while the room is full replaces a full-price cover with a discounted one.
-
-**Break-even.** Let m be the contribution margin (the share of the ticket left after food), r the reward as a share of each ticket, and k the share of visits that carry it. The programme pays when:
-
-```
-extra visits ÷ baseline visits  ≥  (r × k) ÷ (m − r × k)
-```
-
-Only extra visits that get a seat without displacing someone count.
-
-| Reward | r | Extra visits needed, m = 0.65 | m = 0.40 |
-|---|---|---|---|
-| 20% off everything | 0.20 | 44% | 100% |
-| Tenth meal free | 0.10 | 18% | 33% |
-| Sixth meal free | 0.17 | 34% | 71% |
-
-- m = 0.65 assumes staff are a fixed cost and food is 30 to 35% of the ticket (a vendor blog, no primary source). With staff counted, m is nearer 0.35 to 0.40.
-- The average ticket is $35.43 (derived: $38 and $32, weighted by seat turnover), so a seated visit contributes about $23 at m = 0.65.
-- **The 20%-off promotion cannot pay for itself on a Friday.** It needs about 11 more covers on top of 24, and the room has space for about one. This matches the recorded runs, which showed no gain in people seated (docs/PROTOTYPE.md §18).
-
-**Who a longer line pushes out (rule model, derived from the engine's wait estimate).** With all four seats busy, the estimate is (people waiting + 1) × 7.5 minutes at the counter and × 10 at the table. The chance of walking away on arrival:
-
-| Group (patience) | Counter, with 0 / 1 / 2 / 3 waiting | Table, with 0 / 1 / 2 waiting |
-|---|---|---|
-| Walk-ins (10 min) | 0 / 100% | 50% / 100% |
-| Small groups (15) | cannot use it | 0 / 100% |
-| Date night (18) | 0 / 8% / 100% | 0 / 78% / 100% |
-| Regulars (25) | 0 / 0 / 25% / 100% | 0 / 0 / 100% |
-
-- Walk-ins leave first, then small groups, who can only use the table. Regulars leave last but wait the longest.
-- So a change that brings more people at the peak removes the newcomers it was meant to win. In the multi-day loop, people need to be able to choose a quieter day or time (their "usual days and times", section 5), or every loyalty change will look self-defeating.
-- With Jev and `tellPatience: false`, the person's own description decides, and patience does not protect regulars.
-
-**The rule model cannot test a message or a price at this restaurant.** It does not read offer text. A person who arrives always picks one of the two places, and nobody has a live wait app, so a price only moves people between the counter and the table. Use Jev for these changes.
-
-## 6c. A first estimate of return and customer value (a prior, not a result)
-
-Until the loop exists, this is the arithmetic to compare the simulation with. Every number comes from section 2b or 6b.
-
-- **Expected further visits** after visit n, taking the ladder as it stands and 76% for every later step: 0.50 after the first visit, 1.64 after the second, 2.47 after the third, 2.92 after the fourth, and 3.14 from the fifth on. Each is that step's chance × (1 + the figure for the next visit).
-- **A first-timer is worth about 1.5 visits in all,** or about $35 of contribution at m = 0.65. Someone who comes back once is worth about 2.6 visits.
-- **One extra second visit is worth $23 to $61:** $23 if the person then stops, $61 if they go on like people who returned by themselves. Which is true is unknown, because the ladder describes people who chose to return.
-- **A stamp card with a head start.** The car-wash result (34% finished against 19%, with eight visits to go) works out to the chance of each next visit rising from 0.81 to 0.87, if the chance is the same at every visit. As an upper bound, applied to every step of the ladder, a first-timer's visits rise from 1.5 to 2.1. A tenth-meal-free card then pays only if at least 46% of the extra visits land when a seat is free.
-- **Sizes we do not have.** Published work gives the direction of the last wait and of walking away (section 4), not a size per minute. The return probe (section 8) measures Jev's response. The owner's data (section 9, level 3) measures the real one.
 
 ## 7. Cost
 
@@ -223,6 +171,8 @@ Until the loop exists, this is the arithmetic to compare the simulation with. Ev
 2. **Demo shortcut.** A "next morning" mode in Ask the room ([docs/PROTOTYPE.md](docs/PROTOTYPE.md) §17), with controls for the last visit, a friend's remark and the rating. It shows memory working live before the multi-day loop exists.
 3. **The multi-day loop** (section 5), for signals that passed step 1.
 
+**Before Sunday's submission, steps 1 and 2 only.** The loop needs people who persist, arrivals from a list and new engine fields (section 5b), and its results could not pass section 9b's bars in the time left.
+
 ## 9. Benchmark: how we test loyalty
 
 No ready-made benchmark exists for simulated customers' loyalty. We test in three levels. The first two are gates; the third is the real test.
@@ -235,11 +185,11 @@ No ready-made benchmark exists for simulated customers' loyalty. We test in thre
 | Price change (Hardie et al. 1993) | A 50-cent rise lowers returns more than a 50-cent cut raises them. |
 | Stamp card, near the reward (Kivetz et al. 2006) | Visits come about 10–30% closer together at 8 of 10 stamps than at 2 of 10 (study: about 20%). |
 | Stamp card, head start (Nunes & Drèze 2006) | A card that starts with 2 free stamps is finished clearly more often (study: 34% against 19%). |
-| Promotion (Dholakia 2011) | Of the newcomers a 20%-off deal brings, roughly 10–30% come back at full price (study: about 20%). |
+| Promotion (Dholakia 2011) | The newcomers a 20%-off deal brings come back at full price no more often than newcomers who came without it. The study's 19.9% is about the same as any first-timer's return rate (section 2b), so a deal buys a first visit, not extra loyalty. |
 | Star rating (Luca 2016) | A higher rating brings more first-time visitors, around the 5–9% revenue gain per star. |
 
-Two notes from the second pass:
-- **The promotion test.** Ordinary first-timers return at about 19% (section 2b), the same as the study's 19.9%. The rule as written would pass even if the promotion changed nothing about returning. `[open]` Proposed: compare the deal's newcomers with newcomers who came without it, and pass if the deal's newcomers return no more often.
+Two notes:
+- **The promotion test compares newcomers with newcomers.** An earlier rule ("about 20% come back at full price") would have passed even if the promotion changed nothing, because ordinary first-timers return at about 19% (section 2b). Adopted in v0.3.
 - **The stamp-card test near the reward.** The 20% figure is still to confirm (section 4).
 
 **Level 2: realism checks on the simulated sales log.** Two simulated weeks should look like a real customer base:
@@ -264,15 +214,15 @@ Two notes from the second pass:
 - **Walk-aways are events, not people.** One person can walk away from both places: 18 walk-aways were about 12 people.
 - **Small groups.** A group in the sushi world is 6 to 11 people. Do not report a difference of fewer than 2 people.
 - **No claim about new customers while arrivals are an input.** Until the morning question decides who comes, adding arrivals is an assumption, not a result.
-- **One evening says nothing about 30 or 90 days.** It gives seats, waits, frustration and walk-aways by group. The return rates and customer value in section 6c are assumptions until the loop runs.
+- **One evening says nothing about 30 or 90 days.** It gives seats, waits, frustration and walk-aways by group.
 
 ## 10. Caveats and open questions
 
 - **Most published effects are not one person's probabilities.** They are totals (revenue, sell-outs, time until the next visit). We can match direction and rough size, not exact values.
+- **Errors compound across days.** Jev already walks away from lines more readily than real customers ([docs/PROTOTYPE.md](docs/PROTOTYPE.md) §16b: its chance of joining falls by about half from 1 to 15 people ahead, where the deli study saw purchases fall by about a tenth). In a multi-day loop each extra walk-away becomes a bad memory and a lower chance of coming back, so loyalty would come out understated, more so the more days run. Check the line behavior against real customers (the livestream tally, `validation/livestream/`) before trusting multi-day results, and report how much of a loss comes from walk-aways.
 - **Noise adds up over days.** Two Jev runs of the same world and seed already differ by a few people, so multi-day results need several seeds and are reported as ranges.
 - **The baseline needs the owner's data:** the share of repeat customers and visits per regular, from point-of-sale or stamp-card records. Without it, loyalty numbers are directional only. Owner data never goes in this public repo ([INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md) §10).
 - **The vendor ladder is not an effect.** Section 2b describes people who chose to return. Getting someone to a second visit does not make them behave like those people.
-- **The margin is assumed.** Section 6b needs the owner's food cost before any of its dollar figures are shown to an owner.
 - `[open]` The size of the pool, the regulars threshold, the walking-past base rate, and how fast a memory fades.
 - `[open]` Whether the morning question is asked of everyone in the pool every day, or only of people whose usual days include today (cheaper).
 
@@ -303,10 +253,15 @@ Added by the second pass:
 - Tillster (vendor), challenges and predicted-order coupons: [case study](https://tillster.com/case-studies/increasing-order-frequency), [blog](https://tillster.com/blog/restaurant-customer-retention)
 - Paytronix 2017, the "fourth visit" figure: [FSR Magazine](https://fsrmagazine.com/content/research-loyalty-established-fourth-visit)
 - SMG 2022, fast-food app ownership: [blog](https://smg.com/blog/from-touchpoint-to-focal-point-championing-mobile-app-adoption-for-qsr)
-- Margin inputs (vendor blogs, no primary source): [sushi food cost](https://dojobusiness.com/blogs/news/japanese-restaurant-food-cost), [prime cost](https://7shifts.com/blog/restaurant-prime-cost-guide/)
 
 ## 12. Change log
 
+- **v0.3 draft · Nov 14, 2026.** Not yet reviewed by the team.
+  - Removed sections 6b (capacity and margin) and 6c (return and customer value estimate) on Josh's decision: their dollar figures rested on an assumed margin and one vendor's figures, and were easy to quote as findings.
+  - Adopted the promotion pass rule that compares deal newcomers with other newcomers (section 9).
+  - Added that errors compound across days (section 10).
+  - Scope before Sunday: the return probe and the "next morning" mode only (header, section 8).
+  - Fixed the cross-reference for the owner baseline (section 2).
 - **v0.2 draft · Nov 14, 2026.** Added the second research pass. Not yet reviewed by the team.
   - The vendor visit ladder and return timing (section 2b).
   - Three new rows in section 4 (deal reviews, repeated promotions, door signs), and more detail on the Dholakia and Kivetz rows.
