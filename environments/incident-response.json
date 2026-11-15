@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "title": "Incident response under a shared change window",
+  "description": "A service outage affects several customer teams. Each responder owns one investigation. Responders can collect evidence, communicate progress, apply a reviewed fix, or escalate. One change window prevents simultaneous production fixes. One tick represents five minutes.",
+  "guidelines": [
+    "Investigate before proposing a fix; avoid changes without evidence.",
+    "Keep customers informed while the incident is active.",
+    "Prefer escalation when a responder is unsure about the fix."
+  ],
+  "assumptions": [
+    "Synthetic scenario, not a calibrated reliability forecast.",
+    "Each responder represents an independent investigation; fixes do not automatically resolve other investigations.",
+    "Investigation, review and communication durations are assumed."
+  ],
+  "ticks": 16,
+  "world": { "updates": 0, "fixes": 0, "escalations": 0 },
+  "resources": [
+    { "id": "diagnostics", "name": "Diagnostic workstations", "capacity": 3 },
+    { "id": "change_window", "name": "Production change window", "capacity": 1 }
+  ],
+  "roles": [
+    { "id": "experienced", "name": "Experienced responder", "goal": "Restore service with an evidence-backed fix and useful customer updates.", "count": 5, "initialState": "untriaged", "state": { "evidence": 0, "resolved": 0 } },
+    { "id": "new_responder", "name": "New responder", "goal": "Avoid a risky change; investigate carefully and escalate uncertainty to an expert.", "count": 3, "initialState": "untriaged", "state": { "evidence": 0, "resolved": 0 } }
+  ],
+  "actions": [
+    { "id": "investigate", "label": "Gather diagnostic evidence before making a change", "from": ["untriaged"], "to": "investigated", "duration": 2, "resources": [{ "id": "diagnostics", "units": 1 }], "effects": [{ "scope": "agent", "key": "evidence", "op": "add", "value": 1 }], "weight": 5 },
+    { "id": "update_customers", "label": "Send a status update while retaining the current investigation", "from": ["untriaged"], "to": "untriaged", "duration": 1, "effects": [{ "scope": "world", "key": "updates", "op": "add", "value": 1 }], "weight": 1 },
+    { "id": "reviewed_fix", "label": "Apply an evidence-backed fix in the shared production change window", "from": ["investigated"], "to": "resolved", "duration": 2, "requirements": [{ "scope": "agent", "key": "evidence", "op": "gte", "value": 1 }], "resources": [{ "id": "change_window", "units": 1 }], "effects": [{ "scope": "world", "key": "fixes", "op": "add", "value": 1 }, { "scope": "agent", "key": "resolved", "op": "set", "value": 1 }], "weight": 4 },
+    { "id": "escalate", "label": "Escalate this investigated issue for specialist follow-up", "from": ["investigated"], "to": "escalated", "duration": 1, "effects": [{ "scope": "world", "key": "escalations", "op": "add", "value": 1 }], "weight": 1 }
+  ],
+  "metrics": [
+    { "id": "resolved", "label": "Resolved investigations", "scope": "agent", "key": "resolved", "aggregation": "sum" },
+    { "id": "updates", "label": "Customer updates", "scope": "world", "key": "updates", "aggregation": "sum" },
+    { "id": "escalations", "label": "Specialist escalations", "scope": "world", "key": "escalations", "aggregation": "sum" }
+  ]
+}

@@ -1,7 +1,8 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.28 · Nov 14, 2026 · HackPrinceton Fall 2026
-> **Direction (Nov 14, v0.24):** the product now targets **independent local businesses**, starting with counter-service food and drink. Owners can test a change on a simulated copy of their own customers before trying it on real ones. The use case is specified in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md). Everything below still describes the engine and the earlier building work, and [docs/PROTOTYPE.md](docs/PROTOTYPE.md) still governs the code.
+> **Version:** v0.31 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Direction (Nov 14, v0.27):** Swarmscope is a **general environment simulation engine**. Users define an environment, objectives and guidelines; headless Claude builds a validated declarative environment; individual Jev agents choose actions while the engine enforces state transitions, shared resource capacities and conditions. Independent businesses and physical crowds remain examples, rather than the product boundary. The legacy physical engine remains governed by [docs/PROTOTYPE.md](docs/PROTOTYPE.md); the new workflow contract lives in `generalist/schema.json` and `docs/GENERALIST.md`.
+> **Worked example (v0.24):** the first audience is **independent local businesses**, starting with counter-service food and drink. Owners can test a change on a simulated copy of their own customers before trying it on real ones. The use case is specified in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md). Everything below still describes the engine and the earlier building work, and [docs/PROTOTYPE.md](docs/PROTOTYPE.md) still governs the code.
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -17,11 +18,17 @@
 
 ## 1. What we are building
 
-**Claude imagines the people. Jev makes thousands of them decide.**
+**Define the environment. Claude or Codex builds it. Jev agents make the decisions.**
 
-Swarmscope answers questions like "which ER gets overwhelmed on a Friday night?" by simulating the people involved, not just the flow. A user describes a place and a question in plain English. Claude builds the world and a cast of personalities. Each of thousands of agents then makes its own decision through **Jev**, TypeSafe's fast structured-decision model. Bottlenecks and social effects (herding, rumors, loyalty, giving up) emerge from those decisions, and Claude explains them. An optimizer tests fixes.
+Swarmscope accepts a user's environment, objectives, guidelines and constraints. Headless Claude builds a validated declarative workflow: roles, actor goals, shared state, resource capacities, timed actions and metrics. **Jev**, TypeSafe's structured-decision model, chooses an action for each actor; deterministic code enforces eligibility, capacity and state changes. Definitions and decision traces remain inspectable. This general engine supports bounded operational workflows such as incident response and fulfillment; it does not execute arbitrary generated code. The earlier physical engine still answers questions such as "which ER gets overwhelmed on a Friday night?" using places, queues, routes and people. Historical physical-engine plans, including the optimizer, remain below.
 
 ### Decisions to date
+
+- **Codex builder (Nov 14, v0.30):** add `codex` alongside the existing Claude Code and Anthropic builders in Scope, the API and CLI. Use installed, authenticated `codex exec` in a temporary working directory with explicit read-only permissions, user configuration ignored, command execution and integrations disabled, bounded output and cancellation. Both builders return the same validated environment contract and use the same Jev runtime and replay format. Keep Claude Code as the default; preserve builder provenance and give provider-specific setup errors. Codex transport must accommodate its structured-output restrictions without weakening runtime validation.
+
+- **Scope continuity (Nov 14, v0.28):** general environments reuse the existing Scope presentation: prompt bar, simulation canvas, right-hand metrics and incidents, playback timeline, theme, and a details drawer. The separate card-based Studio presentation is superseded. Logical workflow positions are labeled as such rather than invented physical geometry. Custom environments and original spatial cases share the product's visual format. Headless generation uses the explicit `claude -p` invocation. Server health advertises environment capabilities so a stale process produces a useful restart instruction instead of missing-endpoint errors.
+
+- **Generalist direction (Nov 14, v0.27):** supersedes the v0.24 audience restriction. Add a separate versioned workflow environment contract and runtime alongside physical visit/route worlds. Environment definitions contain roles, scalar world and actor state, actions, durations, resource reservations, conditions, effects and metrics. User guidelines are behavioral context; hard constraints must be represented as executable declarative conditions and resource limits. Generated JavaScript is never executed. Headless Claude Code runs without tools in an isolated working directory, with bounded output, time and repair attempts; an Anthropic API backend is also available. Persist the brief, definition, assumptions, build metadata and per-agent decision traces. A Studio provides build, inspect, edit, run and replay; a rules provider makes this flow usable offline. Results remain exploratory, not forecasts. Existing demos and physical runs remain available.
 
 - **Jev per agent is committed.** The Jev-vs-rules comparison is dropped. Rules remain only as an API-outage fallback and as the optimizer's fast proxy.
 - **Tracks** (superseded by v0.24, see below). CoStar is the headline. LangChain Deep Agents and Amazon are stackable targets. **Peri is dropped at Saturday midday** unless a real business has already shared its numbers by then.
@@ -429,6 +436,39 @@ Pitch lines:
   - **Fixes from the critique.** Ranking and feed rows are real buttons, and the map has a keyboard path to a person. One focus outline for every control. Form borders reach 3:1. The optional incidents request no longer leaves the network busy. "Visits served" is labelled so it does not read as a count of people. The frustration color option is disabled, with the reason, when the run has no such data. "So far" bars scale to the current worst place. Errors are shown, not swallowed.
   - **Not done here:** money figures, testing other counters, mobile layouts. Product facts for design work are in [PRODUCT.md](PRODUCT.md). Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b.
   - **Merged with main (Nov 14).** Ryan's work on main since v0.26 was kept inside this design. The sushi restaurant is the one other place: it opens at `?case=sushi` or from "Other places" in Run details, never from a picker, with its seats, kitchen and "Edit the room" (now beside View on the map; a changed room's comparison shows in the verdict panel with an "As sketched / Your room" toggle). Its promotion, first a suggestion in the deleted Suggestions dialog, is the verdict panel's change there in place of +1 staff (one staff per seat leaves no use for a staff member without a chair): the same 3-seed test, run with Jev when the run on screen is a Jev run and the server has a key, otherwise the rule model, which the panel says sees the price but not the message. The run link on the server now also takes `change: { kind: 'promotion', off }`. Ryan's later changes are kept too: the promotion can be tested again as often as you like (a quiet "Test again"; the panel shows the newest test, with a note under a Jev verdict that two Jev runs of the same world and seed already differ), a promotion run is also known by its offers so older runs without a link still pair up, and at the restaurant "seated" means got a seat, counted when the person sits down. **Decision (owner):** the English / Simplified Chinese language button was removed from the scope display; Ask the room keeps its own, and the shared `web/scope/lib/i18n.js` and `zh.js` stay because that page imports them. Ask the room is unchanged. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b, §18 and §19.
+
+**General environment engine branch (merged in v0.31).** These entries were written on that branch before the merge and keep the numbers they had there, v0.27 to v0.30, which overlap the numbers above.
+
+### v0.30 · Nov 14, 2026 · Selectable headless Codex builder
+
+- Add the requested Codex backend alongside Claude using `codex exec`, preserving the existing Scope interface and environment contract.
+- Reuse bounded validation repairs, job persistence, cancellation and simulation; distinguish builder backend and model in saved metadata.
+- Use provider-specific executable/model settings and authentication guidance. Validate process behavior offline and check a real local Codex generation separately before claiming live support.
+- Verified live Codex generation with CLI 0.169.0-alpha.11.1 and `gpt-6-astra`, then a separate build through the existing Scope interface. Two workers completed two tasks in a three-tick rules simulation; saved-run replay restored the Codex backend and model. CLI-version and model-access errors have separate setup guidance. All 825 tests passed.
+
+### v0.29 · Nov 14, 2026 · Headless builder schema compatibility
+
+- Use JSON Schema draft-07 with `definitions` and local references for the canonical general environment schema. Its validation rules and environment version remain unchanged; the installed Claude Code structured-output validator rejects the draft-2020-12 declaration before contacting a model.
+- Classify known `--json-schema` preflight failures as builder schema errors, without suggesting a login or exposing raw diagnostics. Retain separate authentication errors for confirmed authentication failures.
+- Correct the verification record: local subscription authentication and a plain safe-mode `claude -p` request work. The environment build failed at schema preflight; successful authentication alone does not verify full structured environment generation.
+- Add offline draft-07 schema compatibility and error-classification regression checks. A separate live check with Claude Code 2.1.286 then generated and validated a two-worker, three-tick environment through the complete isolated builder path on the first attempt.
+
+### v0.28 · Nov 14, 2026 · Reuse Scope and verify headless generation
+
+- Respond to the requested UI continuity by reusing Scope's existing shell, colors, typography, sidebar and timeline for custom environments, with setup in a drawer.
+- Keep physical visit/route definitions and general workflow definitions distinct internally; do not depict logical states as measured floor plans.
+- Use `claude -p` explicitly and verify the local headless generation path. Preserve provider authentication without loading customization hooks or granting model tools.
+- Advertise API capabilities and restart the outdated local server that was serving new frontend files with old routes.
+- Make both local server entrypoints expose the same APIs; publish terminal job states only after their records are saved and their execution slots are available.
+
+### v0.27 · Nov 14, 2026 · General environment engine
+
+- Supersede the independent-business-only direction with user-authored environments and guidelines.
+- Add a declarative workflow runtime beyond spatial visits/routes, reusing Jev decisions, seeded sampling and provider accounting. Validate references and bounds; enforce resource reservations and action conditions in code.
+- Add isolated headless Claude generation with bounded validation repairs, plus an API backend; retain generated definitions as inspectable data with explicit assumptions.
+- Add a Studio, async local build/run API, persisted definitions and traces, and CLI commands. Keep legacy physical worlds, viewers and APIs compatible.
+- Validate with offline provider fixtures and integration tests; distinguish these from live Claude/Jev verification.
+
 - **v0.26 · Nov 14, 2026.** Suggestions in the scope display (numbered v0.25 on the `suggestion-compare` branch; renumbered on merge because `main` already had v0.25): one hard-coded suggestion for now. **Decision (Josh):** the Suggestions button shows a single fixed suggestion, "add one more server at the run's worst bottleneck" (the place with the highest bottleneck score). It is a rule, not AI, and is labelled that way. "Run this suggestion" starts a new run of the same world and seed with that one change, using rules, or Jev when the baseline was a Jev run and Jev is live. After the run, a "Showing" dropdown switches the display between the baseline and the suggestion run, keeping the time on the slider, and the dialog shows both runs' headline numbers side by side. The display no longer calls the advisor's advice or the quick read (v0.22); both still exist on the server and the command line. Which runs are suggestion runs is remembered in the browser only. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b.
 - **v0.25 · Nov 14, 2026.** Waiting options, and what Jev does with a person's own situation. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §16.
   - **Finding:** the engine's own words decided most of Jev's answers about lines. It turned each group's patience number into a sentence ("more than they will put up with"), and Jev reads literally. Five fictional emergency-room patients in the identical situation (450 Jev calls) differed by 15 to 16 points in "keep waiting" with that sentence and by 30 to 37 points without it.

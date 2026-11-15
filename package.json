@@ -2,7 +2,7 @@
   "name": "swarmscope",
   "version": "0.2.0",
   "private": true,
-  "description": "Claude imagines the people. Jev makes thousands of them decide.",
+  "description": "User-defined environments built by Claude and simulated by individual Jev agents.",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -22,5 +22,8 @@
     "@anthropic-ai/sdk": "^1.8.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0"
   }
 }

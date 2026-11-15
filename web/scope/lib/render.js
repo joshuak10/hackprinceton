@@ -1,24 +1,13 @@
 // Map canvas: plan base layer (cached per floor and view), heat, people, incidents, selection.
 import { agentsAt, agentTrail, heldAt } from './frames.js';
-import { heatCanvas, makeRamp } from './heat.js';
+import { heatCanvas } from './heat.js';
 import { tr } from './i18n.js';
+import { readPalette } from './palette.js';
+export { readPalette } from './palette.js';
 
 const STATE_VAR = ['--a-walk', '--a-queue', '--a-serve', '--a-think', '--a-leave', '--a-car'];
 // Calm to furious. No red: red means people lost, and nothing else (§9b).
 export const FRUSTRATION = ['#5b9bd5', '#8f7be0', '#d9a514', '#e07b2a', '#a8430a'];
-
-export function readPalette() {
-  const cs = getComputedStyle(document.documentElement);
-  const v = name => cs.getPropertyValue(name).trim();
-  const names = ['--ground', '--room', '--room-edge', '--mesh', '--hatch', '--wall', '--label', '--muted', '--faint', '--text', '--accent',
-    '--asphalt', '--stall', '--parked', '--store', '--panel', '--line-2', '--i-decision', '--i-congestion', '--i-complaint',
-    '--heat-1', '--heat-2', '--heat-3', '--heat-blend', '--g-1', '--g-2', '--g-3', '--g-4', '--g-5', ...STATE_VAR];
-  const p = {};
-  for (const n of names) p[n.slice(2)] = v(n);
-  p.ramp = makeRamp(p['heat-1'], p['heat-2'], p['heat-3']);
-  p.light = document.documentElement.dataset.theme === 'light';
-  return p;
-}
 
 function unrle(text, size) {
   const data = new Uint8Array(size);

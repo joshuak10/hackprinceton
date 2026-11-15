@@ -24,9 +24,21 @@ const TOKENS_PER_REQUEST = 900;
 const PRICE_PER_MTOK = 0.042;
 const DEFAULT_COMPARE_SEEDS = 3;
 
-const USAGE = `Swarmscope: a crowd simulator where every agent decides through Jev.
+const USAGE = `Swarmscope: user-defined environments where every agent decides through Jev.
 
 Usage: swarm <command> [options]
+
+  env-build "<description>" [--brief FILE] [--guidelines FILE]
+      [--objectives TEXT] [--constraints TEXT] [--backend claude-code|codex|anthropic]
+      [--model ID] [--out FILE] [--force] [--json]
+                                    Build and save an environment with headless Claude or Codex;
+                                    --brief takes a JSON brief instead of a description
+  env-validate FILE [--json]         Validate a general environment or saved artifact
+  env-run FILE [--provider rules|jev] [--seed N] [--max-requests N] [--json]
+                                    Simulate and record a general environment (default rules)
+  env-runs [--json]                  List general environment runs
+  env-examples [ID] [--out FILE] [--force] [--json]
+                                    List or export bundled workflow examples
 
   validate <world>                  Check a world and list errors and warnings
   estimate <world> [--seed 7]       Count decision requests with a rules dry run;
@@ -116,6 +128,14 @@ class CliError extends Error {}
 const BOOL_FLAGS = new Set(['json', 'help', 'no-record', 'record', 'force']);
 const JEV_FLAGS = ['model', 'concurrency', 'max-requests'];
 const COMMANDS = {
+  'env-build': {
+    min: 0, max: Infinity, run: (a, f) => cmdEnvironmentLazy('cmdEnvironmentBuild', a, f),
+    flags: ['brief', 'guidelines', 'objectives', 'constraints', 'backend', 'model', 'out', 'force', 'json']
+  },
+  'env-validate': { min: 1, max: 1, flags: ['json'], run: (a, f) => cmdEnvironmentLazy('cmdEnvironmentValidate', a, f) },
+  'env-run': { min: 1, max: 1, flags: ['provider', 'seed', 'max-requests', 'json'], run: (a, f) => cmdEnvironmentLazy('cmdEnvironmentRun', a, f) },
+  'env-runs': { min: 0, max: 0, flags: ['json'], run: (a, f) => cmdEnvironmentLazy('cmdEnvironmentRuns', a, f) },
+  'env-examples': { min: 0, max: 1, flags: ['out', 'force', 'json'], run: (a, f) => cmdEnvironmentLazy('cmdEnvironmentExamples', a, f) },
   validate: { min: 1, max: 1, flags: ['json'], run: cmdValidate },
   estimate: { min: 1, max: 1, flags: ['seed', 'batch-window', 'json'], run: cmdEstimate },
   run: {
@@ -718,6 +738,11 @@ async function cmdBuildingLazy(args, flags) {
   return mod.cmdBuilding(args, flags);
 }
 
+async function cmdEnvironmentLazy(fn, args, flags) {
+  const mod = await import('../generalist/cli.js');
+  return mod[fn](args, flags);
+}
+
 async function cmdFitoutLazy(args, flags) {
   let mod;
   try { mod = await import('../builder/fitout-cli.js'); } catch (err) { throw missingModule('builder/fitout-cli.js', err); }
@@ -743,6 +768,10 @@ async function cmdServe(_args, flags) {
   const { startServer } = await import('../server/server.js');
   const server = await startServer({ port, root: process.cwd() });
   print(`Swarmscope viewer at ${server?.url ?? `http://127.0.0.1:${port}`}  (Ctrl-C to stop)`);
+  print(`Custom environments: ${server.url}/scope/?mode=environment`);
+  const stop = async () => { await server.close(); };
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
   return null;
 }
 

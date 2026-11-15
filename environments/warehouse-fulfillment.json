@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "title": "Warehouse fulfillment with limited packing stations",
+  "description": "Order owners choose whether to pick, expedite, or cancel their assigned order. Picking and packing each require shared equipment. There is stock for fewer orders than requested. One tick represents two minutes. Order owners make decisions; the runtime enforces stock conditions and equipment capacity.",
+  "guidelines": [
+    "Complete orders when stock is available.",
+    "Urgent orders should prefer faster shipping when its cost is justified.",
+    "Cancel an unfilled order when waiting is no longer acceptable."
+  ],
+  "assumptions": [
+    "Synthetic operating assumptions; demand and behavior have not been measured.",
+    "A picking cart reserves capacity, while stock is consumed only when picking completes.",
+    "No replenishment occurs during this run; each owner controls one order."
+  ],
+  "ticks": 24,
+  "world": { "stock": 12, "shipped": 0, "cancelled": 0, "shipping_cost": 0 },
+  "resources": [
+    { "id": "picking_cart", "name": "Picking carts", "capacity": 3 },
+    { "id": "packing_station", "name": "Packing stations", "capacity": 2 }
+  ],
+  "roles": [
+    { "id": "standard", "name": "Standard order owner", "goal": "Ship the order cheaply; tolerate a reasonable wait.", "count": 10, "initialState": "pending", "state": { "delivered": 0 } },
+    { "id": "urgent", "name": "Urgent order owner", "goal": "Meet today's deadline, even if expedited shipping costs more.", "count": 6, "initialState": "pending", "state": { "delivered": 0 } }
+  ],
+  "actions": [
+    { "id": "wait_for_stock", "label": "Wait one tick for a picking cart or reconsider the order", "from": ["pending"], "to": "pending", "duration": 1, "weight": 4 },
+    { "id": "pick", "label": "Pick an item from remaining stock", "from": ["pending"], "to": "picked", "duration": 2, "requirements": [{ "scope": "world", "key": "stock", "op": "gte", "value": 1 }], "resources": [{ "id": "picking_cart", "units": 1 }], "effects": [{ "scope": "world", "key": "stock", "op": "add", "value": -1 }], "weight": 10 },
+    { "id": "cancel", "label": "Cancel the pending order and stop waiting", "from": ["pending"], "to": "cancelled", "duration": 1, "effects": [{ "scope": "world", "key": "cancelled", "op": "add", "value": 1 }], "weight": 1 },
+    { "id": "standard_ship", "label": "Pack and dispatch with standard shipping for 5 cost units", "from": ["picked"], "to": "shipped", "duration": 3, "resources": [{ "id": "packing_station", "units": 1 }], "effects": [{ "scope": "world", "key": "shipped", "op": "add", "value": 1 }, { "scope": "world", "key": "shipping_cost", "op": "add", "value": 5 }, { "scope": "agent", "key": "delivered", "op": "set", "value": 1 }], "weight": 4 },
+    { "id": "express_ship", "label": "Pack and dispatch with express shipping for 15 cost units", "from": ["picked"], "to": "shipped", "duration": 1, "resources": [{ "id": "packing_station", "units": 1 }], "effects": [{ "scope": "world", "key": "shipped", "op": "add", "value": 1 }, { "scope": "world", "key": "shipping_cost", "op": "add", "value": 15 }, { "scope": "agent", "key": "delivered", "op": "set", "value": 1 }], "weight": 1 }
+  ],
+  "metrics": [
+    { "id": "shipped", "label": "Orders shipped", "scope": "world", "key": "shipped", "aggregation": "sum" },
+    { "id": "stock", "label": "Stock remaining", "scope": "world", "key": "stock", "aggregation": "min" },
+    { "id": "shipping_cost", "label": "Shipping cost", "scope": "world", "key": "shipping_cost", "aggregation": "sum" },
+    { "id": "completion_rate", "label": "Share of orders shipped", "scope": "agent", "key": "delivered", "aggregation": "mean" }
+  ]
+}

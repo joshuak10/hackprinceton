@@ -4,6 +4,7 @@
 import { hash32, seedRng, shuffled, sha256Hex, clamp } from '../engine/util.js';
 import { createLimiter, withRetry, DEFAULT_RETRY } from './limiter.js';
 import { fallbackDecision } from './rules.js';
+import { setTimeout as abortableDelay } from 'node:timers/promises';
 
 export const PRICE_PER_MTOK_USD = 0.042;
 export const PRICE_NOTE = '$0.042 per million input tokens (TypeSafe published price, unverified)';
@@ -58,7 +59,8 @@ function given(obs, candidates) {
 // text is unchanged, so request bodies, request hashes and recorded runs stay the same.
 const CHOICE_INSTRUCTIONS = {
   next_place: obs => `Where does the person in \`person\` go next${given(obs, ['now', 'places', 'heard', 'offers'])}?`,
-  route: obs => `Which route in \`routes\` does the person in \`person\` take for \`trip\`${given(obs, ['offers'])}?`
+  route: obs => `Which route in \`routes\` does the person in \`person\` take for \`trip\`${given(obs, ['offers'])}?`,
+  action: obs => `Which available action in \`actions\` does the actor in \`actor\` choose${given(obs, ['environment', 'guidelines', 'world', 'resources', 'population'])}? Consider the actor's goal and attributes, the guidelines and the consequences of each action.`
 };
 
 // A yes/no line question, with ", given `offers`" before the question mark when the observation has offers.
@@ -238,6 +240,18 @@ function percentile(sorted, q) {
   return sorted[clamp(Math.ceil(q * sorted.length) - 1, 0, sorted.length - 1)];
 }
 
+// Stop waiting promptly without abandoning the handlers on a queued/shared promise. The queued
+// callback still checks its signal before sending, so cancellation never starts a later HTTP call.
+function withAbort(promise, signal) {
+  if (!signal) return promise;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+    signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    if (signal.aborted) abort();
+  });
+}
+
 // ---------- provider ----------
 
 export class JevProvider {
@@ -294,11 +308,14 @@ export class JevProvider {
   // Same length and order as `requests`. Each #decide call runs synchronously up to its first
   // await, so cache lookups and the request budget are applied in request order.
   async decideMany(requests, ctx = {}) {
+    ctx?.signal?.throwIfAborted();
     if (this.authError) throw this.authError;
     return Promise.all(requests.map(req => this.#decide(req, ctx)));
   }
 
   async #decide(req, ctx) {
+    const signal = ctx?.signal;
+    signal?.throwIfAborted();
     this.decisions++;
     let built;
     try {
@@ -317,8 +334,9 @@ export class JevProvider {
     const pending = this.inflight.get(requestHash);
     if (pending) {
       try {
-        return this.#fromCache(req, await pending, requestHash);
+        return this.#fromCache(req, await withAbort(pending, signal), requestHash);
       } catch (err) {
+        signal?.throwIfAborted();
         if (err instanceof JevAuthError) throw err;
         return this.#fallback(req, err.message, requestHash);
       }
@@ -327,10 +345,10 @@ export class JevProvider {
     if (this.requests >= this.maxRequests) return this.#fallback(req, 'max-requests reached', requestHash);
     this.requests++;
 
-    const call = this.limit(() => this.#send(json));
+    const call = this.limit(() => this.#send(json, signal));
     this.inflight.set(requestHash, call);
     try {
-      const res = await call;
+      const res = await withAbort(call, signal);
       this.resolvedModel = res.model;
       this.inputTokens += res.usage.input_tokens;
       this.outputTokens += res.usage.output_tokens;
@@ -339,6 +357,7 @@ export class JevProvider {
       this.cache.set(requestHash, { answers: res.answers, model: res.model });
       return { provider: 'jev', ...fields, model: res.model, latencyMs: res.latencyMs, usage: res.usage, requestHash, answers: res.answers };
     } catch (err) {
+      signal?.throwIfAborted();
       if (err instanceof JevAuthError) throw err;
       const msg = err.retryable && err.attempts > 1 ? `${err.message} (gave up after ${err.attempts} attempts)` : err.message;
       return this.#fail(req, msg, requestHash);
@@ -373,15 +392,21 @@ export class JevProvider {
     return fallbackDecision(req, message, requestHash ? { requestHash } : {});
   }
 
-  #send(json) {
+  #send(json, signal) {
     return withRetry(async attempt => {
+      signal?.throwIfAborted();
       if (this.authError) throw this.authError;
       if (attempt > 1) this.retries++;
-      return this.#attempt(json);
-    }, { ...this.retryPolicy, shouldRetry: err => err?.retryable === true });
+      return this.#attempt(json, signal);
+    }, {
+      ...this.retryPolicy,
+      ...(signal ? { sleep: ms => this.retryPolicy.sleep ? withAbort(this.retryPolicy.sleep(ms), signal) : abortableDelay(ms, undefined, { signal }) } : {}),
+      shouldRetry: err => !signal?.aborted && err?.retryable === true
+    });
   }
 
-  async #attempt(json) {
+  async #attempt(json, signal) {
+    signal?.throwIfAborted();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     const t0 = this.now();
@@ -391,10 +416,11 @@ export class JevProvider {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.#apiKey}`, 'Content-Type': 'application/json' },
         body: json,
-        signal: controller.signal
+        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal
       });
       text = await res.text();
     } catch (err) {
+      signal?.throwIfAborted();
       if (controller.signal.aborted) throw new JevRequestError(`timed out after ${this.timeoutMs} ms`, { retryable: true });
       const code = err?.cause?.code ? ` (${err.cause.code})` : '';
       throw new JevRequestError(`network error: ${err?.message ?? err}${code}`, { retryable: true });
