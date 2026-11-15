@@ -1,6 +1,7 @@
 // Map canvas: plan base layer (cached per floor and view), heat, people, incidents, selection.
 import { agentsAt, agentTrail, heldAt } from './frames.js';
 import { heatCanvas, makeRamp } from './heat.js';
+import { tr } from './i18n.js';
 
 const STATE_VAR = ['--a-walk', '--a-queue', '--a-serve', '--a-think', '--a-leave', '--a-car'];
 // Calm to furious. No red: red means people lost, and nothing else (§9b).
@@ -322,7 +323,7 @@ export function createRenderer(canvas) {
     g.font = `600 ${Math.round(Math.max(16, s * 3.6))}px "IBM Plex Sans", sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = pal.label;
-    g.fillText(L.store.name || 'Store', scx, scy);
+    g.fillText(tr(L.store.name || 'Store'), scx, scy);
     for (const ai of L.aisles) { const [sx, sy] = R.toScreen(left - 3.6, ai.y); label(g, ai.name, sx, sy, pal, 12, 'right', { color: pal.muted }); }
     const [ex, ey] = R.toScreen(entryX, streetY + 3.2); label(g, 'Entrance', ex, ey, pal, 13, 'center', { color: pal.muted });
     const [xx, xy] = R.toScreen(exitX, streetY + 3.2); label(g, 'Exit', xx, xy, pal, 13, 'center', { color: pal.muted });
@@ -371,6 +372,7 @@ export function createRenderer(canvas) {
   // Labels placed in this frame, as screen rectangles, so later labels can avoid them.
   const placed = [];
   function labelFree(g, text, spots, pal, size, style = {}) {
+    text = tr(text);
     g.font = `${style.weight || 500} ${size}px "IBM Plex Sans", sans-serif`;
     const w = g.measureText(text).width + 6, h = size + 4;
     for (const [x, y, align] of spots) {
@@ -386,6 +388,7 @@ export function createRenderer(canvas) {
   }
 
   function label(g, text, x, y, pal, size = 13, align = 'center', { weight = 500, color = pal.label, halo = pal.ground } = {}) {
+    text = tr(text);
     g.font = `${weight} ${size}px "IBM Plex Sans", sans-serif`;
     g.textAlign = align;
     g.textBaseline = 'middle';
@@ -575,6 +578,7 @@ export function createRenderer(canvas) {
   }
 
   function pill(g, text, x, y, pal) {
+    text = tr(text);
     g.font = '600 13px "IBM Plex Sans", sans-serif';
     const w = g.measureText(text).width + 18;
     g.fillStyle = pal.panel;

@@ -1,6 +1,7 @@
 // Ask the room (docs/PROTOTYPE.md §17). Change the moment, ask every cast member, see who moves.
 import { points, refOf, grade, recomputeShare, summarize, byChange } from './maths.js';
 import { langButton } from '../scope/lib/i18n.js';
+import { FEELINGS, withFeeling } from './feelings.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -222,7 +223,7 @@ function renderSummary(sum, home) {
   const parts = [];
   if (sum.unchanged) {
     big.append(`Right now ${home.name} gets `, el('b', null, pct(sum.to)), ` of these ${sum.asked} people.`);
-    parts.push('Change the sign, the price or the line, and see who moves.');
+    parts.push('Change the sign, the price or the line, and see who moves. Or open a person and give them a feeling.');
   } else if (sum.flat && sum.movers.length) {
     // The room's total hides it, so the people come first.
     const named = sum.movers.slice(0, 4);
@@ -308,6 +309,21 @@ function updatePerson(li, p, sum, home) {
 function detailNode(personId) {
   const wrap = el('div', 'detail'), left = el('div'), right = el('div', 'edit');
   right.append(el('h3', null, 'Rewrite this person'));
+  // One click adds one sentence about how the person feels today, and asks them again. Nothing else changes.
+  const feel = el('div', 'feelings');
+  feel.append(el('span', 'feel-lead', 'Give them a feeling today'));
+  for (const f of FEELINGS) {
+    const b = el('button', 'chip', f.label);
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      const o = original(personId), bio = withFeeling(o.bio, o.name, f);
+      inputs.bio.value = bio;
+      draft(personId, 'bio', bio);
+      ask(personId);
+    });
+    feel.append(b);
+  }
+  right.append(feel);
   const inputs = {};
   for (const [key, label] of FIELDS) {
     const lab = el('label', null, label);

@@ -19,6 +19,7 @@ import {
 } from './lib/verdict.js';
 import { createVerdict } from './lib/verdict-panel.js';
 import { createEditor } from './lib/edit.js';
+import { langButton, onLang } from './lib/i18n.js';
 import { seatedPlaces, sameLayout, sameWorld, describeChanges, pairRuns, compare, compareParts } from './lib/layout.js';
 
 const $ = id => document.getElementById(id);
@@ -1016,6 +1017,9 @@ function showEmpty(text) {
 }
 
 async function start() {
+  // The language button (§19). Labels drawn on the map are redrawn when the language changes.
+  onLang(() => { R.baseKey = ''; st.dirty = true; });
+  langButton($('langBtn'));
   R.resize();
   applyTheme();
   setSpeed(4);

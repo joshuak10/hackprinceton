@@ -14,6 +14,7 @@ import { normalizeSpec } from '../engine/spec.js';
 import { buildJevRequest } from '../providers/jev.js';
 import { makeProvider } from '../providers/index.js';
 import { askRoom, recordProvider, defaultScenario } from './room.js';
+import { FEELINGS, withFeeling } from '../web/room/feelings.js';
 
 const here = rel => fileURLToPath(new URL(rel, import.meta.url));
 const WORLD = here('../worlds/alder-pine-cafe.json');
@@ -44,6 +45,8 @@ export function seedScenarios(rawSpec, presets = presetSigns()) {
   }
   const tomas = spec.minds.find(m => m.id === 'tomas');
   if (tomas) list.push({ scenario: raised[1], edits: { tomas: { bio: `${tomas.bio} Today is his birthday and he promised himself one good thing.` } } });
+  // Every one-click feeling for every cast member, at the opening moment.
+  for (const m of spec.minds) for (const f of FEELINGS) list.push({ scenario: {}, edits: { [m.id]: { bio: withFeeling(m.bio, m.name, f) } }, only: [m.id] });
   return list;
 }
 
@@ -68,8 +71,8 @@ async function main() {
   };
   const scenarios = seedScenarios(raw);
   let failed = 0, asked = 0;
-  for (const { scenario = {}, edits = {} } of scenarios) {
-    const out = await askRoom({ spec: raw, scenario, edits, provider });
+  for (const { scenario = {}, edits = {}, only = null } of scenarios) {
+    const out = await askRoom({ spec: raw, scenario, edits, only, provider });
     failed += out.failed;
     asked += out.askedLive;
   }

@@ -170,6 +170,8 @@ textarea::placeholder { color: var(--faint); }
 .split .bar i.rival { background: var(--rival); }
 .split .bar i.skip { background: var(--skip); }
 .split .val { font-variant-numeric: tabular-nums; color: var(--muted); }
+.feelings { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.feelings .feel-lead { flex-basis: 100%; font-size: 13.5px; color: var(--muted); }
 .edit label { display: block; font-size: 13.5px; color: var(--muted); margin-top: 8px; }
 .edit textarea { margin-top: 4px; min-height: 0; font-size: 14.5px; }
 .edit .actions { margin-top: 12px; }

@@ -11,6 +11,7 @@ import { EXACT, PATTERNS } from './zh.js';
 const KEY = 'swarmscope-lang';
 const ATTRS = ['placeholder', 'title', 'aria-label'];
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'CANVAS', 'SVG', 'TEXTAREA', 'CODE', 'PRE']);
+const ATTRS_ONLY = new Set(['TEXTAREA']);     // what is typed in a box is never translated, but its placeholder is
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
@@ -84,10 +85,15 @@ function translateAttrs(el) {
 }
 function each(root, onText, onElement) {
   if (root.nodeType === 3) { if (!insideSkipped(root)) onText(root); return; }
-  if (root.nodeType !== 1 || skipped(root) || insideSkipped(root)) return;
+  if (root.nodeType !== 1 || insideSkipped(root)) return;
+  if (skipped(root)) { if (ATTRS_ONLY.has(root.tagName) && !root.hasAttribute('data-i18n-skip')) onElement(root); return; }
   onElement(root);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
-    acceptNode: n => (n.nodeType === 1 && skipped(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)
+    acceptNode: n => {
+      if (n.nodeType !== 1 || !skipped(n)) return NodeFilter.FILTER_ACCEPT;
+      if (ATTRS_ONLY.has(n.tagName) && !n.hasAttribute('data-i18n-skip')) onElement(n);
+      return NodeFilter.FILTER_REJECT;
+    }
   });
   for (let n = walker.nextNode(); n; n = walker.nextNode()) (n.nodeType === 3 ? onText : onElement)(n);
 }
@@ -107,7 +113,10 @@ function toEnglish(root) {
 const observer = new MutationObserver(list => {
   for (const m of list) {
     if (m.type === 'characterData') { if (!insideSkipped(m.target)) translateText(m.target); }
-    else if (m.type === 'attributes') { if (!skipped(m.target) && !insideSkipped(m.target)) translateAttrs(m.target); }
+    else if (m.type === 'attributes') {
+      const t = m.target, own = skipped(t) && !(ATTRS_ONLY.has(t.tagName) && !t.hasAttribute('data-i18n-skip'));
+      if (!own && !insideSkipped(t)) translateAttrs(t);
+    }
     else for (const n of m.addedNodes) toChinese(n);
   }
 });
