@@ -18,6 +18,7 @@ const BODY_LIMIT = 2 * 1024 * 1024;
 // Names in :file and :id. Stricter than the contract's [A-Za-z0-9._-] only in refusing a leading dot.
 const NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}$/;
 const MODEL_RE = /^[A-Za-z0-9._-]{1,64}$/;
+const TEST_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const RUN_FILES = new Set(['meta', 'spec', 'metrics', 'frames', 'agents', 'remarks', 'decisions', 'incidents']);
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const TYPES = {
@@ -550,6 +551,61 @@ function runOptions(body) {
   return { providerName, seed, providerOpts, simOpts };
 }
 
+// Optional `link` on POST /api/runs (§9b): this run is one side of a test of one change. The display starts
+// a baseline and a changed run on several seeds and gives all of them the same `test` id.
+//   { test, role: 'baseline' | 'change', base?: <run id of the baseline with the same seed>, change }
+// `change` is one of:
+//   { kind: 'staff', nodeId, from, to }   staff at one counter (the engine's field is `servers`); kind may be left out
+//   { kind: 'promotion', off }            a promotion told to everyone (the sushi restaurant): the offer with id
+//                                         "promotion", and `off` (a share, 0 to 1) off the price at each place
+// The world in the request must already match the role: `from` staff for a baseline and `to` for the change;
+// no "promotion" offer for a baseline, and that offer for the change.
+async function runLink(ctx, body, spec) {
+  const l = body.link;
+  if (l === undefined || l === null) return null;
+  if (typeof l !== 'object' || Array.isArray(l)) throw new HttpError(400, 'link must be an object.');
+  if (typeof l.test !== 'string' || !TEST_RE.test(l.test)) throw new HttpError(400, 'link.test must be 1 to 64 letters, digits, dashes or underscores.');
+  if (l.role !== 'baseline' && l.role !== 'change') throw new HttpError(400, 'link.role must be "baseline" or "change".');
+  const c = l.change;
+  if (!c || typeof c !== 'object' || Array.isArray(c)) throw new HttpError(400, 'link.change must be an object.');
+  const change = c.kind === 'promotion' ? promotionLink(l.role, c, spec) : staffLink(l.role, c, spec);
+  let base = null;
+  if (l.base !== undefined && l.base !== null) {
+    if (l.role !== 'change') throw new HttpError(400, 'link.base is only for the run with the change.');
+    if (typeof l.base !== 'string') throw new HttpError(400, 'link.base must be a run id.');
+    safeName(l.base, 'base run id');
+    try { await readRunJson(ctx, l.base, 'meta'); } catch (err) {
+      if (err.status === 404) throw new HttpError(400, `link.base names a run that does not exist: ${l.base}.`);
+      throw err;
+    }
+    base = l.base;
+  }
+  return { test: l.test, role: l.role, base, change };
+}
+
+function staffLink(role, c, spec) {
+  if (c.kind !== undefined && c.kind !== 'staff') throw new HttpError(400, 'link.change.kind must be "staff" or "promotion".');
+  const node = (spec.nodes || []).find(n => n.id === c.nodeId && n.kind === 'service');
+  if (!node) throw new HttpError(400, 'link.change.nodeId must name a place with a line in this world.');
+  const { from, to } = c;
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < 1 || to > 1000 || from === to) {
+    throw new HttpError(400, 'link.change.from and link.change.to must be different whole numbers, 1 or more.');
+  }
+  const expected = role === 'change' ? to : from;
+  if (Number(node.servers) !== expected) {
+    throw new HttpError(400, `link says ${node.name || node.id} has ${expected} staff in this run, but the world has ${node.servers}.`);
+  }
+  return { kind: 'staff', nodeId: node.id, nodeName: node.name || node.id, from, to };
+}
+
+function promotionLink(role, c, spec) {
+  if (typeof c.off !== 'number' || !(c.off > 0 && c.off < 1)) throw new HttpError(400, 'link.change.off must be a share between 0 and 1.');
+  const has = (spec.offers || []).some(o => o.id === 'promotion');
+  if (role === 'change' && !has) throw new HttpError(400, 'link says this run has the promotion, but the world has no offer "promotion".');
+  if (role === 'baseline' && has) throw new HttpError(400, 'link says this run is the baseline, but the world already has the offer "promotion".');
+  return { kind: 'promotion', off: c.off };
+}
+
 async function postRun(ctx, req, res) {
   const body = await readJsonBody(req);
   const { providerName, seed, providerOpts, simOpts } = runOptions(body);
@@ -574,7 +630,8 @@ async function postRun(ctx, req, res) {
     let provider;
     try { provider = await makeProvider(providerName, providerOpts); } catch (err) { throw new HttpError(400, err.message); }
     const spec = checked.spec;
-    const recorder = await createRecorder({ root: ctx.runsDir, spec, seed, providerName });
+    const link = await runLink(ctx, body, spec);
+    const recorder = await createRecorder({ root: ctx.runsDir, spec, seed, providerName, link });
     if (!recorder?.runId) throw new Error('The recorder did not report a run id.');
     const job = {
       runId: recorder.runId, provider: providerName, state: 'running', t: 0, duration: spec.duration, decisions: 0,

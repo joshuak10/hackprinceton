@@ -2,6 +2,21 @@
 import { clockText } from './frames.js';
 
 const CATS = ['decision', 'congestion', 'complaint'];
+const TICKS = 18;   // height of the tick band under the histogram, in CSS pixels
+
+// Tick times on round clock minutes: every 15 minutes, or 30 or 60 when there is not room for `maxTicks`.
+// → [{ t (minutes since the start), label ("12:15") }]
+export function timeTicks(clockStart, duration, maxTicks = 8) {
+  if (!(duration > 0)) return [];
+  const step = [15, 30, 60, 120, 240].find(s => duration / s <= Math.max(2, maxTicks)) || 480;
+  const out = [];
+  const start = clockStart || 0;
+  for (let m = Math.ceil(start / step) * step; m <= start + duration; m += step) {
+    const h24 = Math.floor(((m % 1440) + 1440) % 1440 / 60), mm = String(((m % 60) + 60) % 60).padStart(2, '0');
+    out.push({ t: m - start, label: `${h24 % 12 === 0 ? 12 : h24 % 12}:${mm}` });
+  }
+  return out;
+}
 
 export function createTimeline({ root, onSeek, onPlay, onSpeed }) {
   const hist = root.querySelector('#hist');
@@ -54,12 +69,25 @@ export function createTimeline({ root, onSeek, onPlay, onSpeed }) {
     const thumb = 9;
     const x0 = thumb, x1 = T.w - thumb, bw = (x1 - x0) / Math.max(1, n);
     const max = Math.max(4, ...T.bins.map(b => b.total));
-    const H = T.h - 4;
+    const base = T.h - TICKS;       // the bars stand on this line; the time ticks sit under it
+    const H = base - 4;
     // Baseline
     g.fillStyle = pal['line-2'];
-    g.fillRect(x0, T.h - 1, x1 - x0, 1);
+    g.fillRect(x0, base - 1, x1 - x0, 1);
+    // Light time ticks: a mark and the clock time every 15 or 30 minutes.
+    g.font = '400 12px "IBM Plex Sans", sans-serif';
+    g.textBaseline = 'alphabetic';
+    for (const tk of timeTicks(T.clockStart, T.duration, (x1 - x0) / 80)) {
+      const x = Math.round(x0 + (tk.t / T.duration) * (x1 - x0));
+      g.fillStyle = pal['line-2'];
+      g.fillRect(x, base, 1, 4);
+      g.fillStyle = pal.faint;
+      const w = g.measureText(tk.label).width;
+      g.textAlign = 'left';
+      g.fillText(tk.label, Math.max(x0, Math.min(x1 - w, x - w / 2)), T.h - 2);
+    }
     T.bins.forEach((b, i) => {
-      let y = T.h - 1;
+      let y = base - 1;
       const past = i + 1 <= t;
       for (const cat of CATS) {
         const v = b[cat] || 0;
@@ -75,7 +103,7 @@ export function createTimeline({ root, onSeek, onPlay, onSpeed }) {
     // Playhead
     const px = x0 + (t / T.duration) * (x1 - x0);
     g.fillStyle = pal.text;
-    g.fillRect(Math.round(px) - 1, 0, 2, T.h);
+    g.fillRect(Math.round(px) - 1, 0, 2, base);
   }
 
   return T;

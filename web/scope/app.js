@@ -1,18 +1,25 @@
 // Swarmscope scope display: wiring. One state object; derive → draw → panels.
-// URL params for reproducible views: ?case=building|parking|sushi&t=40&floor=0&theme=light&autoplay=0
-import { prepareFrames, frameIndex, frameAt, agentsAt, clockText } from './lib/frames.js';
+// The page opens straight into the building: the latest Jev run if there is one, otherwise the latest
+// rule-model run, paused at the start (docs/PROTOTYPE.md §9b). ?case=sushi opens the sushi restaurant instead
+// (§18); Run details links to it under "Other places".
+// URL params for reproducible views: ?case=sushi&run=<run id>&t=40&floor=0&theme=dark&autoplay=1&test=new
+//   test=new ignores tests recorded earlier, so the "before a test" state can be shown again.
+import { prepareFrames, frameIndex, frameAt, agentsAt } from './lib/frames.js';
 import { deriveRun } from './lib/incidents.js';
 import { createHeat, calibrate, advance } from './lib/heat.js';
-import { createRenderer, readPalette } from './lib/render.js';
+import { createRenderer, readPalette, FRUSTRATION } from './lib/render.js';
 import { createTimeline } from './lib/timeline.js';
-import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer } from './lib/panels.js';
-import { matchCase, showConfirm, showChoices, hideCard, showProgress } from './lib/prompt.js';
+import { renderCounters, renderRank, renderFilters, renderFeed, renderInspector, renderDrawer, el } from './lib/panels.js';
+import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
 import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics } from './lib/source.js';
+import {
+  chooseRun, findTest, findOfferTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords,
+  verdictWords, whySentence, busiestWindow, providerWords, placeName, runLabel, isJev, windowNoun, hasPromotion
+} from './lib/verdict.js';
+import { createVerdict } from './lib/verdict-panel.js';
 import { createEditor } from './lib/edit.js';
-import { langButton, onLang } from './lib/i18n.js';
-import { seatedPlaces, sameLayout, sameWorld, describeChanges, pairRuns, compare, compareWords } from './lib/layout.js';
-import { createFeedback, suggestionFor, applySuggestion, compareRows } from './lib/feedback.js';
+import { seatedPlaces, sameLayout, sameWorld, describeChanges, pairRuns, compare, compareParts } from './lib/layout.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -21,16 +28,19 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
 };
+const TEST_SEEDS = 3;
+const STATE_WORDS = ['walking', 'in a line', 'being served', 'deciding', 'leaving'];
 
 const st = {
-  cases: {}, caseId: null, caseInfo: null, bundle: null, F: null, run: null, heat: null, heatIncidents: [],
+  cases: {}, caseId: null, caseInfo: null, runs: [], metas: [], bundle: null, F: null, run: null, heat: null, heatIncidents: [],
   t: 0, playing: false, speed: 4, floor: 0, colorBy: 'state',
   layers: { heat: true, agents: true, labels: true },
   filters: { decision: true, congestion: true, complaint: true },
-  selectedAgent: null, selectedIncident: null,
-  theme: params.get('theme') || store.get('scope-theme') || 'dark',
+  selectedAgent: null, selectedIncident: null, cursorAgent: null, hoverNode: null, ringNode: null,
+  theme: params.get('theme') || store.get('scope-theme') || 'light',
   live: null, config: {}, question: '', fly: null, lastPanels: -1, dirty: true,
-  rankMode: store.get('scope-rank') === 'now' ? 'now' : 'total'
+  rankMode: store.get('scope-rank') === 'now' ? 'now' : 'total',
+  test: null, testing: null, sessionTests: new Set(), loading: false, room: null
 };
 
 // ---------- theme ----------
@@ -40,7 +50,6 @@ function applyTheme() {
   R.pal = readPalette();
   R.baseKey = '';
   if (st.bundle) { T.setRun({ duration: st.run.duration, clockStart: st.bundle.meta.clockStart, bins: st.run.bins, pal: R.pal }); }
-  drawThumbs();
   st.dirty = true;
 }
 $('themeBtn').addEventListener('click', () => {
@@ -62,7 +71,7 @@ const T = createTimeline({
   onSpeed: s => setSpeed(s)
 });
 const tour = createTour({ root: $('tour'), body: $('tourBody'), title: $('tourTitle'), closeBtn: $('tourClose'), onClose: () => { st.dirty = true; } });
-const feedback = createFeedback({ onRun: runSuggestion, onPick: showRun });
+const verdict = createVerdict($('verdict'), { onTest: runTest, onCancel: () => testAbort?.abort(), onPick: id => openRun(id, { keepTime: true, side: true }) });
 
 new ResizeObserver(() => {
   R.resize();
@@ -73,19 +82,91 @@ new ResizeObserver(() => {
 
 function drawState() {
   return {
-    caseId: st.caseId, floor: st.floor, theme: st.theme, layers: st.layers, geometry: st.bundle.geometry,
+    caseId: st.bundle.meta.runId || 'run', floor: st.floor, theme: st.theme, layers: st.layers, geometry: st.bundle.geometry,
     F: st.F, t: st.t, heat: st.heat, incidents: st.run.incidents, filters: st.filters,
     selectedIncident: st.selectedIncident, selectedAgent: st.selectedAgent, frame: frameAt(st.F, st.t),
     nodes: st.bundle.frames.nodes || [], colorBy: st.colorBy, frustration: st.run.frustration.at,
     archIndex: st.archIndex, agentArch: st.agentArch, reducedMotion,
+    ringNode: st.ringNode, hoverNode: st.hoverNode, cursorAgent: st.cursorAgent,
     edit: editor.active ? editor.drawState() : null
   };
 }
 
+const announce = text => { $('live').textContent = text; };
+
+// A problem the person should see, with a way to dismiss it. Errors are shown, not swallowed.
+function showNotice(text) {
+  const box = $('notice');
+  const close = el('button', 'btn small', 'Dismiss');
+  close.type = 'button';
+  close.addEventListener('click', () => { box.hidden = true; });
+  box.replaceChildren(el('p', null, text), close);
+  box.hidden = false;
+}
+
+// ---------- recorded runs ----------
+const rawSpec = runId => st.runs.find(r => r.meta.runId === runId)?.spec || null;
+// A place's runs: a case with a runTitle (the sushi restaurant) takes every run of the world with that title, and
+// the building takes the rest, so one place's runs never show under another.
+async function refreshRuns() {
+  const c = st.caseInfo;
+  const filter = c?.runTitle ? { title: c.runTitle, max: 200 } : { notTitles: Object.values(st.cases).map(x => x.runTitle).filter(Boolean) };
+  const { runs, metas } = await apiBuildingRuns(filter);
+  st.runs = runs;
+  st.metas = metas;
+}
+// The world of the run on screen as the engine takes it, without a tested change: the server's copy, or the packed
+// engine run's own (the sushi restaurant's file). Null for sample data, which cannot be run again.
+function baseWorld() {
+  const meta = st.bundle.meta;
+  if (meta.link?.role === 'change') return meta.link.base ? rawSpec(meta.link.base) : null;
+  return rawSpec(meta.runId) || st.bundle.rawSpec || null;
+}
+// The run the page opens with (chooseRun). At a place drawn from a sketch, only runs of the room as sketched with
+// no offers count, and its packed Jev run counts as a recorded Jev run: null means "open the packed file".
+async function openingRun() {
+  const c = st.caseInfo;
+  if (!c?.sketch) return chooseRun(st.runs);
+  const run = chooseRun(st.runs.filter(r => sameWorld(r.spec, c.sketch)));
+  if (run && isJev(run.meta)) return run;
+  const packed = await loadBundle(c.file).catch(() => null);
+  return packed && isJev(packed.meta) ? null : run;
+}
+// Engine runs are loaded once and reused (switching between the baseline and the change).
+const runCache = new Map();
+function loadEngineRun(runId) {
+  if (!runCache.has(runId)) runCache.set(runId, apiLoadRun(runId, { modelId: st.config.modelId }).catch(err => { runCache.delete(runId); throw err; }));
+  return runCache.get(runId);
+}
+
+function busy(on) {
+  st.loading = on;
+  $('askBtn').disabled = on;
+  $('mapbox').setAttribute('aria-busy', String(on));
+}
+
+// Show a recorded run. keepTime keeps the slider where it is (switching between the baseline and the change).
+// side: the run was picked with a toggle in the verdict panel, so a changed room's comparison stays on screen.
+async function openRun(runId, { keepTime = false, autoplay = false, side = false } = {}) {
+  if (st.loading) return;
+  const t = st.t, wasPlaying = st.playing;
+  if (!side) st.room = null;
+  busy(true);
+  pause();
+  try {
+    setBundle(await loadEngineRun(runId));
+    if (keepTime) seek(Math.min(t, st.run.duration));
+    if (autoplay || (keepTime && wasPlaying)) play();
+  } catch (err) {
+    showNotice(`That run could not be opened: ${err.message}`);
+  } finally {
+    busy(false);
+  }
+}
+
 // ---------- loading a run ----------
-function setBundle(bundle, caseInfo) {
+function setBundle(bundle) {
   st.bundle = bundle;
-  st.caseInfo = caseInfo;
   st.F = prepareFrames(bundle.frames);
   st.run = deriveRun(bundle, st.F);
   st.agentsById = new Map(bundle.agents.map(a => [a.id, a]));
@@ -94,46 +175,62 @@ function setBundle(bundle, caseInfo) {
   st.archIndex = new Map((bundle.spec.archetypes || []).map((a, i) => [a.id, i]));
   st.agentArch = new Map(bundle.agents.map(a => [a.id, a.archetypeId]));
   st.nodeName = id => st.run.nodes.get(id)?.name || id;
+  st.seated = seatedPlaces(bundle.spec).length > 0;
   st.floorTimes = bundle.geometry.floors.map((_, fi) => st.run.incidents.filter(it => (it.floor || 0) === fi).map(it => it.t));
-  st.selectedAgent = null;
   st.selectedIncident = null;
+  st.cursorAgent = null;
+  st.hoverNode = null;
   st.t = 0;
   st.floor = 0;
+  st.selectedAgent = null;
+  $('inspector').hidden = true;
+  $('sideBody').hidden = false;
   rebuildHeat();
 
-  const geo = bundle.geometry;
+  const geo = bundle.geometry, meta = bundle.meta;
   R.setBounds(geo.floors[0].bounds || geo.bounds);
-  $('placeTitle').textContent = caseInfo?.place || geo.source?.name || bundle.meta.title;
-  $('placeSub').textContent = st.question ? `“${st.question}”` : bundle.meta.question;
+  st.place = st.caseInfo?.placeName || placeName(bundle.spec?.title ? bundle.spec : { title: meta.title });
+  $('placeTitle').textContent = st.place;
+  const q = st.question ? `“${st.question}”` : meta.question || bundle.spec?.question || '';
+  $('placeSub').textContent = q;
+  $('placeSub').title = q;
+  const label = runLabel(meta), who = providerWords(meta);
+  $('runNote').textContent = [label, who].filter(Boolean).join(' · ');
+  $('runNote').title = isJev(meta) ? 'Every decision in this run came from Jev.'
+    : who === 'Sample data' ? 'These people come from a sample data generator, not from the engine.'
+      : 'The people in this run follow the engine\'s fixed rules. No Jev decisions.';
   $('emptyState').hidden = true;
   $('side').classList.remove('idle');
   $('mapTools').hidden = false;
   $('legendMini').hidden = false;
   $('timeline').hidden = false;
-  $('inspector').hidden = true;
   $('callout').hidden = true;
-  const prov = bundle.meta.providerStats?.provider || bundle.meta.provider;
-  $('sourceBadge').textContent = providerWords(bundle.meta);
-  $('sourceBadge').classList.toggle('live', prov === 'jev' || prov === 'replay');
-  $('sourceBadge').title = prov === 'mock' ? 'Decisions come from the mock generator, not Jev.'
-    : prov === 'jev' || prov === 'replay' ? 'Every decision in this run came from Jev (replays make no new requests).'
-      : 'Decisions came from the engine\'s rule policy, not Jev.';
-  renderRunPicker();
-  if (editor.active) leaveEdit();
-  $('editBtn').hidden = !editor.available(bundle);
-  $('editBtn').disabled = !st.live;
-  $('editBtn').title = st.live ? 'Move, add or remove seats, then run the changed room' : 'Start the engine to run a changed room: node bin/swarm.js serve';
-  updateCompare();
-  refreshSuggestion(bundle, caseInfo);
+  $('resetView').hidden = true;
+
+  // Coloring by frustration needs data the rule model does not record.
+  const fr = document.querySelector('input[name="colorBy"][value="frustration"]');
+  fr.disabled = !st.run.frustration.has;
+  $('frustrationWhy').hidden = st.run.frustration.has;
+  if (fr.disabled && st.colorBy === 'frustration') {
+    st.colorBy = 'state';
+    document.querySelector('input[name="colorBy"][value="state"]').checked = true;
+  }
 
   tour.hide();
   tour.configure({ modelId: geo.source?.provider === 'matterport' ? geo.source.modelId : null, key: st.config.matterportSdkKey });
 
+  // Edit the room (§18): a world with seats, run by the engine.
+  if (editor.active) leaveEdit();
+  $('editBtn').hidden = !editor.available(bundle);
+  $('editBtn').disabled = !st.live;
+  $('editBtn').title = st.live ? 'Move, add or remove seats, then run the changed room' : 'A changed room needs the Swarmscope engine, which is not running here.';
+
   renderFloorTabs();
   renderFilters($('feedFilters'), st, toggleFilter);
   renderLegend();
-  T.setRun({ duration: st.run.duration, clockStart: bundle.meta.clockStart, bins: st.run.bins, pal: R.pal });
-  if (!$('drawer').hidden) renderDrawer($('drawerBody'), drawerState(), st.caseInfo);
+  T.setRun({ duration: st.run.duration, clockStart: meta.clockStart, bins: st.run.bins, pal: R.pal });
+  if (!$('drawer').hidden) drawDrawer();
+  refreshVerdict();
   st.lastPanels = -1;
   st.dirty = true;
   update();
@@ -147,250 +244,226 @@ function rebuildHeat() {
   advance(st.heat, st.heatIncidents, st.t);
 }
 
-// "Jev jev-1.14.0", "Rules, not Jev", "Mock data": who made a run's decisions.
-function providerWords(meta) {
-  const p = meta?.providerStats?.provider || meta?.provider;
-  if (p === 'jev') return `Jev ${meta.model || meta.providerStats?.model || ''}`.trim();
-  if (p === 'replay') return 'Jev, replayed';
-  if (p === 'mock') return 'Mock data';
-  return 'Rules, not Jev';
+// ---------- the verdict: the worst line, the one test, and what it showed ----------
+let testAbort = null;
+
+// Who decides a test's runs: the rule model for +1 staff (§9b). For the promotion, the same decision-maker as the
+// run on screen, or as the test on screen when it is tested again, when it can (§18): the rule model sees the
+// lower price but not the message.
+function testProvider(change) {
+  if (change.kind !== 'promotion' || !st.live?.jev) return 'rules';
+  const ref = st.test ? st.metas.find(m => m.runId === st.test.pairs[0].baseline) : st.bundle.meta;
+  return isJev(ref) ? 'jev' : 'rules';
 }
+const byWords = provider => (provider === 'jev' ? 'Jev' : 'the rule model');
+const wordsFor = (change, provider) => testWords(change, {
+  by: byWords(provider), seeds: TEST_SEEDS, noun: windowNoun(st.bundle.meta.clockStart, st.run.duration)
+});
+const sameProvider = p => (p === 'replay' ? 'jev' : p);
+// A run of the sushi restaurant whose seats differ from the room as sketched (§18).
+const changedRoom = bundle => Boolean(st.caseInfo?.sketch && bundle.rawSpec && !sameLayout(st.caseInfo.sketch, bundle.rawSpec));
 
-// ---------- the hard-coded suggestion and its run ----------
-// Which runs are suggestion runs: { [runId]: { base, suggestion } }, kept in this browser.
-const suggestionRuns = (() => { try { return JSON.parse(store.get('scope-suggestions') || '{}') || {}; } catch { return {}; } })();
-const runLabel = r => {
-  const when = r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
-  return `${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}`;
-};
-
-const hasPromotion = spec => (spec?.offers || []).some(o => String(o.id).startsWith('promotion'));
-
-// What the Suggestions button offers for the run on screen, and the comparison once its suggestion run exists.
-function refreshSuggestion(bundle, c) {
-  const runId = bundle.meta?.runId;
-  const onServer = !!(c?.runs?.length && runId && c.runs.some(r => r.meta.runId === runId));
-  if (!onServer) {
-    const s = suggestionFor(c, bundle.rawSpec || bundle.spec, bundle.metrics)
-      || { label: 'Add one more server at the busiest counter', why: 'The busiest counter is where most people wait or walk away.', change: 'One more server at the busiest counter' };
-    feedback.reset({
-      suggestion: s, canRun: false,
-      cannotRunWhy: st.live && c?.runTitle
-        ? 'The engine has no recorded run of this place yet, so there is no baseline to run again. Press Simulate, pick this place and run it once, then open Suggestions.'
-        : 'This run is not on the engine, so it cannot be re-run from here. Start the engine (node bin/swarm.js serve) and open a recorded run to test the suggestion.'
+function refreshVerdict() {
+  const bundle = st.bundle, meta = bundle.meta;
+  const timing = { clockStart: meta.clockStart, duration: st.run.duration };
+  if (st.testing) {
+    st.ringNode = st.testing.change.nodeId || null;
+    showRunning();
+    return;
+  }
+  if (changedRoom(bundle) || (st.room && st.room.sketched === meta.runId)) { refreshRoom(bundle); return; }
+  // A test recorded with its link; or, at the promotion's place, a promotion run from before the link, known by
+  // the offers in its world and paired with its twin (§18).
+  let test = st.metas.length ? findTest(st.metas, { runId: meta.runId, specHash: meta.specHash }, TEST_SEEDS) : null;
+  if (!test && st.caseInfo?.suggestion === 'promotion') test = findOfferTest(st.runs, meta.runId);
+  if (test && params.get('test') === 'new' && !st.sessionTests.has(test.id)) test = null;
+  st.test = test;
+  const change = test?.change || changeFor(st.caseInfo, bundle.spec, bundle.metrics);
+  st.ringNode = change?.nodeId || null;
+  st.dirty = true;
+  if (!change) { verdict.message('This run has no counters with a line, so there is no change to test.'); return; }
+  if (!test) {
+    const words = change.kind === 'promotion' ? promotionWords(bundle.spec, bundle.metrics, change, timing) : worstLineWords(bundle.spec, bundle.metrics, timing);
+    if (!words) { verdict.message('This run has no counters with a line, so there is no change to test.'); return; }
+    verdict.before({
+      words, test: wordsFor(change, testProvider(change)), canTest: Boolean(st.live && baseWorld()),
+      cannotWhy: providerWords(meta) === 'Sample data'
+        ? 'This is sample data, so a change cannot be tested on it. Start the Swarmscope engine and record a run to test one.'
+        : 'The Swarmscope engine is not running here, so a change cannot be tested on this recorded run.',
+      note: isJev(meta) ? 'The numbers above are from the Jev run on screen.' : ''
     });
     return;
   }
-  // A promotion run is known by the offers in its world, so another browser, or a run started some other way,
-  // is still paired with its baseline: the same room, seed and decision-maker without the promotion.
-  const me = c.runs.find(r => r.meta.runId === runId);
-  const twin = (r, wantPromotion) => hasPromotion(r.spec) === wantPromotion && sameLayout(r.spec, me.spec) && r.meta.seed === me.meta.seed
-    && sameProvider(r.meta.provider) === sameProvider(me.meta.provider);
-  let mine = suggestionRuns[runId];
-  if (!mine && c.suggestion === 'promotion' && hasPromotion(me.spec)) {
-    const b = c.runs.find(r => twin(r, false) && String(r.meta.createdAt) < String(me.meta.createdAt)) || c.runs.find(r => twin(r, false));
-    mine = { base: b?.meta.runId, suggestion: suggestionFor(c, me.spec, bundle.metrics) };
-  }
-  const has = id => c.runs.some(r => r.meta.runId === id);
-  const baseId = mine && has(mine.base) ? mine.base : runId;
-  const sugId = mine ? runId : c.runs.map(r => r.meta.runId).find(id => suggestionRuns[id]?.base === runId)
-    || (c.suggestion === 'promotion' ? c.runs.find(r => twin(r, true))?.meta.runId : undefined);
-  const suggestion = (sugId && suggestionRuns[sugId]?.suggestion) || suggestionFor(c, bundle.rawSpec || bundle.spec, bundle.metrics);
-  if (!suggestion) { feedback.reset(null); return; }
-  const base = c.runs.find(r => r.meta.runId === baseId);
-  const jev = ['jev', 'replay'].includes(base.meta.providerStats?.provider || base.meta.provider) && st.live?.jev;
-  const ctx = {
-    suggestion, canRun: !!st.live && has(baseId) && (!mine || baseId !== runId),
-    cannotRunWhy: !st.live ? 'The engine is not reachable, so a new run cannot start.' : 'The baseline of this run is no longer on the list, so the suggestion cannot be run again from here. Open a baseline run.',
-    runNote: jev ? 'Starts a live Jev run: every decision is one Jev request to TypeSafe.'
-      : `Starts a rules run on the engine: no Jev requests, and it takes a few seconds.${suggestion.id === 'promotion' ? ' The rules policy reacts to the lower price only; it cannot read the message.' : ''}`,
-    compare: null
-  };
-  feedback.reset(ctx);
-  if (!sugId || sugId === baseId) return;
-  // Both runs' numbers, then the dropdown. Skipped if another run is on screen by then.
-  Promise.all([loadEngineRun(baseId), loadEngineRun(sugId)]).then(([b, a]) => {
-    if (st.bundle !== bundle) return;
-    const sug = c.runs.find(r => r.meta.runId === sugId);
-    const cross = providerWords(base.meta) !== providerWords(sug.meta);
-    feedback.reset({
-      ...ctx,
-      compare: {
-        selected: runId, rows: compareRows(b.metrics, a.metrics, suggestion),
-        options: [{ runId: baseId, label: `Baseline (${runLabel(base)})` }, { runId: sugId, label: `${suggestion.withLabel || 'With the suggestion'} (${runLabel(sug)})` }],
-        note: cross ? `The baseline's decisions came from ${providerWords(base.meta)} and the suggestion run's from ${providerWords(sug.meta)}, so part of the difference is the decision-maker, not the change.`
-          : ['jev', 'replay'].includes(sug.meta.providerStats?.provider || sug.meta.provider)
-            ? 'One Jev run each. Jev does not answer the same question the same way twice, so two runs of the same world and seed already differ by a few people. A difference this size may be chance. Pick a run above to watch it; the time on the slider is kept.'
-            : ''
+
+  // Both sides' numbers for every seed, and for +1 staff the baseline line over time for "busiest from … to …".
+  const pair = test.pairs.find(p => p.baseline === meta.runId || p.change === meta.runId) || test.pairs[0];
+  const provider = isJev(st.metas.find(m => m.runId === pair.baseline)) ? 'jev' : 'rules';
+  const words = wordsFor(change, provider);
+  verdict.message(words.loading);
+  Promise.all([
+    Promise.all(test.pairs.map(async p => ({ before: await apiRunMetrics(p.baseline), after: await apiRunMetrics(p.change) }))),
+    change.kind === 'staff' ? loadEngineRun(pair.baseline) : null
+  ]).then(([metrics, base]) => {
+    if (st.bundle !== bundle || st.testing) return;
+    const result = testResult(metrics, change);
+    const k = base ? (base.frames.services || []).indexOf(change.nodeId) : -1;
+    const window = k >= 0 ? busiestWindow(base.frames.list.map(f => f.t), base.frames.list.map(f => f.q?.[k] || 0)) : null;
+    const shown = meta.runId === pair.baseline || meta.runId === pair.change;
+    verdict.after({
+      words: verdictWords(result, change, { ...timing, by: byWords(provider) }), rows: result.rows, runs: result.runs,
+      why: whySentence(result, change, { clockStart: meta.clockStart, window }), caution: words.caution,
+      // The promotion can be tested as often as you like: Jev answers differently each time (§18).
+      again: change.kind === 'promotion' && Boolean(st.live && baseWorld()),
+      toggle: {
+        baseline: pair.baseline, change: pair.change, labels: words.toggle, selected: meta.runId,
+        note: shown ? '' : `The map shows the ${providerWords(meta) === 'Jev' ? 'Jev run' : 'run you opened'}. Pick a side to watch the test; the time on the slider is kept.`
       }
     });
-  }).catch(() => {});
-}
-
-// Every press is a new run of the baseline's world with the suggestion, on the baseline's seed. Pressed while a
-// suggestion run is on screen, it goes back to that run's baseline first, so the new run is paired with it.
-function runSuggestion() {
-  const c = st.caseInfo;
-  if (!c || st.loading) return;
-  const shown = selectedRun(c), known = shown && suggestionRuns[shown.meta.runId];
-  const baseline = known ? known.base
-    : shown && c.suggestion === 'promotion' && hasPromotion(shown.spec)
-      ? c.runs.find(r => !hasPromotion(r.spec) && sameLayout(r.spec, shown.spec) && r.meta.seed === shown.meta.seed && sameProvider(r.meta.provider) === sameProvider(shown.meta.provider))?.meta.runId
-      : null;
-  if (baseline && c.runs.some(r => r.meta.runId === baseline)) c.selected = baseline;
-  const base = selectedRun(c);
-  if (!base) return;
-  const suggestion = known?.suggestion || suggestionFor(c, base.spec, st.bundle.metrics);
-  if (!suggestion) return;
-  const jev = ['jev', 'replay'].includes(base.meta.providerStats?.provider || base.meta.provider) && st.live?.jev;
-  openCase(c.id, { question: st.question, newRun: jev ? 'jev' : 'rules', suggestion, autoplay: false });
-}
-
-// Switch between the baseline and the suggestion run, keeping the time on the slider.
-async function showRun(runId) {
-  const c = st.caseInfo;
-  if (!c || st.loading || runId === st.bundle?.meta?.runId) return;
-  const t = st.t;
-  c.selected = runId;
-  await openCase(c.id, { question: st.question, autoplay: false });
-  if (st.bundle?.meta?.runId === runId) seek(Math.min(t, st.run.duration));
-}
-
-const selectedRun = c => c.runs?.find(r => r.meta.runId === c.selected) || c.runs?.[0] || null;
-
-// Engine runs are loaded once and reused (thumbnails, reopening).
-const runCache = new Map();
-function loadEngineRun(runId) {
-  if (!runCache.has(runId)) runCache.set(runId, apiLoadRun(runId, { modelId: st.config.modelId }).catch(err => { runCache.delete(runId); throw err; }));
-  return runCache.get(runId);
-}
-function bundleFor(c) {
-  const r = selectedRun(c);
-  return r ? loadEngineRun(r.meta.runId) : loadBundle(c.file);
-}
-
-function renderRunPicker() {
-  const c = st.caseInfo;
-  const box = $('runPick'), sel = $('runSel');
-  box.hidden = !c?.runs?.length;
-  if (box.hidden) return;
-  sel.replaceChildren(...c.runs.map(r => {
-    const o = document.createElement('option');
-    const when = r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
-    o.value = r.meta.runId;
-    const n = r.meta.decisions || 0;
-    const seats = r.spec.nodes.reduce((k, x) => k + (x.seats?.length || 0), 0);
-    const room = c.sketch && !sameLayout(r.spec, c.sketch) ? `Changed room, ${seats} seats: ` : '';
-    const tested = suggestionRuns[r.meta.runId] ? `${suggestionRuns[r.meta.runId].suggestion?.short || 'Suggestion'}: ` : hasPromotion(r.spec) ? 'Promotion: ' : '';
-    o.textContent = `${tested}${room}${providerWords(r.meta).replace(', not Jev', '')}, seed ${r.meta.seed ?? '?'}${when ? `, ${when}` : ''}${n ? ` (${n.toLocaleString('en-US')} decisions)` : ''}`;
-    o.selected = r.meta.runId === (selectedRun(c)?.meta.runId);
-    return o;
-  }));
-}
-$('runSel').addEventListener('change', e => {
-  const c = st.caseInfo;
-  if (!c) return;
-  c.selected = e.target.value;
-  openCase(c.id, { question: st.question, autoplay: false });
-});
-
-// A new run on the engine server from the selected run's world (same spec and seed).
-async function runOnServer(c, provider, suggestion = null) {
-  const base = selectedRun(c);
-  const spec = suggestion ? applySuggestion(base.spec, suggestion) : base.spec;
-  const p = showProgress($('progress'), [{ label: suggestion ? `Starting a run with the suggestion: ${suggestion.change}` : 'Starting the run on the engine' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }],
-    provider === 'jev' ? 'Live Jev run: every decision is one Jev request to TypeSafe.' : 'Rules run: the engine\'s rule policy decides; no Jev requests.');
-  p.set(0);
-  const runId = await apiStartRun({
-    spec, provider, seed: base.meta.seed ?? 7,
-    onStatus: s => p.set(1, `Running the swarm: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated${s.decisions ? `, ${s.decisions} decisions` : ''}`)
+  }).catch(err => {
+    if (st.bundle !== bundle) return;
+    verdict.message(`The test results could not be loaded: ${err.message}`);
+    showNotice(`The test results could not be loaded: ${err.message}`);
   });
-  p.set(2);
-  if (suggestion) {
-    suggestionRuns[runId] = { base: base.meta.runId, suggestion };
-    store.set('scope-suggestions', JSON.stringify(suggestionRuns));
-  }
-  c.runs = await apiBuildingRuns(c.runTitle ? { title: c.runTitle, max: 200 } : { notTitles: Object.values(st.cases).filter(x => x.runTitle).map(x => x.runTitle) });
-  c.selected = runId;
-  const bundle = await loadEngineRun(runId);
-  p.done();
-  return bundle;
 }
 
-async function openCase(id, { question = '', progress = false, autoplay = true, newRun = null, suggestion = null } = {}) {
-  const c = st.cases[id];
-  if (!c || st.loading) return;
-  st.loading = true;
-  $('askBtn').disabled = true;
-  $('askBtn').textContent = 'Loading…';
-  $('mapbox').setAttribute('aria-busy', 'true');
-  pause();
-  st.caseId = id;
-  st.question = question;
-  hideCard($('askCard'));
+function showRunning() {
+  const { change, provider, done, total } = st.testing;
+  const words = wordsFor(change, provider);
+  verdict.running({ title: words.title, step: words.step(Math.min(total, done + 1), total, done % 2 === 1), done, total });
+}
+
+// A changed room against the room as sketched, on the same seeds and decision-maker (§18), with a toggle between
+// the two runs of the seed on screen. st.room keeps the pair while its sketched side is on the map.
+async function refreshRoom(bundle) {
+  const c = st.caseInfo;
+  const mine = st.room?.sketched === bundle.meta.runId ? st.room.spec : bundle.rawSpec;
+  st.ringNode = null;
+  verdict.message('Comparing your room with the room as sketched…');
+  const provider = sameProvider(bundle.meta.provider);
+  const wanted = st.runs.filter(r => sameProvider(r.meta.provider) === provider && (sameLayout(r.spec, c.sketch) || sameWorld(r.spec, mine)));
+  const runs = await Promise.all(wanted.map(async r => ({ ...r, metrics: await apiRunMetrics(r.meta.runId).catch(() => null) })));
+  if (st.bundle !== bundle) return;
+  const pairs = pairRuns(c.sketch, mine, runs);
+  const pair = pairs.find(p => p.after.meta.runId === bundle.meta.runId || p.before.meta.runId === bundle.meta.runId);
+  st.room = pair ? { sketched: pair.before.meta.runId, mine: pair.after.meta.runId, spec: mine } : null;
+  const parts = compareParts(compare(pairs, provider));
+  const changes = describeChanges(c.sketch, mine).join('. ');
+  verdict.room({
+    headline: parts?.headline || 'This is a changed room.',
+    detail: parts?.detail || 'There is no run of the room as sketched with the same decision-maker to compare it with.',
+    change: changes ? `Your change: ${changes}. Decided by ${byWords(provider)}.` : '',
+    toggle: st.room && { ...st.room, selected: bundle.meta.runId }
+  });
+}
+
+// The baseline and the change, 3 seeds each: +1 staff with the rule model, the promotion with the run's own
+// decision-maker. Every run carries the link the server stores.
+async function runTest() {
+  if (st.testing || !st.bundle) return;
+  const meta = st.bundle.meta;
+  const spec = baseWorld();
+  const change = spec && changeFor(st.caseInfo, spec, st.bundle.metrics);
+  if (!spec || !change) return;
+  const provider = testProvider(change), words = wordsFor(change, provider);
+  const id = `t${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  // Tested again: the same seeds as the test on screen, so the newest test replaces it like for like.
+  const seed0 = st.test ? Math.min(...st.test.pairs.map(p => p.seed)) : Number.isInteger(meta.seed) ? meta.seed : 7;
+  st.testing = { change, provider, done: 0, total: TEST_SEEDS * 2 };
+  testAbort = new AbortController();
+  const signal = testAbort.signal;
+  refreshVerdict();
+  const step = () => { st.testing.done++; showRunning(); };
   try {
-    let bundle;
-    if (newRun) {
-      bundle = await runOnServer(c, newRun, suggestion);
-    } else if (c.runs?.length) {
-      const r = selectedRun(c);
-      const p = progress ? showProgress($('progress'), [{ label: `Loading the recorded run (${providerWords(r.meta)})` }, { label: 'Opening the replay' }], 'Recorded by the engine. Replaying makes no Jev requests.') : null;
-      p?.set(0);
-      bundle = await bundleFor(c);
-      p?.set(1);
-      p?.done();
-    } else {
-      const load = loadBundle(c.file);
-      if (progress) await mockProgress(id, load);
-      bundle = await load;
+    const changed = applyChange(spec, change);
+    let first = null;
+    for (let k = 0; k < TEST_SEEDS; k++) {
+      const base = await apiStartRun({ spec, provider, seed: seed0 + k, link: { test: id, role: 'baseline', change }, signal });
+      step();
+      await apiStartRun({ spec: changed, provider, seed: seed0 + k, link: { test: id, role: 'change', base, change }, signal });
+      step();
+      first = first || base;
     }
-    setBundle(bundle, c);
-    const t0 = Number(params.get('t'));
-    if (Number.isFinite(t0) && t0 > 0 && !progress) seek(t0);
-    const f0 = Number(params.get('floor'));
-    if (Number.isFinite(f0) && f0 > 0 && !progress) setFloor(f0);
-    if (autoplay) play();
+    st.sessionTests.add(id);
+    await refreshRuns();
+    st.testing = null;
+    announce(words.done);
+    // A rule-model run on screen is the same simulation as the test's baseline with its seed, and a run of an
+    // earlier test is replaced by the newest: show the new baseline, so the Baseline side of the toggle is the run
+    // on the map. A Jev run that is not part of a test stays on screen.
+    const now = st.bundle.meta;
+    if ((!isJev(now) || now.link) && !st.loading) await openRun(first, { keepTime: true });
+    else refreshVerdict();
   } catch (err) {
-    $('progress').hidden = true;
-    showChoices($('askCard'), {
-      message: c.runs?.length ? `That run couldn't be loaded or started: ${err.message}` : `That run couldn't be loaded: ${err.message}. Run "npm run mock" to rebuild the mock runs, then try again.`,
-      cases: Object.values(st.cases), onPick: pid => confirmCase(pid, st.cases[pid].question), onCancel: () => hideCard($('askCard'))
-    });
+    st.testing = null;
+    if (err.name === 'AbortError') {
+      await refreshRuns().catch(() => {});
+      refreshVerdict();
+      announce('The test was cancelled.');
+    } else {
+      verdict.failed({ again: words.again, message: `${err.message} Nothing on screen has changed.` });
+    }
   } finally {
-    st.loading = false;
-    $('askBtn').disabled = false;
-    $('askBtn').textContent = 'Simulate';
-    $('mapbox').setAttribute('aria-busy', 'false');
+    testAbort = null;
   }
 }
 
-// Staged progress for mock runs, so the flow matches what a live run will look like. Labelled as mock.
-async function mockProgress(id, load) {
-  const c = st.cases[id];
-  if (id === 'sushi') {
-    // The sushi file is a recorded Jev run, not a mock: say so.
-    const p = showProgress($('progress'), [{ label: 'Reading the sketched room' }, { label: 'Opening the recorded Jev run' }], 'Recorded Jev run. Replaying it makes no Jev requests.');
-    p.set(0);
-    const b = await load;
-    p.set(1, `Opening the recorded Jev run: ${b.agents.length} diners, ${b.decisions.length} decisions`);
-    await new Promise(r => setTimeout(r, reducedMotion ? 0 : 500));
+// ---------- a new run from the prompt ----------
+async function newRun(provider, question) {
+  if (st.loading || !st.bundle) return;
+  const meta = st.bundle.meta;
+  const spec = baseWorld();
+  if (!spec) return;
+  hideCard($('askCard'));
+  busy(true);
+  pause();
+  const p = showProgress($('progress'), [{ label: 'Starting the simulation' }, { label: 'People are arriving' }, { label: 'Opening the replay' }],
+    provider === 'jev' ? 'Jev decides for every person. This can take a few minutes.' : 'The rule model decides for every person. This takes a few seconds.');
+  p.set(0);
+  try {
+    const runId = await apiStartRun({
+      spec, provider, seed: Number.isInteger(meta.seed) ? meta.seed : 7,
+      onStatus: s => p.set(1, `Simulating: ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% of the time window`)
+    });
+    p.set(2);
+    await refreshRuns();
+    st.question = question;
+    setBundle(await loadEngineRun(runId));
+    play();
+  } catch (err) {
+    showNotice(`The new simulation could not run: ${err.message}`);
+  } finally {
     p.done();
+    busy(false);
+  }
+}
+
+$('askForm').addEventListener('submit', e => {
+  e.preventDefault();
+  if (!st.bundle) return;
+  const text = $('askIn').value.trim();
+  const cancel = () => { hideCard($('askCard')); $('askIn').focus(); };
+  if (!baseWorld() || !st.live) {
+    const sample = providerWords(st.bundle.meta) === 'Sample data';
+    showCard($('askCard'), {
+      title: sample ? 'This page is showing sample data' : 'This page is showing a recorded run',
+      lines: [`A new simulation needs the Swarmscope engine, which is not running here. You can still replay the ${sample ? 'sample' : 'run'}.`],
+      onCancel: cancel
+    });
     return;
   }
-  const steps = id === 'parking'
-    ? [{ label: 'Reading the lot layout' }, { label: 'Casting drivers' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }]
-    : [{ label: c.source === 'matterport' ? 'Reading the Matterport floor plan and mesh' : 'Reading the floor plan' }, { label: 'Casting people' }, { label: 'Running the swarm' }, { label: 'Opening the replay' }];
-  const p = showProgress($('progress'), steps, 'Mock run: this replays a recorded mock run. No Jev requests are made.');
-  const wait = ms => new Promise(r => setTimeout(r, reducedMotion ? 0 : ms));
-  p.set(0); await wait(550);
-  const b = await load;
-  const groups = new Set(b.agents.map(a => a.archetypeId)).size;
-  p.set(1, `Casting ${b.agents.length} ${id === 'parking' ? 'drivers' : 'people'} from ${groups} groups`); await wait(650);
-  const n = b.decisions.length;
-  for (let k = 1; k <= 8; k++) { p.set(2, `Running the swarm: ${Math.round((n * k) / 8)} of ${n} decisions`); await wait(110); }
-  p.set(3); await wait(300);
-  p.done();
-}
+  showCard($('askCard'), {
+    title: `Simulate ${st.place} again?`,
+    lines: [
+      'This screen runs one place for now. A question does not change who comes in or what they do yet.',
+      text ? `Your question will show above the map: “${text}”` : null
+    ],
+    actions: [
+      { label: 'Run it again', solid: true, onClick: () => newRun('rules', text) },
+      ...(st.live.jev ? [{ label: 'Run it with Jev', onClick: () => newRun('jev', text) }] : [])
+    ],
+    onCancel: cancel
+  });
+});
 
 // ---------- time ----------
 function seek(t) {
@@ -408,11 +481,7 @@ function play() {
 function pause() { st.playing = false; if (st.bundle) T.update(st.t, false); }
 function setSpeed(s) {
   st.speed = s;
-  document.querySelectorAll('.seg button[data-speed]').forEach(b => {
-    const on = Number(b.dataset.speed) === s;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-pressed', String(on));
-  });
+  document.querySelectorAll('.seg button[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === s)));
 }
 
 function update() {
@@ -428,19 +497,19 @@ function renderPanels() {
   const fi = frameIndex(st.F, st.t);
   st.allAgents = agentsAt(st.F, st.t);
   const ps = {
-    caseId: st.caseId, geometry: st.bundle.geometry, frame: frameAt(st.F, st.t), visibleAgents: st.allAgents, t: st.t,
+    geometry: st.bundle.geometry, frame: frameAt(st.F, st.t), visibleAgents: st.allAgents, t: st.t,
     incidents: st.run.incidents, filters: st.filters, selectedIncident: st.selectedIncident, floor: st.floor,
-    bottlenecks: st.run.bottlenecks.at(fi, st.t), bottleneckMax: st.run.bottlenecks.max(),
-    bottlenecksNow: st.run.bottlenecks.now(fi), bottleneckNowMax: st.run.bottlenecks.nowMax(), rankMode: st.rankMode
+    bottlenecks: st.run.bottlenecks.at(fi, st.t), bottlenecksNow: st.run.bottlenecks.now(fi), rankMode: st.rankMode,
+    seated: st.seated
   };
   renderCounters($('counters'), ps);
+  updateFloorCounts();
+  if (st.selectedAgent != null) { renderInspector($('inspector'), inspectorState(), st.selectedAgent, closeInspector); return; }
   renderRank($('rank'), ps, id => {
     const n = st.run.nodes.get(id);
     if (n) { if ((n.floor || 0) !== st.floor) setFloor(n.floor || 0); flyTo(n.x, n.y, 1.8); }
   });
   renderFeed($('feed'), ps, it => focusIncident(it, { fly: true }));
-  updateFloorCounts();
-  if (st.selectedAgent != null) renderInspector($('inspector'), inspectorState(), st.selectedAgent, closeInspector);
 }
 
 function inspectorState() {
@@ -449,7 +518,20 @@ function inspectorState() {
     visibleAgents: st.allAgents || agentsAt(st.F, st.t), archNames: st.archNames, t: st.t, clockStart: st.bundle.meta.clockStart
   };
 }
-function drawerState() { return { bundle: st.bundle, decisions: st.bundle.decisions, geometry: st.bundle.geometry }; }
+// Run details: the recorded runs of this place (a changed room says so), and the other places the display opens.
+function drawDrawer() {
+  const sketch = st.caseInfo?.sketch;
+  // A run without a test link still says what it is: a promotion run (by its offers), a changed room (by its seats).
+  const runs = st.runs.map(r => (runLabel(r.meta) ? r : {
+    ...r,
+    label: [hasPromotion(r.spec) ? 'Promotion' : '',
+      sketch && !sameLayout(r.spec, sketch) ? `Changed room, ${seatedPlaces(r.spec).reduce((k, p) => k + p.seats.length, 0)} seats` : ''].filter(Boolean).join(', ')
+  }));
+  const places = Object.values(st.cases).filter(c => c.id !== st.caseId)
+    .map(c => ({ label: c.placeName || c.label, question: c.question, href: c.id === 'building' ? './' : `./?case=${encodeURIComponent(c.id)}` }));
+  renderDrawer($('drawerBody'), { bundle: st.bundle, decisions: st.bundle.decisions, geometry: st.bundle.geometry, runs, place: st.place, places },
+    runId => openRun(runId));
+}
 
 // ---------- floors ----------
 function renderFloorTabs() {
@@ -509,40 +591,31 @@ function showCallout() {
   const it = st.selectedIncident;
   const box = $('callout');
   if (!it) { box.hidden = true; return; }
-  const title = document.createElement('p');
-  title.className = 'ct';
-  title.textContent = it.text;
-  const meta = document.createElement('p');
-  meta.className = 'cm';
+  const title = el('p', 'ct', it.text);
   const floorLabel = st.bundle.geometry.floors.length > 1 ? `, ${st.bundle.geometry.floors[it.floor || 0].label}` : '';
-  meta.textContent = `${it.clock}${floorLabel}${it.who && !it.text.startsWith(it.who) ? `, ${it.who}` : ''}`;
-  const row = document.createElement('div');
-  row.className = 'row';
+  const meta = el('p', 'cm', `${it.clock}${floorLabel}${it.who && !it.text.startsWith(it.who) ? `, ${it.who}` : ''}`);
+  const row = el('div', 'row');
+  const add = (cls, text, fn) => {
+    const b = el('button', cls, text);
+    b.type = 'button';
+    b.addEventListener('click', fn);
+    row.append(b);
+  };
+  if (it.agentId != null && st.agentsById.has(it.agentId)) add('btn small', 'See this person', () => selectAgent(it.agentId, { focus: true }));
   if (tour.available()) {
-    const b = document.createElement('button');
-    b.className = 'btn primary small';
-    b.type = 'button';
-    b.textContent = st.bundle.geometry.sweeps?.length ? 'See this spot in 3D' : 'Open the 3D tour';
-    b.addEventListener('click', () => tour.open(st.bundle.geometry, { x: it.x, y: it.y, floor: it.floor || 0, label: it.group }));
-    row.append(b);
+    add('btn small', st.bundle.geometry.sweeps?.length ? 'See this spot in 3D' : 'Open the 3D tour',
+      () => tour.open(st.bundle.geometry, { x: it.x, y: it.y, floor: it.floor || 0, label: it.group }));
   }
-  if (it.agentId != null && st.agentsById.has(it.agentId)) {
-    const b = document.createElement('button');
-    b.className = 'btn small';
-    b.type = 'button';
-    b.textContent = 'Their decisions';
-    b.addEventListener('click', () => selectAgent(it.agentId));
-    row.append(b);
-  }
-  const x = document.createElement('button');
-  x.className = 'btn ghost small';
-  x.type = 'button';
-  x.textContent = 'Close';
-  x.addEventListener('click', () => { st.selectedIncident = null; box.hidden = true; st.dirty = true; renderPanels(); });
-  row.append(x);
+  add('btn quiet small', 'Close', closeCallout);
   box.replaceChildren(title, meta, row);
   box.hidden = false;
   positionCallout();
+}
+function closeCallout() {
+  st.selectedIncident = null;
+  $('callout').hidden = true;
+  st.dirty = true;
+  renderPanels();
 }
 function positionCallout() {
   const it = st.selectedIncident, box = $('callout');
@@ -555,12 +628,28 @@ function positionCallout() {
   box.classList.toggle('below', sy < 150);
 }
 
-function selectAgent(id) {
+// The inspector takes the place of the ranking and the feed; the verdict and the counters stay.
+// returnTo: where keyboard focus goes back to when the inspector closes.
+function selectAgent(id, { focus = false, returnTo = null } = {}) {
   st.selectedAgent = id;
+  st.inspectorReturn = returnTo;
+  $('sideBody').hidden = true;
   renderInspector($('inspector'), inspectorState(), id, closeInspector);
+  if (focus) $('inspector').querySelector('.back')?.focus();
   st.dirty = true;
 }
-function closeInspector() { st.selectedAgent = null; $('inspector').hidden = true; st.dirty = true; }
+function closeInspector() {
+  const had = $('inspector').contains(document.activeElement), was = st.selectedAgent;
+  st.selectedAgent = null;
+  $('inspector').hidden = true;
+  $('sideBody').hidden = false;
+  st.dirty = true;
+  if (st.bundle) renderPanels();
+  if (had) (st.inspectorReturn || $('rankMode').querySelector('button')).focus();
+  // Back on the map, the keyboard cursor is on the person who was open, so the arrow keys carry on from them.
+  if (had && st.inspectorReturn === map && was != null) setCursor(was);
+  st.inspectorReturn = null;
+}
 
 function toggleFilter(cat) {
   st.filters[cat] = !st.filters[cat];
@@ -579,10 +668,13 @@ function flyTo(x, y, z) {
   if (reducedMotion) { R.view = target; st.dirty = true; positionCallout(); return; }
   st.fly = { from: { ...R.view }, to: target, start: performance.now(), dur: 650 };
 }
+// Reset view shows only after zooming or panning.
 $('resetView').addEventListener('click', () => {
   const b = st.bundle.geometry.floors[st.floor].bounds;
+  const had = document.activeElement === $('resetView');
   flyTo((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, 1);
   $('resetView').hidden = true;
+  if (had) $('viewBtn').focus();
 });
 
 const map = $('map');
@@ -590,16 +682,15 @@ let drag = null;
 let seatDrag = false;
 const mapPoint = e => { const r = map.getBoundingClientRect(); return R.toMap(e.clientX - r.left, e.clientY - r.top); };
 const seatReach = () => 16 / R.scale();          // a seat is grabbed within 16 px of its middle
+const endSeatDrag = () => { seatDrag = false; editor.pointerUp(); map.classList.remove('grabbing'); };
 map.addEventListener('pointerdown', e => {
   if (!st.bundle) return;
-  if (editor.active) {
-    const [mx, my] = mapPoint(e);
-    if (editor.pointerDown(mx, my, seatReach())) {
-      seatDrag = true;
-      map.setPointerCapture(e.pointerId);
-      map.classList.add('grabbing');
-      return;
-    }
+  // Edit the room: a press on a seat drags it; anywhere else pans the map as usual.
+  if (editor.active && editor.pointerDown(...mapPoint(e), seatReach())) {
+    seatDrag = true;
+    map.setPointerCapture(e.pointerId);
+    map.classList.add('grabbing');
+    return;
   }
   drag = { x: e.clientX, y: e.clientY, vx: R.view.x, vy: R.view.y, moved: false };
   map.setPointerCapture(e.pointerId);
@@ -621,15 +712,21 @@ map.addEventListener('pointermove', e => {
   }
   if (editor.active) {
     const [mx, my] = mapPoint(e);
-    map.classList.toggle('grab', Boolean(seatedPlaces(editor.spec).some(p => p.seats.some(s => Math.hypot(s.x - mx, s.y - my) <= seatReach()))));
+    map.classList.toggle('grab', seatedPlaces(editor.spec).some(p => p.seats.some(q => Math.hypot(q.x - mx, q.y - my) <= seatReach())));
     return;
   }
   const r = map.getBoundingClientRect();
-  map.classList.toggle('pointing', !!R.hit(drawState(), e.clientX - r.left, e.clientY - r.top));
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const ds = drawState();
+  map.classList.toggle('pointing', !!R.hit(ds, x, y));
+  // Doors and stairs show their name under the pointer.
+  const node = R.hitNode(ds, x, y);
+  if (node !== st.hoverNode) { st.hoverNode = node; st.dirty = true; }
 });
-map.addEventListener('pointercancel', () => { if (seatDrag) { seatDrag = false; editor.pointerUp(); map.classList.remove('grabbing'); } drag = null; });
+map.addEventListener('pointerleave', () => { if (st.hoverNode) { st.hoverNode = null; st.dirty = true; } });
+map.addEventListener('pointercancel', () => { if (seatDrag) endSeatDrag(); drag = null; map.classList.remove('dragging'); });
 map.addEventListener('pointerup', e => {
-  if (seatDrag) { seatDrag = false; editor.pointerUp(); map.classList.remove('grabbing'); return; }
+  if (seatDrag) { endSeatDrag(); return; }
   if (!st.bundle || !drag) return;
   const wasDrag = drag.moved;
   drag = null;
@@ -654,46 +751,100 @@ map.addEventListener('wheel', e => {
   st.dirty = true;
   positionCallout();
 }, { passive: false });
-map.addEventListener('dblclick', () => $('resetView').click());
+map.addEventListener('dblclick', () => { if (!$('resetView').hidden) $('resetView').click(); });
+
+// Keyboard path to a person: Enter picks the person nearest the middle of the map, the arrow keys move to the
+// nearest person in that direction, Enter opens them, Escape lets go.
+function setCursor(id) {
+  st.cursorAgent = id;
+  st.dirty = true;
+  if (id == null) return;
+  const a = st.agentsById.get(id), now = R.lastAgents.find(p => p.id === id);
+  announce(`${a?.personaName || `Person ${id}`}, ${STATE_WORDS[now?.s] || 'on the map'}. Press Enter to see what they did.`);
+}
+map.addEventListener('keydown', e => {
+  if (!st.bundle || editor.active) return;          // while editing, the editor takes the keys (document handler)
+  const people = st.layers.agents ? R.lastAgents : [];
+  const cur = people.find(a => a.id === st.cursorAgent);
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (cur) { selectAgent(cur.id, { focus: true, returnTo: map }); return; }
+    let best = null, bd = Infinity;
+    for (const a of people) {
+      const [x, y] = R.toScreen(a.x, a.y);
+      const d = Math.hypot(x - R.cw / 2, y - R.ch / 2);
+      if (d < bd) { bd = d; best = a; }
+    }
+    if (best) setCursor(best.id);
+    else announce('Nobody is on the map at this moment. Move the time slider and try again.');
+  } else if (cur && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+    // The arrow keys move between people here, so they do not also step the replay.
+    e.preventDefault();
+    e.stopPropagation();
+    const [ux, uy] = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    const [cx, cy] = R.toScreen(cur.x, cur.y);
+    let best = null, bs = Infinity;
+    for (const a of people) {
+      if (a.id === cur.id) continue;
+      const [x, y] = R.toScreen(a.x, a.y);
+      const dx = x - cx, dy = y - cy, along = dx * ux + dy * uy, across = Math.abs(dx * uy - dy * ux);
+      if (along <= 0.5 || across > along * 1.5) continue;
+      const score = along + across * 2;
+      if (score < bs) { bs = score; best = a; }
+    }
+    if (best) setCursor(best.id);
+  } else if (e.key === 'Escape' && st.cursorAgent != null) {
+    e.stopPropagation();
+    setCursor(null);
+  }
+});
+map.addEventListener('blur', () => setCursor(null));
 
 // ---------- bottleneck measure: so far (cumulative) or right now ----------
 const RANK_HINT = {
-  total: 'Minutes waited so far, plus 30 for each person lost',
-  now: 'People in line at this moment, and the wait for someone joining now'
+  total: 'Minutes waited so far. Red: people who walked away.',
+  now: 'People in line at this moment, and the wait for someone joining now.'
 };
 function setRankMode(mode) {
   st.rankMode = mode;
   store.set('scope-rank', mode);
-  document.querySelectorAll('#rankMode button').forEach(b => {
-    const on = b.dataset.mode === mode;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-pressed', String(on));
-  });
+  document.querySelectorAll('#rankMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
   $('rankHint').textContent = RANK_HINT[mode];
   if (st.bundle) renderPanels();
 }
 document.querySelectorAll('#rankMode button').forEach(b => b.addEventListener('click', () => setRankMode(b.dataset.mode)));
 setRankMode(st.rankMode);
 
-// ---------- tools ----------
-$('colorBy').addEventListener('change', e => { st.colorBy = e.target.value; renderLegend(); st.dirty = true; });
-document.querySelectorAll('.toggles .chip').forEach(b => b.addEventListener('click', () => {
-  const k = b.dataset.layer;
-  st.layers[k] = !st.layers[k];
-  b.classList.toggle('on', st.layers[k]);
-  b.setAttribute('aria-pressed', String(st.layers[k]));
+// ---------- the View menu: one home for how the map is drawn ----------
+function setViewMenu(open) {
+  $('viewMenu').hidden = !open;
+  $('viewBtn').setAttribute('aria-expanded', String(open));
+}
+$('viewBtn').addEventListener('click', () => setViewMenu($('viewMenu').hidden));
+document.addEventListener('pointerdown', e => {
+  if (!$('viewMenu').hidden && !e.target.closest('#viewMenu, #viewBtn')) setViewMenu(false);
+});
+document.querySelectorAll('input[name="colorBy"]').forEach(r => r.addEventListener('change', () => {
+  if (!r.checked) return;
+  st.colorBy = r.value;
+  renderLegend();
+  st.dirty = true;
+}));
+document.querySelectorAll('#viewMenu input[data-layer]').forEach(c => c.addEventListener('change', () => {
+  st.layers[c.dataset.layer] = c.checked;
+  if (c.dataset.layer === 'agents' && !c.checked) setCursor(null);
+  renderLegend();
   st.dirty = true;
 }));
 
 function renderLegend() {
   const box = $('legendMini');
-  const items = st.colorBy === 'frustration'
-    ? [['#8ec5ff', 'Calm'], ['#b9a2ff', 'Annoyed'], ['#f2c14e', 'Frustrated'], ['#e5484d', 'Furious']]
-    : st.colorBy === 'archetype'
-      ? (st.bundle?.spec.archetypes || []).slice(0, 5).map((a, i) => [`var(--g-${i + 1})`, a.name])
-      : st.bundle?.geometry.kind === 'lot'
-        ? [['var(--a-car)', 'Driving'], ['var(--a-queue)', 'Stopped'], ['var(--a-walk)', 'Walking in'], ['var(--a-leave)', 'Walking back']]
-        : [['var(--a-walk)', 'Walking'], ['var(--a-queue)', 'In a line'], ['var(--a-serve)', 'Served or staying'], ['var(--a-think)', 'Deciding']];
+  const items = !st.layers.agents ? []
+    : st.colorBy === 'frustration'
+      ? [[FRUSTRATION[0], 'Calm'], [FRUSTRATION[1], 'Annoyed'], [FRUSTRATION[2], 'Frustrated'], [FRUSTRATION[4], 'Furious']]
+      : st.colorBy === 'archetype'
+        ? (st.bundle?.spec.archetypes || []).slice(0, 5).map((a, i) => [`var(--g-${i + 1})`, a.name])
+        : [['var(--a-walk)', 'Walking'], ['var(--a-queue)', 'In a line'], ['var(--a-serve)', 'Being served'], ['var(--a-leave)', 'Leaving']];
   const frag = items.map(([c, t]) => {
     const s = document.createElement('span');
     const i = document.createElement('i');
@@ -701,124 +852,52 @@ function renderLegend() {
     s.append(i, document.createTextNode(t));
     return s;
   });
-  const heat = document.createElement('span');
-  const bar = document.createElement('i');
-  bar.className = 'heatbar';
-  bar.style.background = 'linear-gradient(90deg, transparent, var(--heat-1), var(--heat-2), var(--heat-3))';
-  heat.append(document.createTextNode('Incidents so far'), bar);
-  box.replaceChildren(...frag, heat);
+  if (st.layers.heat) {
+    const heat = document.createElement('span');
+    const bar = document.createElement('i');
+    bar.className = 'heatbar';
+    heat.append(bar, document.createTextNode('Trouble so far'));
+    frag.push(heat);
+  }
+  box.replaceChildren(...frag);
 }
 
-$('detailsBtn').addEventListener('click', () => {
-  const d = $('drawer');
-  const open = d.hidden;
-  d.hidden = !open;
+function setDrawer(open) {
+  if (open) setViewMenu(false);
+  $('drawer').hidden = !open;
   $('detailsBtn').setAttribute('aria-expanded', String(open));
-  if (open && st.bundle) renderDrawer($('drawerBody'), drawerState(), st.caseInfo);
-  else if (open) $('drawerBody').replaceChildren(Object.assign(document.createElement('p'), { className: 'note', textContent: 'Run a simulation to see who made the decisions and where the data came from.' }));
-  if (open) $('drawerClose').focus();
-});
-$('drawerClose').addEventListener('click', () => { $('drawer').hidden = true; $('detailsBtn').setAttribute('aria-expanded', 'false'); $('detailsBtn').focus(); });
-
-// ---------- prompt ----------
-function factsFor(id) {
-  const c = st.cases[id];
-  const r = selectedRun(c);
-  if (r) {
-    const m = r.meta;
-    const jevRuns = c.runs.filter(x => x.meta.provider === 'jev');
-    return [
-      ['Scenario', r.spec.title],
-      ['People', `${m.agents} over ${Math.round(m.duration)} minutes`],
-      ['When', `${clockText(m.clockStart, 0)} to ${clockText(m.clockStart, m.duration)}`],
-      ['Map', id === 'sushi'
-        ? `Drawn from a hand sketch: one room, a kitchen and ${r.spec.nodes.reduce((n, x) => n + (x.seats?.length || 0), 0)} seats; the door position is assumed`
-        : `Matterport walls and doors (${r.spec.walls.length} walls, ${r.spec.doors?.length || 0} doors); counters from the proposed fit-out, assumed`],
-      ['Selected run', `${providerWords(m)}, seed ${m.seed}${m.provider === 'jev' ? `, ${m.decisions} decisions` : ''}`],
-      ...(st.live?.jev ? [['A new Jev run', jevRuns.length ? `about ${jevRuns[0].meta.providerStats?.requests ?? jevRuns[0].meta.decisions} requests, like the last one` : 'about 1,000 requests for this building (a few cents at TypeSafe\'s published price, unverified)']] : [])
-    ];
-  }
-  const mock = true;
-  if (id === 'sushi') {
-    return [
-      ['People', '36 over two and a half hours'], ['When', 'Friday dinner, 6:00 to 8:30 pm'],
-      ['Map', 'Drawn from a hand sketch: one room, a kitchen and eight seats; the door position is assumed'],
-      ['Decisions', 'Recorded from Jev, one request per decision; replaying makes no new requests']
-    ];
-  }
-  if (id === 'parking') {
-    return [
-      ['Drivers', '350 over two hours'], ['When', 'Saturday, 12:30 to 2:30 pm'],
-      ['Map', c.source === 'synthetic' ? 'Drawn lot, until a property and Vexcel imagery are chosen' : 'Traced from aerial imagery'],
-      ['Decisions', mock ? 'Mock, shaped like Jev answers' : 'Jev, one request per decision']
-    ];
-  }
-  return [
-    ['People', '490 over 90 minutes'], ['When', 'Weekday lunch, 11:45 am to 1:15 pm'],
-    ['Map', c.source === 'matterport' ? 'Matterport floor plan and mesh; counters and doors placed by hand' : 'Drawn floor plan (no scan loaded)'],
-    ['Decisions', mock ? 'Mock, shaped like Jev answers' : 'Jev, one request per decision']
-  ];
+  if (open && st.bundle) drawDrawer();
+  else if (open) $('drawerBody').replaceChildren(el('p', 'note', 'Nothing is loaded yet.'));
+  (open ? $('drawerClose') : $('detailsBtn')).focus();
 }
-
-function confirmCase(id, question) {
-  const c = st.cases[id];
-  const go = opts => () => { hideCard($('askCard')); openCase(id, { question, ...opts }); };
-  const actions = c.runs?.length
-    ? [
-        { label: 'Replay this run', primary: true, onClick: go({ progress: true }) },
-        { label: 'Run again with rules', onClick: go({ newRun: 'rules' }) },
-        ...(st.live?.jev ? [{ label: 'Run with Jev', onClick: go({ newRun: 'jev' }) }] : [])
-      ]
-    : [{ label: 'Run simulation', primary: true, onClick: go({ progress: true }) }];
-  showConfirm($('askCard'), {
-    caseInfo: { label: c.label, place: c.place }, question, facts: factsFor(id), actions,
-    onCancel: () => hideCard($('askCard'))
-  });
-}
-
-$('askForm').addEventListener('submit', e => {
-  e.preventDefault();
-  const text = $('askIn').value.trim();
-  const cases = Object.values(st.cases);
-  if (!text) {
-    showChoices($('askCard'), { message: 'Pick one of the three cases Swarmscope can run right now.', cases, onPick: id => confirmCase(id, st.cases[id].question), onCancel: () => hideCard($('askCard')) });
-    return;
-  }
-  const m = matchCase(text);
-  if (m?.id && st.cases[m.id]) confirmCase(m.id, text);
-  else {
-    showChoices($('askCard'), {
-      message: m?.tie
-        ? 'That could be more than one case. Which one did you mean?'
-        : 'Swarmscope can simulate three things right now: crowding inside a building, a retail parking lot, and seating at a small sushi restaurant. Pick the closest one, or rephrase your question.',
-      cases, onPick: id => confirmCase(id, text), onCancel: () => hideCard($('askCard'))
-    });
-  }
-});
+$('detailsBtn').addEventListener('click', () => setDrawer($('drawer').hidden));
+$('drawerClose').addEventListener('click', () => setDrawer(false));
 
 // ---------- keyboard ----------
 document.addEventListener('keydown', e => {
-  if ($('feedbackDialog').open) return;
-  // Text fields and tabs keep their keys. On a focused button or link, Space activates that control,
-  // so it doesn't also toggle playback; the arrow keys still step the replay.
-  const typing = e.target.closest('input, select, textarea, [role="tab"], [contenteditable="true"]');
-  if (e.key === ' ' && e.target.closest('button, a, [role="button"]')) return;
+  // Text fields, tabs and the map's person cursor keep their keys. On a focused button or link, Space and
+  // Enter activate that control, so Space doesn't also toggle playback; the arrow keys still step the replay.
+  const typing = e.target.closest('input:not([type="range"]), select, textarea, [role="tab"], [contenteditable="true"]');
+  if (e.key === ' ' && e.target.closest('button, a, [role="button"], input:not([type="range"])')) return;
   // Edit the room: the editor takes Escape, Delete and the arrow keys; nothing drives the replay meanwhile.
-  if (editor.active && $('askCard').hidden) {
+  if (editor.active && $('askCard').hidden && $('drawer').hidden && $('viewMenu').hidden) {
     if (!typing && editor.key(e)) e.preventDefault();
     return;
   }
   if (e.key === 'Escape') {
-    if (!$('askCard').hidden) hideCard($('askCard'));
+    if (!$('viewMenu').hidden) { setViewMenu(false); $('viewBtn').focus(); }
+    else if (!$('askCard').hidden) { hideCard($('askCard')); $('askIn').focus(); }
     else if (!$('tour').hidden) tour.hide();
-    else if (!$('drawer').hidden) $('drawerClose').click();
+    else if (!$('drawer').hidden) setDrawer(false);
     else if (st.selectedAgent != null) closeInspector();
-    else if (st.selectedIncident) { st.selectedIncident = null; $('callout').hidden = true; st.dirty = true; }
+    else if (st.selectedIncident) closeCallout();
+    else if (!$('notice').hidden) $('notice').hidden = true;
     return;
   }
   if (typing || !st.bundle) return;
   if (e.key === ' ') { e.preventDefault(); st.playing ? pause() : play(); }
   else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    if (e.target.closest('input[type="range"]')) return;   // the slider steps itself
     e.preventDefault();
     const dir = e.key === 'ArrowRight' ? 1 : -1;
     const step = e.shiftKey ? 10 : (st.F.list[1]?.t - st.F.list[0]?.t) || 1 / 15;
@@ -859,145 +938,56 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-// ---------- empty state ----------
-function renderEmpty() {
-  const box = $('emptyState');
-  const lead = document.createElement('p');
-  lead.className = 'lead';
-  lead.textContent = 'Ask a question above, or start from one of these.';
-  const grid = document.createElement('div');
-  grid.className = 'cases';
-  for (const c of Object.values(st.cases)) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'case';
-    const cv = document.createElement('canvas');
-    cv.setAttribute('aria-hidden', 'true');
-    cv.dataset.case = c.id;
-    const text = document.createElement('div');
-    text.className = 'text';
-    const h = document.createElement('h2'); h.textContent = c.label;
-    const p = document.createElement('p'); p.textContent = c.question;
-    const src = document.createElement('p'); src.className = 'src';
-    src.textContent = c.runs?.length ? `${c.place}, recorded by the engine (${providerWords(selectedRun(c).meta)})`
-      : c.source === 'matterport' ? `${c.place}, from a Matterport scan (mock run)` : c.source === 'synthetic' ? `${c.place} (drawn, mock run)`
-        : c.source === 'drawn' ? `${c.place}, drawn from a hand sketch (recorded Jev run)` : c.place;
-    text.append(h, p, src);
-    b.append(cv, text);
-    b.addEventListener('click', () => { $('askIn').value = c.question; confirmCase(c.id, c.question); });
-    grid.append(b);
-  }
-  box.replaceChildren(lead, grid);
-  box.hidden = false;
-  drawThumbs();
-}
-
-// Thumbnails: each case at its busiest moment, heat and people included.
-async function drawThumbs() {
-  for (const cv of document.querySelectorAll('.case canvas')) {
-    const c = st.cases[cv.dataset.case];
-    if (!c) continue;
-    let b;
-    try { b = await bundleFor(c); } catch { continue; }
-    const F = prepareFrames(b.frames);
-    const run = deriveRun(b, F);
-    const peak = run.moments[0]?.t ?? run.duration / 2;
-    const geo = b.geometry;
-    const heat = createHeat(geo.floors[0].bounds || geo.bounds, geo.floors.length, { cell: 0.6, sigma: 2.6 });
-    calibrate(heat, run.incidents);
-    advance(heat, run.incidents, peak);
-    const r = createRenderer(cv);
-    r.pad = { top: 8, bottom: 8, side: 8 };
-    r.resize();
-    r.setBounds(geo.floors[0].bounds || geo.bounds);
-    r.pal = readPalette();
-    r.draw({
-      caseId: 'thumb-' + c.id, floor: 0, theme: st.theme, layers: { heat: true, agents: true, labels: false }, geometry: geo, F, t: peak, heat,
-      incidents: [], filters: st.filters, selectedIncident: null, selectedAgent: null, frame: frameAt(F, peak), nodes: [], colorBy: 'state',
-      frustration: () => null, archIndex: new Map(), agentArch: new Map(), reducedMotion: true
-    });
-  }
-}
-
-// Recorded engine runs for each case, newest first; a Jev run with the lowest seed is selected when there is one.
-async function attachRuns(cases) {
-  const titled = Object.values(cases).filter(c => c.runTitle);
-  const pick = runs => {
-    const jev = runs.filter(r => r.meta.provider === 'jev' || r.meta.provider === 'replay');
-    return (jev.length ? jev.slice().sort((a, b) => (a.meta.seed ?? 0) - (b.meta.seed ?? 0))[0] : runs[0]).meta.runId;
-  };
-  for (const c of titled) {
-    // The room as sketched is the packed file's world: every changed room is compared with it.
-    if (!c.sketch) c.sketch = await loadBundle(c.file).then(b => b.rawSpec || null).catch(() => null);
-    const runs = await apiBuildingRuns({ title: c.runTitle, max: 200 });
-    // The page opens on the room as sketched, not on a changed room someone ran later.
-    const sketched = c.sketch ? runs.filter(r => sameWorld(r.spec, c.sketch)) : [];
-    if (runs.length) cases[c.id] = { ...c, runs, selected: cases[c.id].selected && runs.some(r => r.meta.runId === cases[c.id].selected) ? cases[c.id].selected : pick(sketched.length ? sketched : runs) };
-    else { delete cases[c.id].runs; delete cases[c.id].selected; }
-  }
-  if (cases.building) {
-    const runs = await apiBuildingRuns({ notTitles: titled.map(c => c.runTitle) });
-    if (runs.length) {
-      const jev = runs.find(r => r.meta.provider === 'jev' || r.meta.provider === 'replay');
-      cases.building = { ...cases.building, runs, selected: (jev || runs[0]).meta.runId, source: 'engine', question: runs[0].meta.question || cases.building.question };
-    }
-  }
-}
-
 // ---------- edit the room (§18) ----------
 const editor = createEditor({ panel: $('editPanel'), onChange: () => { st.dirty = true; }, onRun: runEdited, onClose: leaveEdit });
-const sameProvider = p => (p === 'replay' ? 'jev' : p);
 
-async function enterEdit() {
-  if (!st.bundle || editor.active || !st.live) return;
-  const c = st.caseInfo;
+// The edit panel takes the side column, and the map shows only the room and its seats.
+function enterEdit() {
+  if (!st.bundle || editor.active || !st.live || !st.bundle.rawSpec) return;
   pause();
-  closeInspector();
-  st.selectedIncident = null;
-  $('callout').hidden = true;
-  if (c && !c.sketch) c.sketch = c.file ? await loadBundle(c.file).then(b => b.rawSpec || null).catch(() => null) : null;
+  if (st.selectedAgent != null) closeInspector();
+  if (st.selectedIncident) closeCallout();
+  setViewMenu(false);
   // An edit changes seats only. Opened from a promotion run, it starts from that room without the promotion.
-  const sketch = c?.sketch || st.bundle.rawSpec;
-  editor.open({ spec: { ...st.bundle.rawSpec, offers: sketch.offers || [] }, sketch, hasJev: Boolean(st.live?.jev) });
-  $('feedbackBtn').hidden = true;                // Suggestions would run the recorded room, not the one being drawn
-  $('side').classList.add('editing');
-  $('editBtn').classList.add('on');
-  $('editBtn').setAttribute('aria-pressed', 'true');
-  $('legendMini').hidden = true;
-  $('timeline').hidden = true;
-  map.classList.add('editing');
-  st.dirty = true;
+  const sketch = st.caseInfo?.sketch || st.bundle.rawSpec;
+  editor.open({ spec: { ...st.bundle.rawSpec, offers: sketch.offers || [] }, sketch, hasJev: Boolean(st.live.jev) });
+  setEditing(true);
+  $('editPanel').querySelector('button')?.focus();
 }
-
 function leaveEdit() {
+  const had = $('editPanel').contains(document.activeElement);
   editor.close();
-  $('feedbackBtn').hidden = false;
-  $('side').classList.remove('editing');
-  $('editBtn').classList.remove('on');
-  $('editBtn').setAttribute('aria-pressed', 'false');
-  $('legendMini').hidden = false;
-  $('timeline').hidden = false;
-  map.classList.remove('editing', 'grab', 'grabbing');
+  setEditing(false);
   st.lastPanels = -1;
-  st.dirty = true;
   if (st.bundle) update();
+  if (had) $('editBtn').focus();
+}
+function setEditing(on) {
+  $('side').classList.toggle('editing', on);
+  $('editBtn').setAttribute('aria-pressed', String(on));
+  $('editBtn').textContent = on ? 'Stop editing' : 'Edit the room';
+  $('legendMini').hidden = on;
+  $('timeline').hidden = on;
+  map.classList.toggle('editing', on);
+  if (!on) map.classList.remove('grab', 'grabbing');
+  st.dirty = true;
 }
 $('editBtn').addEventListener('click', () => (editor.active ? leaveEdit() : enterEdit()));
 
-// Run the edited room on the seeds the sketched room already has runs of with this provider (three at most), one
-// after another, then open the first of the new runs. A seed with no run of the sketched room gets one first.
+// Run the edited room on the seeds the room as sketched already has runs of with this decision-maker (three at
+// most), one after another, then open the first new run. A seed with no run of the sketched room gets one first.
 async function runEdited(provider, spec) {
-  const c = st.caseInfo, sketch = editor.sketch;
-  const have = [...new Set((c.runs || []).filter(r => sameProvider(r.meta.provider) === provider && sameWorld(r.spec, sketch)).map(r => r.meta.seed))]
-    .filter(Number.isFinite).sort((a, b) => a - b).slice(0, 3);
-  const seeds = have.length ? have : [7];
+  const sketch = editor.sketch;
+  const have = [...new Set(st.runs.filter(r => sameProvider(r.meta.provider) === provider && sameWorld(r.spec, sketch)).map(r => r.meta.seed))]
+    .filter(Number.isFinite).sort((a, b) => a - b).slice(0, TEST_SEEDS);
+  const seeds = have.length ? have : [Number.isInteger(st.bundle.meta.seed) ? st.bundle.meta.seed : 7];
   const jobs = [];
   for (const seed of seeds) {
-    if (!have.includes(seed)) jobs.push({ spec: st.bundle.rawSpec && sameWorld(st.bundle.rawSpec, sketch) ? st.bundle.rawSpec : sketch, seed, what: 'the room as sketched' });
+    if (!have.includes(seed)) jobs.push({ spec: sketch, seed, what: 'the room as sketched' });
     jobs.push({ spec, seed, what: 'your room', mine: true });
   }
-  const p = showProgress($('progress'), [...jobs.map((j, i) => ({ label: `Run ${i + 1} of ${jobs.length}: ${j.what}, seed ${j.seed}` })), { label: 'Opening the replay' }],
-    provider === 'jev' ? 'Live Jev runs: every decision is one Jev request to TypeSafe.' : 'Rules runs: the engine\'s rule policy decides; no Jev requests.');
+  const p = showProgress($('progress'), [...jobs.map((j, i) => ({ label: `Run ${i + 1} of ${jobs.length}: ${j.what}` })), { label: 'Opening the replay' }],
+    provider === 'jev' ? 'Jev decides for every person. This takes about 20 seconds.' : 'The rule model decides for every person. This takes a few seconds.');
   let first = null;
   try {
     for (let i = 0; i < jobs.length; i++) {
@@ -1005,63 +995,58 @@ async function runEdited(provider, spec) {
       p.set(i);
       const id = await apiStartRun({
         spec: j.spec, provider, seed: j.seed,
-        onStatus: s => p.set(i, `Run ${i + 1} of ${jobs.length}: ${j.what}, seed ${j.seed}, ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated${s.decisions ? `, ${s.decisions} decisions` : ''}`)
+        onStatus: s => p.set(i, `Run ${i + 1} of ${jobs.length}: ${j.what}, ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated`)
       });
       if (j.mine && first == null) first = id;
     }
     p.set(jobs.length);
-    c.runs = await apiBuildingRuns({ title: c.runTitle, max: 200 });
-    c.selected = first;
+    await refreshRuns();
   } finally {
     p.done();
   }
   leaveEdit();
-  await openCase(c.id, { question: st.question, autoplay: true });
-}
-
-// Under the place's name: how a changed room did against the room as sketched, on the same seeds and provider.
-let compareToken = 0;
-async function updateCompare() {
-  const line = $('compareLine'), token = ++compareToken;
-  line.hidden = true;
-  const c = st.caseInfo, mine = st.bundle?.rawSpec;
-  if (!c?.runs?.length || !c.sketch || !mine || sameLayout(c.sketch, mine)) return;
-  const provider = sameProvider(st.bundle.meta.provider);
-  const wanted = c.runs.filter(r => sameProvider(r.meta.provider) === provider && (sameLayout(r.spec, c.sketch) || sameLayout(r.spec, mine)));
-  const runs = await Promise.all(wanted.map(async r => ({ ...r, metrics: await apiRunMetrics(r.meta.runId) })));
-  if (token !== compareToken) return;                  // another run was opened meanwhile
-  const result = compare(pairRuns(c.sketch, mine, runs), provider);
-  const changes = describeChanges(c.sketch, mine).join('. ');
-  line.replaceChildren(result ? compareWords(result) : 'This is a changed room. There is no run of the room as sketched with the same seed to compare it with.');
-  if (changes) line.append(Object.assign(document.createElement('span'), { textContent: `Your change: ${changes}. ${provider === 'jev' ? 'Decided by Jev.' : 'Decided by the rules policy, not Jev.'}` }));
-  line.hidden = false;
+  await openRun(first, { autoplay: true });
 }
 
 // ---------- start ----------
+function showEmpty(text) {
+  $('placeTitle').textContent = 'Swarmscope';
+  $('emptyState').replaceChildren(el('p', 'lead', text));
+  $('emptyState').hidden = false;
+}
+
 async function start() {
-  // The language button (§19). Labels drawn on the map are redrawn when the language changes.
-  onLang(() => { R.baseKey = ''; st.dirty = true; drawThumbs(); });
-  langButton($('langBtn'));
   R.resize();
   applyTheme();
   setSpeed(4);
+  requestAnimationFrame(loop);
   const [cases, config, live] = await Promise.all([loadCases(), loadConfig(), apiHealth()]);
   st.cases = cases;
+  st.caseId = cases[params.get('case')] ? params.get('case') : cases.building ? 'building' : Object.keys(cases)[0] || null;
+  st.caseInfo = cases[st.caseId] || null;
   st.config = config;
   st.live = live;
-  // Served by the engine (node bin/swarm.js serve): a case plays the recorded engine runs of its own world.
-  // A case with a runTitle (the sushi restaurant) takes the runs with that title; the building takes the rest.
-  if (live) await attachRuns(cases);
-  if (!Object.keys(cases).length) {
-    $('emptyState').replaceChildren(Object.assign(document.createElement('p'), { className: 'lead', textContent: 'No runs found. Run "node scripts/mock_runs.js" from the repo root to build the mock runs, then reload.' }));
+  // A place drawn from a sketch (the sushi restaurant): its packed file's world is the room as sketched, which
+  // every changed room is compared with.
+  if (st.caseInfo?.runTitle) st.caseInfo.sketch = await loadBundle(st.caseInfo.file).then(b => b.rawSpec || null).catch(() => null);
+  let problem = '';
+  if (live) await refreshRuns().catch(err => { problem = `The recorded runs could not be listed: ${err.message}`; });
+  const want = params.get('run');
+  const first = (want && st.runs.find(r => r.meta.runId === want)) || await openingRun();
+  try {
+    if (first) setBundle(await loadEngineRun(first.meta.runId));
+    else if (st.caseInfo) setBundle(await loadBundle(st.caseInfo.file));
+    else { showEmpty('No simulation has been recorded yet. Record a run of the building with the Swarmscope engine, then reload this page.'); return; }
+  } catch (err) {
+    showEmpty(`The simulation could not be opened: ${err.message}`);
     return;
   }
-  const want = params.get('case');
-  if (want && cases[want]) {
-    openCase(want, { autoplay: params.get('autoplay') !== '0' && !params.get('t') });
-  } else {
-    renderEmpty();
-  }
-  requestAnimationFrame(loop);
+  if (problem) showNotice(problem);
+  const t0 = Number(params.get('t'));
+  if (Number.isFinite(t0) && t0 > 0) seek(t0);
+  const f0 = Number(params.get('floor'));
+  if (Number.isFinite(f0) && f0 > 0) setFloor(f0);
+  // Paused at the start unless the link asks for playback.
+  if (params.get('autoplay') === '1') play();
 }
 start();

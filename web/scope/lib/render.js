@@ -1,10 +1,10 @@
 // Map canvas: plan base layer (cached per floor and view), heat, people, incidents, selection.
 import { agentsAt, agentTrail, heldAt } from './frames.js';
 import { heatCanvas, makeRamp } from './heat.js';
-import { tr } from './i18n.js';
 
 const STATE_VAR = ['--a-walk', '--a-queue', '--a-serve', '--a-think', '--a-leave', '--a-car'];
-const FRUSTRATION = ['#8ec5ff', '#b9a2ff', '#f2c14e', '#f08a4b', '#e5484d'];
+// Calm to furious. No red: red means people lost, and nothing else (§9b).
+export const FRUSTRATION = ['#5b9bd5', '#8f7be0', '#d9a514', '#e07b2a', '#a8430a'];
 
 export function readPalette() {
   const cs = getComputedStyle(document.documentElement);
@@ -48,8 +48,8 @@ export function createRenderer(canvas) {
     R.baseKey = '';
   };
 
-  // Padding keeps the plan clear of the map tools (top) and the legend (bottom).
-  R.pad = { top: 56, bottom: 58, side: 24 };
+  // Padding keeps the plan clear of the View button (top) and the legend (bottom).
+  R.pad = { top: 44, bottom: 40, side: 20 };
   // bounds = [x0, y0, x1, y1] in map units; the view fits that box, wherever it starts.
   R.setBounds = (bounds) => {
     const [x0, y0, x1, y1] = bounds;
@@ -201,61 +201,68 @@ export function createRenderer(canvas) {
         g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke();
       }
     }
+    // Doors and stairs: a faint dot only. Their names show on hover (drawPlaces). Rooms are not labelled.
+    g.fillStyle = pal.faint;
+    for (const n of st.nodes) {
+      if ((n.floor || 0) !== st.floor || n.kind !== 'entry') continue;
+      const [sx, sy] = R.toScreen(n.x, n.y);
+      g.beginPath(); g.arc(sx, sy, 2.5, 0, Math.PI * 2); g.fill();
+    }
     // Seats (§18): a small chair at every seat, drawn whether or not someone is sitting on it. In edit mode the
     // seats are drawn each frame instead, so they can be dragged.
     if (!st.edit) drawSeats(g, st.nodes.filter(n => (n.floor || 0) === st.floor).flatMap(n => (n.seats || []).map(seatXY)), pal, geo.metersPerUnit || 1, false);
-    if (!st.layers.labels) return;
+  }
+
+  // Counters, drawn above the people so their names stay readable: a diamond and the name. The counter under
+  // test (st.ringNode) gets a ring and a heavier name. The door or stairs under the pointer shows its name.
+  // A place with seats (§18) is named at its seats, with no diamond; a solid room nobody enters (a kitchen) is
+  // named in its middle, first, so the other names keep clear of it.
+  function drawPlaces(st, pal) {
     placed.length = 0;
-    // Labels: areas faint and large, points small.
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    // A solid room nobody enters (a kitchen) gets its name in the middle.
-    for (const o of floor.objects || []) {
-      if (o.kind !== 'room' || !o.name || !o.polygon?.length) continue;
-      const xs = o.polygon.map(p => p[0]), ys = o.polygon.map(p => p[1]);
-      const [sx, sy] = R.toScreen((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2);
-      const size = Math.round(Math.min(22, Math.max(13, s * 1.0)));
-      g.font = `500 ${size}px "Bricolage Grotesque", sans-serif`;
-      const roomName = tr(o.name);
-      const w = g.measureText(roomName).width + 16;
-      g.fillStyle = pal.ground;
-      g.globalAlpha = 0.82;
-      roundRect(g, sx - w / 2, sy - size * 0.8, w, size * 1.6, 6); g.fill();
-      g.globalAlpha = 1;
-      g.fillStyle = pal.muted;
-      g.fillText(roomName, sx, sy + 1);
-      placed.push([sx - w / 2, sy - size * 0.8, sx + w / 2, sy + size * 0.8]);
+    const floor = st.geometry.floors[st.floor];
+    const ring = st.nodes.find(n => n.id === st.ringNode && (n.floor || 0) === st.floor);
+    const spots = (sx, sy, d) => [[sx, sy + d, 'center'], [sx, sy - d, 'center'], [sx + d - 4, sy, 'left'], [sx - d + 4, sy, 'right']];
+    if (st.layers.labels) {
+      for (const o of floor.objects || []) {
+        if (o.kind !== 'room' || !o.name || !o.polygon?.length) continue;
+        const xs = o.polygon.map(q => q[0]), ys = o.polygon.map(q => q[1]);
+        const [sx, sy] = R.toScreen((Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2);
+        labelFree(ctx, o.name, [[sx, sy, 'center']], pal, 15, { weight: 500, color: pal.muted, halo: pal.room });
+      }
     }
-    for (const p of floor.pois || []) {
-      if (p.kind !== 'area') continue;
-      const cx = p.box ? (p.box[0] + p.box[2]) / 2 : p.x, cy = p.box ? (p.box[1] + p.box[3]) / 2 : p.y;
-      const [sx, sy] = R.toScreen(cx, cy);
-      g.font = `500 ${Math.round(Math.min(20, Math.max(13, s * 2.6)))}px "Bricolage Grotesque", sans-serif`;
-      g.fillStyle = pal.faint;
-      g.fillText(tr(p.name), sx, sy);
+    if (ring) {
+      const [sx, sy] = R.toScreen(ring.x, ring.y);
+      ctx.strokeStyle = pal.room;
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(sx, sy, 17, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = pal.text;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(sx, sy, 17, 0, Math.PI * 2); ctx.stroke();
+      // The ringed counter's name is placed first, so it always gets a spot.
+      if (st.layers.labels) labelFree(ctx, ring.name, spots(sx, sy, 30), pal, 13, { weight: 600, color: pal.text, halo: pal.room });
     }
     for (const n of st.nodes) {
-      if ((n.floor || 0) !== st.floor || n.kind === 'area') continue;
+      if ((n.floor || 0) !== st.floor || n.kind !== 'service') continue;
       const [sx, sy] = R.toScreen(n.x, n.y);
-      if (n.kind === 'service' && n.seats?.length) {
-        if (st.edit) continue;      // seats move while editing; the seat tags and the edit panel name the place
-        // A place with seats is named at its seats, not at the spot where people wait for one.
-        const [lx, ly] = seatLabelSpot(n);
-        const [ax, ay] = R.toScreen(lx, ly);
-        labelFree(g, n.name, [[ax, ay, 'center'], [ax, ay + 16, 'center'], [ax, ay - 16, 'center'], [sx, sy + 15, 'center']], pal, 13);
-      } else if (n.kind === 'service') {
-        g.fillStyle = pal.label;
-        g.beginPath(); g.moveTo(sx, sy - 5); g.lineTo(sx + 5, sy); g.lineTo(sx, sy + 5); g.lineTo(sx - 5, sy); g.closePath(); g.fill();
-        // Below, above, right, left; skipped if all would overlap (the side panel names every place).
-        labelFree(g, n.name, [[sx, sy + 15, 'center'], [sx, sy - 15, 'center'], [sx + 9, sy, 'left'], [sx - 9, sy, 'right']], pal, 13);
-      } else if (n.kind === 'entry') {
-        // Entries sit just outside the building; put their labels further out so they don't hit inside labels.
-        g.fillStyle = pal.muted;
-        g.beginPath(); g.arc(sx, sy, 3, 0, Math.PI * 2); g.fill();
-        const [cx] = R.toScreen((floor.bounds[0] + floor.bounds[2]) / 2, 0);
-        const outRight = sx >= cx;
-        labelFree(g, n.name, [[sx + (outRight ? 8 : -8), sy, outRight ? 'left' : 'right'], [sx, sy - 13, 'center'], [sx, sy + 13, 'center']], pal, 12.5, true);
+      if (n.seats?.length) {
+        // Seats move while editing; the seat tags and the edit panel name the place then.
+        if (!st.layers.labels || st.edit) continue;
+        const [ax, ay] = R.toScreen(...seatLabelSpot(n));
+        labelFree(ctx, n.name, [[ax, ay, 'center'], [ax, ay + 16, 'center'], [ax, ay - 16, 'center'], [sx, sy + 15, 'center']], pal, 13, { weight: 500, color: pal.label, halo: pal.room });
+        continue;
       }
+      ctx.fillStyle = n === ring ? pal.text : pal.label;
+      ctx.beginPath(); ctx.moveTo(sx, sy - 5); ctx.lineTo(sx + 5, sy); ctx.lineTo(sx, sy + 5); ctx.lineTo(sx - 5, sy); ctx.closePath(); ctx.fill();
+      // Below, above, right, left; skipped if all would overlap (the side panel names every place).
+      if (st.layers.labels && n !== ring) labelFree(ctx, n.name, spots(sx, sy, 16), pal, 13, { weight: 500, color: pal.label, halo: pal.room });
+    }
+    const hover = st.nodes.find(n => n.id === st.hoverNode && (n.floor || 0) === st.floor && n.kind === 'entry');
+    if (hover) {
+      const [sx, sy] = R.toScreen(hover.x, hover.y);
+      const left = sx > R.cw / 2;
+      ctx.fillStyle = pal.text;
+      ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, Math.PI * 2); ctx.fill();
+      label(ctx, hover.name, sx + (left ? -9 : 9), sy, pal, 13, left ? 'right' : 'left', { weight: 500, color: pal.text, halo: pal.ground });
     }
   }
 
@@ -312,13 +319,13 @@ export function createRenderer(canvas) {
     }
     if (!st.layers.labels) return;
     const [scx, scy] = R.toScreen((L.store.x0 + L.store.x1) / 2, (L.store.y0 + L.store.y1) / 2 - 1);
-    g.font = `650 ${Math.round(Math.max(16, s * 3.6))}px "Bricolage Grotesque", sans-serif`;
+    g.font = `600 ${Math.round(Math.max(16, s * 3.6))}px "IBM Plex Sans", sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = pal.label;
     g.fillText(L.store.name || 'Store', scx, scy);
-    for (const ai of L.aisles) { const [sx, sy] = R.toScreen(left - 3.6, ai.y); label(g, ai.name, sx, sy, pal, 12.5, 'right', true); }
-    const [ex, ey] = R.toScreen(entryX, streetY + 3.2); label(g, 'Entrance', ex, ey, pal, 13, 'center', true);
-    const [xx, xy] = R.toScreen(exitX, streetY + 3.2); label(g, 'Exit', xx, xy, pal, 13, 'center', true);
+    for (const ai of L.aisles) { const [sx, sy] = R.toScreen(left - 3.6, ai.y); label(g, ai.name, sx, sy, pal, 12, 'right', { color: pal.muted }); }
+    const [ex, ey] = R.toScreen(entryX, streetY + 3.2); label(g, 'Entrance', ex, ey, pal, 13, 'center', { color: pal.muted });
+    const [xx, xy] = R.toScreen(exitX, streetY + 3.2); label(g, 'Exit', xx, xy, pal, 13, 'center', { color: pal.muted });
   }
 
   const seatXY = p => (Array.isArray(p) ? { x: p[0], y: p[1] } : { x: p.x, y: p.y });
@@ -361,11 +368,10 @@ export function createRenderer(canvas) {
     }
   }
 
-  // Labels placed in this base layer, as screen rectangles, so later labels can avoid them.
+  // Labels placed in this frame, as screen rectangles, so later labels can avoid them.
   const placed = [];
-  function labelFree(g, text, spots, pal, size, muted = false) {
-    text = tr(text);
-    g.font = `500 ${size}px "IBM Plex Sans", sans-serif`;
+  function labelFree(g, text, spots, pal, size, style = {}) {
+    g.font = `${style.weight || 500} ${size}px "IBM Plex Sans", sans-serif`;
     const w = g.measureText(text).width + 6, h = size + 4;
     for (const [x, y, align] of spots) {
       const x0 = align === 'left' ? x - 3 : align === 'right' ? x - w + 3 : x - w / 2;
@@ -373,21 +379,21 @@ export function createRenderer(canvas) {
       if (r[0] < 4 || r[2] > R.cw - 4 || r[1] < 4 || r[3] > R.ch - 4) continue;   // keep labels inside the map
       if (placed.some(p => r[0] < p[2] && r[2] > p[0] && r[1] < p[3] && r[3] > p[1])) continue;
       placed.push(r);
-      label(g, text, x, y, pal, size, align, muted);
+      label(g, text, x, y, pal, size, align, style);
       return true;
     }
     return false;
   }
 
-  function label(g, text, x, y, pal, size = 13, align = 'center', muted = false) {
-    text = tr(text);
-    g.font = `500 ${size}px "IBM Plex Sans", sans-serif`;
+  function label(g, text, x, y, pal, size = 13, align = 'center', { weight = 500, color = pal.label, halo = pal.ground } = {}) {
+    g.font = `${weight} ${size}px "IBM Plex Sans", sans-serif`;
     g.textAlign = align;
     g.textBaseline = 'middle';
-    g.lineWidth = 3.5;
-    g.strokeStyle = pal.ground;
+    g.lineWidth = 4;
+    g.lineJoin = 'round';
+    g.strokeStyle = halo;
     g.strokeText(text, x, y);
-    g.fillStyle = muted ? pal.muted : pal.label;
+    g.fillStyle = color;
     g.fillText(text, x, y);
   }
 
@@ -400,8 +406,8 @@ export function createRenderer(canvas) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(R.base, 0, 0);
     ctx.setTransform(R.dpr, 0, 0, R.dpr, 0, 0);
-    // Edit the room (§18): only the room and its seats, no people, heat or incidents.
-    if (st.edit) { drawSeats(ctx, st.edit.seats, pal, st.geometry.metersPerUnit || 1, true); return; }
+    // Edit the room (§18): only the room, its seats and the names, no people, heat or incidents.
+    if (st.edit) { drawSeats(ctx, st.edit.seats, pal, st.geometry.metersPerUnit || 1, true); drawPlaces(st, pal); return; }
     const s = S();
     const geo = st.geometry;
     const mpu = geo.metersPerUnit || 1;
@@ -523,6 +529,36 @@ export function createRenderer(canvas) {
         ctx.beginPath(); ctx.arc(sx, sy, 11, 0, Math.PI * 2); ctx.stroke();
       }
     }
+
+    if (geo.kind !== 'lot') drawPlaces(st, pal);
+
+    // Keyboard cursor: the person the arrow keys are on, before Enter opens them.
+    if (st.cursorAgent != null) {
+      const me = agents.find(a => a.id === st.cursorAgent);
+      if (me) {
+        const [sx, sy] = R.toScreen(me.x, me.y);
+        ctx.strokeStyle = pal.room;
+        ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = pal.text;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  };
+
+  // The door or stairs within 12 px of a screen point, for its name on hover.
+  R.hitNode = (st, sx, sy) => {
+    let best = null, bd = 12;
+    for (const n of st.nodes) {
+      if ((n.floor || 0) !== st.floor || n.kind !== 'entry') continue;
+      const [x, y] = R.toScreen(n.x, n.y);
+      const d = Math.hypot(x - sx, y - sy);
+      if (d < bd) { bd = d; best = n.id; }
+    }
+    return best;
   };
 
   function colorFor(st, a, pal) {
@@ -539,7 +575,6 @@ export function createRenderer(canvas) {
   }
 
   function pill(g, text, x, y, pal) {
-    text = tr(text);
     g.font = '600 13px "IBM Plex Sans", sans-serif';
     const w = g.measureText(text).width + 18;
     g.fillStyle = pal.panel;

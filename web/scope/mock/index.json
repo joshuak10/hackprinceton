@@ -19,6 +19,7 @@
       "question": "On a Friday evening, who waits for one of the eight seats, who gives up and eats somewhere else, and which change would seat more of them?",
       "file": "mock/sushi-restaurant.json",
       "place": "Sushi restaurant",
+      "placeName": "Sushi restaurant",
       "source": "drawn",
       "runTitle": "Friday dinner at an eight-seat sushi restaurant (drawn from a sketch)",
       "suggestion": "promotion"

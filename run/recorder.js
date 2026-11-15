@@ -40,7 +40,8 @@ function decisionLine(req, decision, applied) {
   };
 }
 
-export function createRecorder({ root = 'runs', spec, seed, providerName, label = null }) {
+// `link` ties a run to a test of one change (docs/PROTOTYPE.md §9b): { test, role, base, change }. The server validates it.
+export function createRecorder({ root = 'runs', spec, seed, providerName, label = null, link = null }) {
   const createdAt = new Date();
   const { runId, dir } = makeRunDir(resolve(root), `${slug(spec?.title, 0)}-${providerName}-s${seed}-${stamp(createdAt)}`);
   const decisionsPath = join(dir, 'decisions.jsonl');
@@ -96,7 +97,8 @@ export function createRecorder({ root = 'runs', spec, seed, providerName, label 
         agents: metrics?.spawned ?? agentCount,
         providerStats,
         simOpts: sim?.opts ?? null,
-        label
+        label,
+        link
       };
       write('meta.json', meta, true);
       return meta;

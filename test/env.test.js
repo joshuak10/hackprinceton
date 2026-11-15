@@ -115,3 +115,38 @@ describe('loadEnv', () => {
     assert.equal(hasKey('SWTEST_A'), true);
   });
 });
+
+describe('loadEnv key aliases', () => {
+  const NAMES = ['TYPESAFE_API_KEY', 'JEV_API_KEY'];
+  let dir, saved;
+  beforeEach(() => {
+    saved = {};
+    for (const n of NAMES) { saved[n] = process.env[n]; delete process.env[n]; }
+    dir = mkdtempSync(join(tmpdir(), 'swarmscope-env-alias-'));
+  });
+  afterEach(() => {
+    for (const n of NAMES) { if (saved[n] === undefined) delete process.env[n]; else process.env[n] = saved[n]; }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('JEV_API_KEY stands in for TYPESAFE_API_KEY when that is unset or empty', () => {
+    writeFileSync(join(dir, '.env.local'), 'JEV_API_KEY=jev-secret\nTYPESAFE_API_KEY=\n');
+    const loaded = loadEnv({ cwd: dir });
+    assert.equal(process.env.TYPESAFE_API_KEY, 'jev-secret');
+    assert.ok(hasKey('TYPESAFE_API_KEY'));
+    assert.ok(loaded.includes('TYPESAFE_API_KEY'));
+    assert.ok(loaded.every(x => !x.includes('secret')));
+  });
+
+  test('TYPESAFE_API_KEY wins when both are set', () => {
+    writeFileSync(join(dir, '.env.local'), 'JEV_API_KEY=jev-secret\nTYPESAFE_API_KEY=typesafe-secret\n');
+    loadEnv({ cwd: dir });
+    assert.equal(process.env.TYPESAFE_API_KEY, 'typesafe-secret');
+  });
+
+  test('neither set: nothing is invented', () => {
+    writeFileSync(join(dir, '.env.local'), 'OTHER=1\n');
+    loadEnv({ cwd: dir });
+    assert.equal(hasKey('TYPESAFE_API_KEY'), false);
+  });
+});

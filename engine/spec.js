@@ -23,12 +23,13 @@ const DOOR_END_SLACK = 0.02; // a door may touch walls within this distance of i
 const DOOR_NEAR_WALL = 0.5;  // a door with no wall this close to either end is not in a wall gap
 const WAITING_ASK_MIN = 5;   // waiting.askAgainEvery: shortest gap in minutes between "keep waiting?" questions
 const WAITING_ASK_MAX = 240; // ... and the longest
+const LINE_SHOWS = ['wait', 'people']; // waiting.lineShows: what a person without a live wait app is told about a line
 
 const KNOWN = {
   top: ['$schema', 'title', 'question', 'context', 'leaveLabel', 'mode', 'duration', 'clockStart', 'travelSpeed', 'walkSpeed',
     'arrivals', 'nodes', 'edges', 'archetypes', 'minds', 'walls', 'objects', 'geo', 'doors', 'provenance', 'offers', 'waiting'],
   arrivals: ['total', 'start', 'end', 'shape'],
-  waiting: ['tellPatience', 'askAgainEvery'],
+  waiting: ['tellPatience', 'askAgainEvery', 'lineShows'],
   node: ['id', 'name', 'kind', 'x', 'y', 'servers', 'serviceTime', 'serviceDist', 'appeal', 'price', 'tags', 'about', 'weight', 'seats'],
   edge: ['from', 'to', 'name', 'length', 'capacity', 'twoWay', 'costModel', 'via'],
   archetype: ['id', 'name', 'description', 'share', 'weights', 'visits', 'patience', 'info', 'rationality', 'likes', 'needs',
@@ -244,7 +245,12 @@ function build(raw, rep) {
         rep.warn('waiting.askAgainEvery', `${fmt(askAgainEvery)} is under ${WAITING_ASK_MIN} minutes; using ${WAITING_ASK_MIN}`);
         askAgainEvery = WAITING_ASK_MIN;
       }
-      if (!tellPatience || askAgainEvery > 0) spec.waiting = { tellPatience, askAgainEvery };
+      // lineShows 'people': a person without a live wait app is told the head count and the staff serving, never a
+      // wait in minutes (Lu et al. 2013; docs/PROTOTYPE.md §16b). The rule policy and when questions come are unchanged.
+      const lineShows = choice(rep, 'waiting.lineShows', wt.lineShows, LINE_SHOWS, 'wait');
+      if (!tellPatience || askAgainEvery > 0 || lineShows !== 'wait') {
+        spec.waiting = { tellPatience, askAgainEvery, ...(lineShows !== 'wait' ? { lineShows } : {}) };
+      }
     }
   }
 
@@ -1027,7 +1033,12 @@ export function cleanSpec(spec) {
         place: o.place, priceOff: o.priceOff, from: o.from, until: o.until
       }))
     } : {}),
-    ...(spec.waiting ? { waiting: { tellPatience: spec.waiting.tellPatience, askAgainEvery: spec.waiting.askAgainEvery } } : {})
+    ...(spec.waiting ? {
+      waiting: {
+        tellPatience: spec.waiting.tellPatience, askAgainEvery: spec.waiting.askAgainEvery,
+        ...(spec.waiting.lineShows ? { lineShows: spec.waiting.lineShows } : {})
+      }
+    } : {})
   };
 }
 

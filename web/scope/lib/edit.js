@@ -1,13 +1,8 @@
 // Edit the room (docs/PROTOTYPE.md §18): the panel, and what a pointer or a key does to a seat. The rules for where
 // a seat may go, and the before/after arithmetic, are in layout.js. This module only holds the edit in progress.
 import { seatedPlaces, cloneLayout, seatProblem, moveSeat, addSeat, removeSeat, seatAt, sameLayout, describeChanges } from './layout.js';
+import { el } from './panels.js';
 
-const el = (tag, cls, text) => {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-};
 const button = (label, onClick, cls = 'btn small') => {
   const b = el('button', cls, label);
   b.type = 'button';
@@ -183,18 +178,18 @@ export function createEditor({ panel, onChange, onRun, onClose }) {
     status.classList.toggle('warn', Boolean(E.status) && !E.busy);
 
     const run = el('div', 'edit-run');
-    const rules = button('Run again with rules', () => start('rules'), E.hasJev ? 'btn' : 'btn primary');
+    const rules = button('Run it with the rule model', () => start('rules'), E.hasJev ? 'btn' : 'btn solid');
     rules.disabled = !changed || E.busy;
     if (E.hasJev) {
-      const jev = button('Run again with Jev', () => start('jev'), 'btn primary');
+      const jev = button('Run it with Jev', () => start('jev'), 'btn solid');
       jev.disabled = !changed || E.busy;
       run.append(jev);
     }
     run.append(rules);
     const cost = el('p', 'hint', E.hasJev
-      ? 'Each button runs your room three times and compares it with the room as sketched. Jev: about 300 requests, a little over a cent, about 20 seconds. Rules: free, a few seconds.'
-      : 'Runs your room three times with the rules policy and compares it with the room as sketched: free, a few seconds. Set a Jev key to run it with Jev.');
-    const cancel = button('Cancel', onClose, 'btn ghost small');
+      ? 'Each button plays your room up to 3 times and compares it with the room as sketched. With Jev it takes about 20 seconds; with the rule model, a few seconds.'
+      : 'Plays your room up to 3 times with the rule model and compares it with the room as sketched. It takes a few seconds.');
+    const cancel = button('Cancel', onClose, 'btn quiet small');
     cancel.disabled = E.busy;
 
     panel.replaceChildren(head, hint, list, row, what, status, run, cost, cancel);

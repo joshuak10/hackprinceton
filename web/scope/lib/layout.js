@@ -189,7 +189,8 @@ export function describeChanges(base, edited) {
 
 // People who got a seat: at each place, everyone who came to it and neither walked away nor is still waiting.
 // The engine's `served` counts only those who had finished by the end, so it leaves out people still eating.
-export const everSeated = metrics => (metrics?.nodes || []).reduce((sum, n) => sum + (n.arrivals || 0) - (n.abandoned || 0) - (n.queueNow || 0), 0);
+export const seatedAt = n => (n?.arrivals || 0) - (n?.abandoned || 0) - (n?.queueNow || 0);
+export const everSeated = metrics => (metrics?.nodes || []).reduce((sum, n) => sum + seatedAt(n), 0);
 
 // One run's outcome in the terms an owner uses: the people who got a seat, and everyone else, who left without eating.
 export function outcome(metrics) {
@@ -235,16 +236,17 @@ export function compare(pairs, provider) {
   };
 }
 
-// The sentence under the map after a re-run.
-export function compareWords(c) {
-  if (!c) return '';
+// A changed room against the room as sketched, for the verdict panel: { headline, detail }.
+export function compareParts(c) {
+  if (!c) return null;
   const n = v => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
   const runs = c.seeds.length === 1 ? 'one run' : `${c.seeds.length} runs`;
-  const head = `Seated ${n(c.after.seated)} of ${n(c.after.people)}. Before your change: ${n(c.before.seated)}.`;
   const small = c.noise != null && Math.abs(c.change) <= c.noise;
-  const tail = c.seeds.length === 1
-    ? ' One run each, so a difference of two or three people could be chance.'
-    : small ? ` Averaged over ${runs} each. The runs before your change already differ by ${n(c.noise)}, so this could be chance.`
-      : ` Averaged over ${runs} each.`;
-  return head + tail;
+  return {
+    headline: `${n(c.after.seated)} of ${n(c.after.people)} people got a seat. Before your change: ${n(c.before.seated)}.`,
+    detail: c.seeds.length === 1
+      ? 'One run each, so a difference of two or three people could be chance.'
+      : small ? `Averaged over ${runs} each. The runs before your change already differ by ${n(c.noise)}, so this could be chance.`
+        : `Averaged over ${runs} each.`
+  };
 }

@@ -22,7 +22,7 @@ Run the ER example with Jev, then watch it:
 
 ```sh
 node bin/swarm.js run er-network --provider jev
-node bin/swarm.js serve        # then open http://127.0.0.1:4173 (scope display: /scope/, ask the room: /room/)
+node bin/swarm.js serve        # then open http://127.0.0.1:4173 (scope display: /scope/, the sushi restaurant: /scope/?case=sushi, ask the room: /room/)
 ```
 
 No key yet? `node bin/swarm.js run er-network` uses the free rules provider instead (same world, rule-based decisions).
