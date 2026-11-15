@@ -1348,6 +1348,11 @@ Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 -
 - **The same fact in other words moved the answer by 9.7 points** ("stood waiting for a seat for around twenty minutes … before sitting down"). At the café it moved 1.2. So Jev is more sensitive to wording here, and differences under about 10 points between differently worded memories should not be read.
 - The head start on a stamp card and a friend's bad remark gave no clear response.
 
+**Two more changes for the loop (Nov 14, late evening).**
+- `faster15`: each meal at the first place (the counter) takes 15% less time, so more diners get through the same seats in an evening. For an owner this is a shorter set menu at the rush. It is the `serviceTime` lever.
+- `sorry`: a card for anyone turned away: "the sushi restaurant: sorry we could not serve you last time. Come back within two weeks for a free roll." It is told, as a message from the shop, to each person whose last visit ended without a seat, for two weeks after it. Only a run over days can test it, because only the loop knows who was turned away last Friday. Jev's answer to the card is not given a size rule; it is used as it comes, through the zero points of §21b.
+- **The card's words were checked first** (`--place sushi --only left,wait`, 440 requests, about 1 cent). The chance of coming the next Friday, averaged over 8 returning diners: an ordinary last visit 70%; turned away 28%; turned away and sent a plain message 26%; turned away and sent the card 48%. The card against the plain message: +22.0 points (19.3 to 24.8), and every one of the 8 diners moved up, by 16 to 28 points.
+
 **Two months at the sushi restaurant** (`node bin/swarm.js days pools/sushi-restaurant.json --days 8 --seeds 3 --provider jev --change promo20,seats+2`; 8 Fridays, 3 seeds, 7,996 Jev requests, about 31 cents). Numbers are per Friday, averaged over the 8, as baseline → change, with the range of the difference across seeds. Unvalidated, as everything in §21.
 
 | | Baseline | 20% off on the first Friday, heard of by half the street | Two more counter seats |
