@@ -1217,3 +1217,65 @@ One run: 473 questions asked 5 times each, 2,365 requests, 11 seconds, about 7 c
 3. **The level comes from the person, the change from Jev.** A person's chance today is their own usual rate (from the owner's data, or their group's), moved by the odds between Jev's answer for today's record and Jev's answer for their reference record: `logit(p) = logit(usual) + logit(jev today) − logit(jev reference)`. This keeps what Jev is good at, direction and who reacts, and removes the squeezed level. The reference answer is asked again only when the person's record changes.
 4. **One ask per person per day.** At 1.2 points of noise an ask, averaging is not needed for a pool; results are still reported as ranges over seeds.
 5. `[open]` The size of the wait effect needs a real number: the per-minute figures in de Vries et al., or an owner's data.
+
+---
+
+## 21. The multi-day loop: the same people over days (Nov 14)
+
+**Why.** One run is one morning. Whether a change keeps customers or wins new ones shows only when the same people decide again the next day, with what happened to them in mind. §20 showed Jev reads that memory. This section runs it: a pool of people who persist, the morning question each day, the existing engine for the day, and memory written each evening. [REPEAT_CUSTOMERS_SPEC.md](../REPEAT_CUSTOMERS_SPEC.md) is the product spec.
+
+**Everything here is unvalidated.** The size of the wait effect is unchecked (§20d), and every person's usual rate is an assumption until an owner's data replaces it. Results are reported only as the difference between a baseline and a change on the same seeds, as ranges, and under REPEAT_CUSTOMERS_SPEC §9b's bars.
+
+### 21a. The pool file
+
+`pools/<name>.json` holds what the engine cannot: who the people are between days.
+
+| Field | Meaning |
+|---|---|
+| `world`, `shop` | The world file and the service place being studied. |
+| `size` | People in the pool. Each is a copy of a cast member, drawn by the world's group shares, with their own record. |
+| `people.<castId>.usualPerWeek` | How often this kind of person comes, in visits per 5-day week. An assumption until owner data replaces it. |
+| `people.<castId>.knows` | Share of this kind of person who already come. The rest have never been inside. |
+| `people.<castId>.newcomer` | This person's bio allows putting them in the "has never been" state (used by Ask the room). |
+| `people.<castId>.dayVisitor` | In town for one day: left out of the pool. |
+| `ordinaryWait` | Minutes of an ordinary wait at the shop: what a person's usual rate already allows for. |
+| `trialPerWeek` | How often someone who knows of the shop but has never been tries it, before Jev moves it. |
+| `walkPast` | Chance per day that someone who does not know the shop notices it. |
+| `tellReach` | People in the same group who hear one remark. |
+| `habit` | A new customer's rate as a share of their kind's usual rate after 1, 2, 3, 4 and 5 or more visits. The default follows the shape of the vendor visit ladder (REPEAT_CUSTOMERS_SPEC §2b). |
+| `rules.lossAversion` | How many times further a price rise moves the odds than Jev says (§20d found none; 1 turns the rule off). |
+
+### 21b. One day
+
+`run/days.js`, `runDays({ pool, spec, days, seed, provider, change })`. A day is a weekday morning; day 5 is the Monday after day 4, so "3 days ago" is counted on the calendar.
+
+1. **Who hears of the shop.** Someone who does not know it may notice it walking past, hear of it from a remark, or be reached by a promotion.
+2. **The morning question** (§20), for everyone who knows the shop. The person's chance of coming today is their own usual rate moved by Jev's answer:
+
+   `logit(chance) = logit(usual) + logit(Jev, today's record) − logit(Jev, reference record)`
+
+   - `usual` is `usualPerWeek ÷ 5`, times `habit` for a customer with fewer than 5 visits, or `trialPerWeek ÷ 5` for someone who has never been.
+   - **Today's record:** the visit count over the last 4 weeks, up to 3 visits remembered from the last 28 days, the price (with last week's while they have not yet paid the new one), stamp-card progress, up to 2 remarks heard in the last 7 days, and today's message from the shop.
+   - **The reference record** is the same person on an ordinary day: the same visits, each replaced by an ordinary one (`ordinaryWait`, served), the reference price, no card, no remarks, no message. When nothing in the record differs from it, Jev is not asked and the chance is the usual rate.
+   - **Loss aversion (rule).** When today's price is above the reference price, Jev is asked once more with the reference price, and the part of the move that the price caused is multiplied by `rules.lossAversion`.
+   - Jev's answers are cached by request, within a run and across the arms of a comparison, so the same person with the same record gets the same answer in the baseline and in the change.
+3. **The day runs on the engine.** The people who go are the day's arrivals, each at their own usual time, give or take 10 minutes. They walk to the shop first (they decided to go there); on seeing the line they may still walk away, to another place or home, as in any run. People who do not go are not simulated, so the other places hold only the people who turned away from the shop.
+4. **The evening update.** Each visitor's record gets one remembered visit: the wait at the shop and how it ended. A person who turned away on seeing the line remembers the line ("found 9 people in line at … and left without ordering"). A served visit adds a stamp and sets the price they last paid. A remark made about the shop reaches `tellReach` people of the same group, and makes the shop known to any of them who did not know it.
+
+- **Peak-end (rule).** A visit is remembered by its worst wait and its ending, served or left. Nothing else of the visit is kept.
+- **The head start is not modeled.** Jev gave no response to it (§20d) and no published size per day exists. A stamp card can be tested; a head start on it cannot yet.
+- **The engine changes by one option.** `new Sim(spec, { arrivals: [{ t, persona, first, tag }] })` replaces the random schedule with a list: when each person arrives, which cast member they are, the place they walk to first, and a tag that comes back in `agentsSummary()` with their line log (`lines: [{ place, wait, ahead, outcome }]`). Without the option nothing changes.
+- **With the rule model** nobody reads memory: the chance is the usual rate, and the loop is a dry run of the plumbing.
+
+### 21c. Changes and results
+
+A change is `{ from, to, patch, card, promo }`: a what-if patch (§15: staff, price), a stamp card (`{ need, reward }`), or a promotion (`{ text, priceOff, reach }`), in force on days `from` to `to`. `compareDays` runs the baseline and the change on the same seeds.
+
+Per arm and seed: visits, first-time visitors, people served, walk-aways and the average wait per day; and over the run, visits per week, first-time visitors per week, first-timers who came back, regulars (3 or more visits in the last 10 days), and good and bad remarks. The effect of a change is the difference from the baseline seed by seed, given as a range, with whether every seed agrees in direction.
+
+**Realism checks on the baseline** (level 2 of REPEAT_CUSTOMERS_SPEC §9), printed with every run:
+- Visits are lopsided: the busiest fifth of customers make at least 40% of the visits.
+- The baseline holds steady: visits in the second half of the run are within 15% of the first half. A drift means the loop loses or gains customers by itself, which is a calibration error, not a finding.
+- New customers come back less often than established ones.
+
+Run it: `node bin/swarm.js days pools/alder-pine-cafe.json --days 10 --seeds 3 --provider jev --change staff+1`. Changes: `staff+1`, `price+0.5`, `promo20`, `card10`. Results go to `data/days/` (not committed).
