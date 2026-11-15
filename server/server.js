@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { hasKey } from '../engine/env.js';
 import { createAnalysisService } from '../analysis/service.js';
+import { createEnvironmentService } from '../generalist/service.js';
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url));
 // The viewer loads the engine's wall geometry as /walls.js (§13d): the root's copy, else the server's own.
@@ -50,7 +51,7 @@ async function lib(path) {
 }
 
 // `roomFetch` stands in for the network on the Ask-the-room route, so its live path can be tested without Jev.
-export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch } = {}) {
+export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch, environmentOptions } = {}) {
   const base = resolve(root);
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
@@ -58,6 +59,7 @@ export function startServer({ port = 4173, host = '127.0.0.1', root = process.cw
     roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomChain: Promise.resolve(), roomWaiting: 0, roomFetch
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
+  ctx.environments = createEnvironmentService({ ...environmentOptions, root: base });
   const server = http.createServer((req, res) => {
     handle(ctx, req, res).catch(err => sendError(res, err));
   });
@@ -74,15 +76,25 @@ export function startServer({ port = 4173, host = '127.0.0.1', root = process.cw
 
 function close(ctx, server) {
   for (const job of ctx.jobs.values()) job.controller?.abort();
-  return new Promise(done => {
+  return Promise.all([ctx.environments.close(), new Promise(done => {
     server.close(() => done());
     server.closeAllConnections();
-  });
+  })]);
 }
 
 // ---------- routing ----------
 
 const ROUTES = [
+  ['GET', ['environment-examples'], environmentEndpoint(async ctx => ({ examples: await ctx.environments.examples() }))],
+  ['GET', ['environments'], environmentEndpoint(async ctx => ({ environments: await ctx.environments.listEnvironments() }))],
+  ['GET', ['environments', ':id'], environmentEndpoint((ctx, body, p) => ctx.environments.getEnvironment(p.id))],
+  ['POST', ['environments'], environmentEndpoint((ctx, body) => ctx.environments.saveEnvironment({ spec: body.spec, brief: body.brief }), 201)],
+  ['POST', ['environment-builds'], environmentEndpoint((ctx, body) => ctx.environments.build({ brief: body.brief, backend: body.backend, model: body.model }), 202)],
+  ['GET', ['environment-jobs', ':id'], environmentEndpoint((ctx, body, p) => ctx.environments.getJob(p.id))],
+  ['POST', ['environment-jobs', ':id', 'cancel'], environmentEndpoint((ctx, body, p) => ctx.environments.cancel(p.id))],
+  ['GET', ['environment-runs'], environmentEndpoint(async ctx => ({ runs: await ctx.environments.listRuns() }))],
+  ['POST', ['environment-runs'], environmentEndpoint((ctx, body) => ctx.environments.run({ environmentId: body.environmentId, provider: body.provider, seed: body.seed, maxRequests: body.maxRequests }), 202)],
+  ['GET', ['environment-runs', ':id'], environmentEndpoint((ctx, body, p) => ctx.environments.getRun(p.id))],
   ['POST', ['insights'], postInsights],
   ['GET', ['health'], getHealth],
   ['GET', ['worlds'], getWorlds],
@@ -98,6 +110,21 @@ const ROUTES = [
   ['GET', ['room'], getRoom],
   ['POST', ['room', 'ask'], postRoomAsk]
 ];
+
+// The same JSON-only, same-origin checks above guard model generation and simulation jobs.
+function environmentEndpoint(operation, status = 200) {
+  return async (ctx, req, res, params) => {
+    try {
+      const body = req.method === 'POST' ? await readJsonBody(req) : {};
+      send(res, status, await operation(ctx, body, params));
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      if (Number.isInteger(error.status) && error.status >= 400 && error.status <= 599) throw new HttpError(error.status, error.message, error.extra);
+      if (['INVALID_BRIEF', 'INVALID_ENVIRONMENT', 'INVALID_BUILDER_OPTION'].includes(error.code)) throw new HttpError(400, error.message, { errors: error.errors });
+      throw error;
+    }
+  };
+}
 
 async function handle(ctx, req, res) {
   const url = new URL(req.url, 'http://localhost');

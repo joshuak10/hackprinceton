@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Environment Studio · Swarmscope</title>
+  <meta name="description" content="Define an environment, build its rules with Claude, and simulate individual agents with Jev.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/studio/">Swarmscope <span>Studio</span></a>
+  <nav aria-label="Main navigation"><a href="/">Physical worlds</a><a href="/scope/">Spatial demos</a></nav>
+</header>
+<main>
+  <section class="intro">
+    <div><p class="eyebrow">Environment Studio</p><h1>Define the world.<br>See what unfolds.</h1></div>
+    <p class="intro-copy">Describe your environment and its rules. Claude builds the model; Jev makes each agent decide. Inspect every assumption and replay every action.</p>
+  </section>
+
+  <section class="examples" aria-label="Example environments">
+    <span class="eyebrow">Start without a key</span><div id="examples" class="example-list"><span class="muted">Loading examples…</span></div>
+  </section>
+
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+  <section id="jobPanel" class="job-panel" hidden aria-label="Current operation">
+    <div><span class="eyebrow" id="jobType">Building</span><p id="jobText" role="status" aria-live="polite"></p></div>
+    <progress id="jobProgress" aria-label="Operation progress"></progress>
+    <button id="cancelBtn" class="button" type="button">Cancel</button>
+  </section>
+
+  <div class="workspace">
+    <section class="panel brief-panel" aria-labelledby="briefTitle">
+      <div class="section-head"><div><p class="step">01 / Define</p><h2 id="briefTitle">Your environment</h2></div><span class="tag">Brief</span></div>
+      <form id="briefForm">
+        <label>What happens here?<textarea id="description" required maxlength="12000" rows="5" placeholder="An incident response team handles incoming service outages. Engineers choose whether to investigate, escalate, or deploy a fix. There are limited specialists and deployment slots."></textarea></label>
+        <label>What do you want to learn?<textarea id="objectives" maxlength="6000" rows="2" placeholder="When does escalation help? How much does a second deployment slot improve resolution?"></textarea></label>
+        <label>Guidelines for agents <span class="label-note">One per line</span><textarea id="guidelines" maxlength="40000" rows="4" placeholder="Prioritize urgent incidents.&#10;Escalate when specialist knowledge is needed.&#10;Prefer a tested fix over a rushed deployment."></textarea></label>
+        <label>Limits and constraints<textarea id="constraints" maxlength="6000" rows="2" placeholder="12 engineers, 2 specialists, 1 deployment slot, 60 simulation ticks. Never exceed resource capacity."></textarea></label>
+        <div class="form-row"><label>Builder<select id="backend"><option value="claude-code">Headless Claude Code</option><option value="anthropic">Anthropic API</option></select></label><label>Model <span class="label-note">Optional</span><input id="model" maxlength="120" placeholder="Use configured default"></label></div>
+        <p class="help" id="builderHelp">Uses your local Claude Code sign-in. Generated definitions are validated before they can run.</p>
+        <button id="buildBtn" type="submit" class="button primary full">Build environment <span aria-hidden="true">↗</span></button>
+      </form>
+      <p class="fineprint">Guidelines guide decisions. Resource limits and action conditions enforce hard constraints. Review the generated definition to check that your rules are represented.</p>
+    </section>
+
+    <section class="panel model-panel" aria-labelledby="modelTitle">
+      <div class="section-head"><div><p class="step">02 / Inspect</p><h2 id="modelTitle">Environment definition</h2></div><span id="savedTag" class="tag">No model</span></div>
+      <div class="library-row"><label class="grow">Saved environments<select id="environmentSelect"><option value="">Choose a saved environment</option></select></label><button id="refreshBtn" type="button" class="button quiet">Refresh</button></div>
+      <div id="modelEmpty" class="empty-state"><div class="empty-mark" aria-hidden="true">↗</div><h3>A model you can inspect</h3><p>Start with an example, build from your brief, or paste a definition below. Roles, actions, resources and assumptions appear here.</p></div>
+      <div id="modelOverview" hidden>
+        <h3 id="environmentTitle"></h3><p id="environmentDescription" class="muted"></p>
+        <div id="modelNumbers" class="model-numbers"></div>
+        <div id="definitionDetails" class="definition-details"></div>
+        <div id="assumptions" class="assumptions"></div>
+        <div id="warnings" class="warnings" hidden></div>
+      </div>
+      <details id="editorDetails" class="editor-wrap"><summary>Edit or paste the environment JSON</summary><p class="help">Saving validates the definition and creates a new saved version.</p><label class="sr-only" for="specEditor">Environment JSON definition</label><textarea id="specEditor" spellcheck="false" class="code-editor" rows="15" placeholder='{ "version": 1, "title": "My environment", … }'></textarea></details>
+      <div class="save-row"><button id="saveBtn" type="button" class="button" disabled>Validate &amp; save</button><span id="saveNote" class="help">No definition loaded</span></div>
+      <div class="run-controls">
+        <div class="section-head"><div><p class="step">03 / Simulate</p><h3>Run the agents</h3></div></div>
+        <div class="form-row run-fields"><label>Decisions by<select id="provider"><option value="rules">Rules · offline baseline</option><option value="jev">Jev · live agent decisions</option></select></label><label>Seed<input id="seed" type="number" min="0" max="2147483647" step="1" value="7"></label><label>Jev request budget<input id="maxRequests" type="number" min="0" max="20000" step="1" value="2000"></label></div>
+        <p class="help" id="providerHelp">Rules sample the action weights in your definition. They do not interpret prose guidelines.</p>
+        <button id="runBtn" type="button" class="button primary full" disabled>Run environment <span aria-hidden="true">→</span></button>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel replay-panel" aria-labelledby="replayTitle">
+    <div class="section-head replay-head"><div><p class="step">04 / Observe</p><h2 id="replayTitle">The simulation record</h2></div><label class="run-picker">Recorded runs<select id="runSelect"><option value="">Choose a recorded run</option></select></label></div>
+    <div id="replayEmpty" class="replay-empty"><p>Run an environment to follow agents through its workflow and inspect their choices.</p></div>
+    <div id="replayContent" hidden>
+      <div class="record-heading"><div><h3 id="runTitle"></h3><p id="runMeta" class="help"></p></div><a id="downloadRun" class="button quiet" download>Download record</a></div>
+      <div id="runWarning" class="warnings" hidden></div>
+      <div id="metrics" class="metrics"></div>
+      <div class="replay-toolbar"><button id="playBtn" class="button" type="button">Play</button><label class="timeline-label"><span class="sr-only">Simulation tick</span><input id="scrubber" type="range" min="0" max="0" value="0" step="1"></label><output id="tickLabel" class="tick-label">Tick 0</output><label class="role-filter"><span class="sr-only">Filter agents by role</span><select id="roleFilter"><option value="">All roles</option></select></label></div>
+      <div id="resources" class="resource-strip" aria-label="Resource usage at the selected tick"></div>
+      <div id="workflow" class="workflow" aria-label="Agents grouped by workflow state"></div>
+      <div class="record-bottom">
+        <section class="inspector" aria-labelledby="agentTitle"><div class="section-head"><h3 id="agentTitle">Inspect an agent</h3><label class="agent-picker"><span class="sr-only">Choose an agent</span><select id="agentSelect"><option value="">Choose an agent</option></select></label></div><div id="agentInfo" class="help">Select an agent to see its goals and decisions.</div><div id="decisions" class="decisions"></div></section>
+        <section class="events-panel" aria-labelledby="eventsTitle"><h3 id="eventsTitle">Event trace</h3><p class="help">Events through the selected tick. Showing the most recent 80.</p><ol id="events" class="event-list"></ol><details><summary>World state at this tick</summary><pre id="worldState"></pre></details></section>
+      </div>
+    </div>
+  </section>
+  <footer>Exploration under stated assumptions. Simulated behavior is not a validated prediction of real outcomes.</footer>
+</main>
+</body>
+</html>

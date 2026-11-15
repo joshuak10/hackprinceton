@@ -1,7 +1,7 @@
 # Swarmscope: Project Spec (Source of Truth)
 
-> **Version:** v0.26 · Nov 14, 2026 · HackPrinceton Fall 2026
-> **Direction (Nov 14, v0.24):** the product now targets **independent local businesses**, starting with counter-service food and drink. Owners can test a change on a simulated copy of their own customers before trying it on real ones. The use case is specified in [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md). Everything below still describes the engine and the earlier building work, and [docs/PROTOTYPE.md](docs/PROTOTYPE.md) still governs the code.
+> **Version:** v0.27 · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Direction (Nov 14, v0.27):** Swarmscope is a **general environment simulation engine**. Users define an environment, objectives and guidelines; headless Claude builds a validated declarative environment; individual Jev agents choose actions while the engine enforces state transitions, shared resource capacities and conditions. Independent businesses and physical crowds remain examples, rather than the product boundary. The legacy physical engine remains governed by [docs/PROTOTYPE.md](docs/PROTOTYPE.md); the new workflow contract lives in `generalist/schema.json` and `docs/GENERALIST.md`.
 > **Page copy of this spec:** the "Swarmscope (Copy)" artifact, v0.13 (https://claude.ai/artifact/8hjEXehseEmDftQL2wscnx). It is a copy of the spec, not the prototype.
 > **Original prototype:** the "Swarmscope" artifact (https://claude.ai/artifact/Mc6u5T29E7aKWGyBgeZmCW), which holds the v0.1 engine and viewer.
 > **Origin:** the team doc "Swarmscope: Every Agent a Jev Agent" (Nov 13, 2026)
@@ -17,11 +17,13 @@
 
 ## 1. What we are building
 
-**Claude imagines the people. Jev makes thousands of them decide.**
+**Define the environment. Claude builds it. Jev agents make the decisions.**
 
-Swarmscope answers questions like "which ER gets overwhelmed on a Friday night?" by simulating the people involved, not just the flow. A user describes a place and a question in plain English. Claude builds the world and a cast of personalities. Each of thousands of agents then makes its own decision through **Jev**, TypeSafe's fast structured-decision model. Bottlenecks and social effects (herding, rumors, loyalty, giving up) emerge from those decisions, and Claude explains them. An optimizer tests fixes.
+Swarmscope accepts a user's environment, objectives, guidelines and constraints. Headless Claude builds a validated declarative workflow: roles, actor goals, shared state, resource capacities, timed actions and metrics. **Jev**, TypeSafe's structured-decision model, chooses an action for each actor; deterministic code enforces eligibility, capacity and state changes. Definitions and decision traces remain inspectable. This general engine supports bounded operational workflows such as incident response and fulfillment; it does not execute arbitrary generated code. The earlier physical engine still answers questions such as "which ER gets overwhelmed on a Friday night?" using places, queues, routes and people. Historical physical-engine plans, including the optimizer, remain below.
 
 ### Decisions to date
+
+- **Generalist direction (Nov 14, v0.27):** supersedes the v0.24 audience restriction. Add a separate versioned workflow environment contract and runtime alongside physical visit/route worlds. Environment definitions contain roles, scalar world and actor state, actions, durations, resource reservations, conditions, effects and metrics. User guidelines are behavioral context; hard constraints must be represented as executable declarative conditions and resource limits. Generated JavaScript is never executed. Headless Claude Code runs without tools in an isolated working directory, with bounded output, time and repair attempts; an Anthropic API backend is also available. Persist the brief, definition, assumptions, build metadata and per-agent decision traces. A Studio provides build, inspect, edit, run and replay; a rules provider makes this flow usable offline. Results remain exploratory, not forecasts. Existing demos and physical runs remain available.
 
 - **Jev per agent is committed.** The Jev-vs-rules comparison is dropped. Rules remain only as an API-outage fallback and as the optimizer's fast proxy.
 - **Tracks** (superseded by v0.24, see below). CoStar is the headline. LangChain Deep Agents and Amazon are stackable targets. **Peri is dropped at Saturday midday** unless a real business has already shared its numbers by then.
@@ -416,6 +418,14 @@ Pitch lines:
 ---
 
 ## 14. Change log
+
+### v0.27 · Nov 14, 2026 · General environment engine
+
+- Supersede the independent-business-only direction with user-authored environments and guidelines.
+- Add a declarative workflow runtime beyond spatial visits/routes, reusing Jev decisions, seeded sampling and provider accounting. Validate references and bounds; enforce resource reservations and action conditions in code.
+- Add isolated headless Claude generation with bounded validation repairs, plus an API backend; retain generated definitions as inspectable data with explicit assumptions.
+- Add a Studio, async local build/run API, persisted definitions and traces, and CLI commands. Keep legacy physical worlds, viewers and APIs compatible.
+- Validate with offline provider fixtures and integration tests; distinguish these from live Claude/Jev verification.
 
 - **v0.26 · Nov 14, 2026.** Suggestions in the scope display (numbered v0.25 on the `suggestion-compare` branch; renumbered on merge because `main` already had v0.25): one hard-coded suggestion for now. **Decision (Josh):** the Suggestions button shows a single fixed suggestion, "add one more server at the run's worst bottleneck" (the place with the highest bottleneck score). It is a rule, not AI, and is labelled that way. "Run this suggestion" starts a new run of the same world and seed with that one change, using rules, or Jev when the baseline was a Jev run and Jev is live. After the run, a "Showing" dropdown switches the display between the baseline and the suggestion run, keeping the time on the slider, and the dialog shows both runs' headline numbers side by side. The display no longer calls the advisor's advice or the quick read (v0.22); both still exist on the server and the command line. Which runs are suggestion runs is remembered in the browser only. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §9b.
 - **v0.25 · Nov 14, 2026.** Waiting options, and what Jev does with a person's own situation. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §16.
