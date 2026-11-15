@@ -2,11 +2,9 @@
 // Run folders are temporary and hold hand-made, fictional data.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, copyFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { startServer } from '../server/server.js';
 
 const ADVICE = {
@@ -66,14 +64,3 @@ describe('GET /api/runs/:id/advice', () => {
   });
 });
 
-test('web/app.js parses as an ES module', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'swarm-app-'));
-  try {
-    const copy = join(dir, 'app.mjs');
-    await copyFile(fileURLToPath(new URL('../web/app.js', import.meta.url)), copy);
-    const out = spawnSync(process.execPath, ['--check', copy], { encoding: 'utf8' });
-    assert.equal(out.status, 0, out.stderr);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});

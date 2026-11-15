@@ -916,15 +916,8 @@ function setViewMenu(open) {
   $('viewBtn').setAttribute('aria-expanded', String(open));
 }
 $('viewBtn').addEventListener('click', () => setViewMenu($('viewMenu').hidden));
-// The More menu: the other pages, at the end of the top bar.
-function setMoreMenu(open) {
-  $('moreMenu').hidden = !open;
-  $('moreBtn').setAttribute('aria-expanded', String(open));
-}
-$('moreBtn').addEventListener('click', () => setMoreMenu($('moreMenu').hidden));
 document.addEventListener('pointerdown', e => {
   if (!$('viewMenu').hidden && !e.target.closest('#viewMenu, #viewBtn')) setViewMenu(false);
-  if (!$('moreMenu').hidden && !e.target.closest('#moreMenu, #moreBtn')) setMoreMenu(false);
 });
 document.querySelectorAll('input[name="colorBy"]').forEach(r => r.addEventListener('change', () => {
   if (!r.checked) return;
@@ -987,8 +980,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key === 'Escape') {
-    if (!$('moreMenu').hidden) { setMoreMenu(false); $('moreBtn').focus(); }
-    else if (!$('viewMenu').hidden) { setViewMenu(false); $('viewBtn').focus(); }
+    if (!$('viewMenu').hidden) { setViewMenu(false); $('viewBtn').focus(); }
     else if (!$('askCard').hidden) { hideCard($('askCard')); $('askIn').focus(); }
     else if (!$('tour').hidden) tour.hide();
     else if (!$('drawer').hidden) setDrawer(false);

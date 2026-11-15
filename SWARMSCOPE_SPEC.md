@@ -424,6 +424,7 @@ Pitch lines:
 
 ## 14. Change log
 
+- **Nov 14, 2026, late evening.** One page. **Decision (Josh):** the product is the dashboard at `/scope/` and nothing else. Ask the room (`/room/`), the step-diagram page (`/scope/?mode=environment`, `/studio/`) and the first viewer (`/classic`) are removed, with the dashboard's More menu that linked to them and the Ask-the-room API. Their old addresses redirect to the dashboard. The general environment engine (`generalist/`) and its commands and API stay; it has no page now. Sections of this spec and of docs/PROTOTYPE.md that describe those pages are out of date until they are revised.
 - **Nov 14, 2026, late evening.** The English / Simplified Chinese button is removed from every page (the dashboard, Ask the room and the step-diagram page), with its translation files. **Decision (Josh):** the product is shown in English only. Details in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §19.
 - **v0.33 · Nov 14, 2026.** One front door. **Decision (Ryan):** "make it only like one thread ... make /scope/ the main thing. Move everything to the side".
   - **The root address opens the dashboard.** `/` redirects to `/scope/`. The first viewer keeps its files and opens at `/classic`.

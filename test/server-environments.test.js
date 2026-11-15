@@ -98,19 +98,19 @@ test('HTTP authoring routes enforce origin, input and identifier boundaries', as
   assert.equal((await post('/api/environment-runs', { environmentId: 'unknown', provider: 'bad' })).status, 400);
 });
 
-test('custom environments reuse Scope while existing spatial case URLs stay intact', async t => {
+test('the dashboard is the only page: the addresses of the removed pages land on it', async t => {
   const { server } = await fixture(t);
-  const custom = await fetch(`${server.url}/scope/?mode=environment`);
-  const alias = await fetch(`${server.url}/studio/`);
-  assert.equal(custom.status, 200);
-  assert.match(custom.headers.get('content-security-policy'), /script-src 'self'/);
-  const markup = await custom.text();
-  assert.equal(markup, await alias.text());
-  assert.match(markup, /\/scope\/style\.css/);
-  assert.match(markup, /\/studio\/app\.js/);
+  for (const path of ['/scope/?mode=environment', '/studio/', '/studio/app.js', '/room/', '/room/app.js', '/classic', '/classic/']) {
+    const res = await fetch(`${server.url}${path}`, { redirect: 'manual' });
+    assert.equal(res.status, 302, path);
+    assert.equal(res.headers.get('location'), '/scope/', path);
+  }
   const physical = await fetch(`${server.url}/scope/?case=building`);
   assert.equal(physical.status, 200);
-  assert.match(await physical.text(), /id="floorTabs"/);
+  const markup = await physical.text();
+  assert.match(markup, /id="floorTabs"/);
+  assert.doesNotMatch(markup, /moreBtn|\/room\/|\/classic|mode=environment/);
+  for (const gone of ['/app.js', '/style.css', '/map.js', '/api/room']) assert.equal((await fetch(`${server.url}${gone}`)).status, 404, gone);
 });
 
 test('npm web entrypoint serves environment APIs as well as the Scope page', async t => {

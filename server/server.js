@@ -51,13 +51,11 @@ async function lib(path) {
   }
 }
 
-// `roomFetch` stands in for the network on the Ask-the-room route, so its live path can be tested without Jev.
-export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch, environmentOptions, rootRedirect = '/scope/' } = {}) {
+export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), environmentOptions, rootRedirect = '/scope/' } = {}) {
   const base = resolve(root);
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
-    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null, rootRedirect,
-    roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomChain: Promise.resolve(), roomWaiting: 0, roomFetch
+    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null, rootRedirect
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
   ctx.environments = createEnvironmentService({ ...environmentOptions, root: base });
@@ -107,9 +105,7 @@ const ROUTES = [
   ['GET', ['runs', ':id', 'status'], getStatus],
   ['GET', ['runs', ':id', 'agents', ':agentId'], getAgent],
   ['GET', ['runs', ':id', 'advice'], getAdvice],
-  ['GET', ['runs', ':id', ':file'], getRunFile],
-  ['GET', ['room'], getRoom],
-  ['POST', ['room', 'ask'], postRoomAsk]
+  ['GET', ['runs', ':id', ':file'], getRunFile]
 ];
 
 // The same JSON-only, same-origin checks above guard model generation and simulation jobs.
@@ -127,6 +123,8 @@ function environmentEndpoint(operation, status = 200) {
   };
 }
 
+const REMOVED_PAGES = ['/classic', '/room', '/studio'];
+
 async function handle(ctx, req, res) {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/walls.js') return serveWalls(ctx, req, res);
@@ -135,13 +133,15 @@ async function handle(ctx, req, res) {
       res.writeHead(302, { Location: ctx.rootRedirect, 'Cache-Control': 'no-store' });
       return res.end();
     }
-    // The dashboard is the front door. The first viewer keeps its files at the root and opens at /classic.
-    if (url.pathname === '/classic/') {
-      res.writeHead(302, { Location: '/classic', 'Cache-Control': 'no-store' });
+    // The dashboard is the only page. The addresses of the pages that were removed (the first viewer, Ask the
+    // room and the step diagrams) land on it, so an old link or bookmark still opens something.
+    const removed = REMOVED_PAGES.some(p => url.pathname === p || url.pathname.startsWith(`${p}/`))
+      || (['/scope', '/scope/'].includes(url.pathname) && url.searchParams.get('mode') === 'environment');
+    if (removed && ['GET', 'HEAD'].includes(req.method)) {
+      res.writeHead(302, { Location: '/scope/', 'Cache-Control': 'no-store' });
       return res.end();
     }
-    const environmentView = ['/scope', '/scope/'].includes(url.pathname) && url.searchParams.get('mode') === 'environment';
-    return serveStatic(req, res, environmentView ? '/studio/index.html' : url.pathname === '/classic' ? '/index.html' : url.pathname);
+    return serveStatic(req, res, url.pathname);
   }
   const parts = url.pathname.slice(5).split('/').map(decodeSegment);
   const allowed = [];
@@ -434,105 +434,6 @@ async function getAdvice(ctx, req, res, { id }) {
   let advice;
   try { advice = JSON.parse(json); } catch { throw new HttpError(500, `Run ${id} has an advice.json that is not valid JSON.`); }
   send(res, 200, { advice, markdown: (await readText('advice.md')) ?? '' });
-}
-
-// ---------- ask the room (docs/PROTOTYPE.md §17) ----------
-
-const ROOM_WORLD = 'alder-pine-cafe.json';
-// Recorded Jev answers for the example world, so the page works with no key and no network.
-const ROOM_SEED = join(WEB_DIR, 'room', 'seed-record.json');
-
-// Recorded answers by request hash: the committed seed first, then this machine's own (data/room/, never committed).
-async function roomRecord(ctx) {
-  if (ctx.roomRecord) return ctx.roomRecord;
-  const record = new Map();
-  for (const file of [ROOM_SEED, join(ctx.roomDir, 'record.json')]) {
-    try {
-      for (const [hash, value] of Object.entries(JSON.parse(await readFile(file, 'utf8')))) if (value && value.answers) record.set(hash, value);
-    } catch (err) {
-      if (err.code !== 'ENOENT' && !(err instanceof SyntaxError)) throw err;
-    }
-  }
-  ctx.roomRecord = record;
-  ctx.roomSaved = record.size;
-  return record;
-}
-
-async function saveRoomRecord(ctx) {
-  const record = ctx.roomRecord;
-  if (!record || record.size === ctx.roomSaved) return;
-  await mkdir(ctx.roomDir, { recursive: true });
-  await writeFile(join(ctx.roomDir, 'record.json'), JSON.stringify(Object.fromEntries(record)));
-  ctx.roomSaved = record.size;
-}
-
-const roomWorldName = value => {
-  if (value == null || value === '') return ROOM_WORLD;
-  if (typeof value !== 'string') throw new HttpError(400, 'The world name must be text.');
-  return safeName(value, 'world name');
-};
-
-// One ask at a time, so a second browser cannot multiply the questions sent to Jev. A few more wait their turn
-// (answers on record come back in milliseconds); beyond that the caller is told to try again.
-const ROOM_WAITING_MAX = 4;
-async function roomTurn(ctx, run) {
-  if (ctx.roomWaiting >= ROOM_WAITING_MAX) throw new HttpError(429, 'The room is still answering earlier questions. Try again in a moment.');
-  ctx.roomWaiting++;
-  const earlier = ctx.roomChain;
-  let release;
-  ctx.roomChain = new Promise(done => { release = done; });
-  try {
-    await earlier;
-    return await run();
-  } finally {
-    ctx.roomWaiting--;
-    release();
-  }
-}
-
-async function getRoom(ctx, req, res) {
-  const file = roomWorldName(new URL(req.url, 'http://localhost').searchParams.get('world'));
-  const raw = await readWorld(ctx, file);
-  const { roomView } = await lib('../run/room.js');
-  let view;
-  try { view = roomView(raw); } catch (err) { throw new HttpError(400, err.message); }
-  send(res, 200, { world: file, ...view, live: hasKey('TYPESAFE_API_KEY'), recorded: (await roomRecord(ctx)).size });
-}
-
-// Each ask is at most 4 questions per cast member: before, now, now with the plain sign, and now with the
-// person as written. The live provider gives up quickly (4 seconds, 2 attempts), so a stalled network costs
-// the page seconds and not minutes; the page keeps its last answers when Jev answers nobody.
-async function postRoomAsk(ctx, req, res) {
-  const body = await readJsonBody(req);
-  const file = roomWorldName(body.world);
-  const raw = await readWorld(ctx, file);
-  const { askRoom, recordProvider } = await lib('../run/room.js');
-  const record = await roomRecord(ctx);
-  const live = hasKey('TYPESAFE_API_KEY') && body.offline !== true;
-  const out = await roomTurn(ctx, async () => {
-    let provider = recordProvider(record);
-    if (live) {
-      const { makeProvider } = await lib('../providers/index.js');
-      provider = makeProvider('jev', {
-        shuffle: false, cache: record, concurrency: 32, maxRequests: 120,
-        timeoutMs: 4000, retry: { attempts: 2, maxRetryAfterMs: 1000 }, fetch: ctx.roomFetch
-      });
-    }
-    let result;
-    try {
-      result = await askRoom({
-        spec: raw, scenario: body.scenario, compareTo: body.compareTo ?? null,
-        edits: body.edits && typeof body.edits === 'object' ? body.edits : {},
-        only: Array.isArray(body.only) ? body.only : null, provider
-      });
-    } catch (err) {
-      throw new HttpError(/rejected the API key/.test(err?.message || '') ? 502 : 400, err?.message || 'The room could not be asked.');
-    }
-    // Answers already received are worth more than the file: a failed save is logged, not returned as an error.
-    if (live) await saveRoomRecord(ctx).catch(err => console.error(`[room] could not save the record: ${err.message}`));
-    return { ...result, error: (live && result.failed && provider.stats().firstError) || null };
-  });
-  send(res, 200, { world: file, ...out, live, recorded: record.size });
 }
 
 async function getAgent(ctx, req, res, { id, agentId }) {
