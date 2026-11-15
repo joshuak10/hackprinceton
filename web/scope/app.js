@@ -14,8 +14,8 @@ import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
 import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics } from './lib/source.js';
 import {
-  chooseRun, findTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords, verdictWords,
-  whySentence, busiestWindow, providerWords, placeName, runLabel, isJev, windowNoun
+  chooseRun, findTest, findOfferTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords,
+  verdictWords, whySentence, busiestWindow, providerWords, placeName, runLabel, isJev, windowNoun, hasPromotion
 } from './lib/verdict.js';
 import { createVerdict } from './lib/verdict-panel.js';
 import { createEditor } from './lib/edit.js';
@@ -106,11 +106,11 @@ function showNotice(text) {
 
 // ---------- recorded runs ----------
 const rawSpec = runId => st.runs.find(r => r.meta.runId === runId)?.spec || null;
-// A place's runs: a case with a runTitle (the sushi restaurant) takes the runs of the world with that title, and
+// A place's runs: a case with a runTitle (the sushi restaurant) takes every run of the world with that title, and
 // the building takes the rest, so one place's runs never show under another.
 async function refreshRuns() {
   const c = st.caseInfo;
-  const filter = c?.runTitle ? { title: c.runTitle, max: 24 } : { notTitles: Object.values(st.cases).map(x => x.runTitle).filter(Boolean) };
+  const filter = c?.runTitle ? { title: c.runTitle, max: 200 } : { notTitles: Object.values(st.cases).map(x => x.runTitle).filter(Boolean) };
   const { runs, metas } = await apiBuildingRuns(filter);
   st.runs = runs;
   st.metas = metas;
@@ -248,8 +248,13 @@ function rebuildHeat() {
 let testAbort = null;
 
 // Who decides a test's runs: the rule model for +1 staff (§9b). For the promotion, the same decision-maker as the
-// run on screen when it can (§18), because the rule model sees the lower price but not the message.
-const testProvider = change => (change.kind === 'promotion' && isJev(st.bundle.meta) && st.live?.jev ? 'jev' : 'rules');
+// run on screen, or as the test on screen when it is tested again, when it can (§18): the rule model sees the
+// lower price but not the message.
+function testProvider(change) {
+  if (change.kind !== 'promotion' || !st.live?.jev) return 'rules';
+  const ref = st.test ? st.metas.find(m => m.runId === st.test.pairs[0].baseline) : st.bundle.meta;
+  return isJev(ref) ? 'jev' : 'rules';
+}
 const byWords = provider => (provider === 'jev' ? 'Jev' : 'the rule model');
 const wordsFor = (change, provider) => testWords(change, {
   by: byWords(provider), seeds: TEST_SEEDS, noun: windowNoun(st.bundle.meta.clockStart, st.run.duration)
@@ -267,7 +272,10 @@ function refreshVerdict() {
     return;
   }
   if (changedRoom(bundle) || (st.room && st.room.sketched === meta.runId)) { refreshRoom(bundle); return; }
+  // A test recorded with its link; or, at the promotion's place, a promotion run from before the link, known by
+  // the offers in its world and paired with its twin (§18).
   let test = st.metas.length ? findTest(st.metas, { runId: meta.runId, specHash: meta.specHash }, TEST_SEEDS) : null;
+  if (!test && st.caseInfo?.suggestion === 'promotion') test = findOfferTest(st.runs, meta.runId);
   if (test && params.get('test') === 'new' && !st.sessionTests.has(test.id)) test = null;
   st.test = test;
   const change = test?.change || changeFor(st.caseInfo, bundle.spec, bundle.metrics);
@@ -303,7 +311,9 @@ function refreshVerdict() {
     const shown = meta.runId === pair.baseline || meta.runId === pair.change;
     verdict.after({
       words: verdictWords(result, change, { ...timing, by: byWords(provider) }), rows: result.rows, runs: result.runs,
-      why: whySentence(result, change, { clockStart: meta.clockStart, window }),
+      why: whySentence(result, change, { clockStart: meta.clockStart, window }), caution: words.caution,
+      // The promotion can be tested as often as you like: Jev answers differently each time (§18).
+      again: change.kind === 'promotion' && Boolean(st.live && baseWorld()),
       toggle: {
         baseline: pair.baseline, change: pair.change, labels: words.toggle, selected: meta.runId,
         note: shown ? '' : `The map shows the ${providerWords(meta) === 'Jev' ? 'Jev run' : 'run you opened'}. Pick a side to watch the test; the time on the slider is kept.`
@@ -330,7 +340,7 @@ async function refreshRoom(bundle) {
   st.ringNode = null;
   verdict.message('Comparing your room with the room as sketched…');
   const provider = sameProvider(bundle.meta.provider);
-  const wanted = st.runs.filter(r => sameProvider(r.meta.provider) === provider && (sameWorld(r.spec, c.sketch) || sameWorld(r.spec, mine)));
+  const wanted = st.runs.filter(r => sameProvider(r.meta.provider) === provider && (sameLayout(r.spec, c.sketch) || sameWorld(r.spec, mine)));
   const runs = await Promise.all(wanted.map(async r => ({ ...r, metrics: await apiRunMetrics(r.meta.runId).catch(() => null) })));
   if (st.bundle !== bundle) return;
   const pairs = pairRuns(c.sketch, mine, runs);
@@ -356,7 +366,8 @@ async function runTest() {
   if (!spec || !change) return;
   const provider = testProvider(change), words = wordsFor(change, provider);
   const id = `t${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  const seed0 = Number.isInteger(meta.seed) ? meta.seed : 7;
+  // Tested again: the same seeds as the test on screen, so the newest test replaces it like for like.
+  const seed0 = st.test ? Math.min(...st.test.pairs.map(p => p.seed)) : Number.isInteger(meta.seed) ? meta.seed : 7;
   st.testing = { change, provider, done: 0, total: TEST_SEEDS * 2 };
   testAbort = new AbortController();
   const signal = testAbort.signal;
@@ -376,10 +387,11 @@ async function runTest() {
     await refreshRuns();
     st.testing = null;
     announce(words.done);
-    // A rule-model run on screen is the same simulation as the test's baseline with its seed: show that one,
-    // so the Baseline side of the toggle is the run on the map. A Jev run stays on screen.
+    // A rule-model run on screen is the same simulation as the test's baseline with its seed, and a run of an
+    // earlier test is replaced by the newest: show the new baseline, so the Baseline side of the toggle is the run
+    // on the map. A Jev run that is not part of a test stays on screen.
     const now = st.bundle.meta;
-    if (!isJev(now) && now.link?.role !== 'change' && !st.loading) await openRun(first, { keepTime: true });
+    if ((!isJev(now) || now.link) && !st.loading) await openRun(first, { keepTime: true });
     else refreshVerdict();
   } catch (err) {
     st.testing = null;
@@ -509,8 +521,12 @@ function inspectorState() {
 // Run details: the recorded runs of this place (a changed room says so), and the other places the display opens.
 function drawDrawer() {
   const sketch = st.caseInfo?.sketch;
-  const runs = st.runs.map(r => (sketch && !sameLayout(r.spec, sketch) && !runLabel(r.meta)
-    ? { ...r, label: `Changed room, ${seatedPlaces(r.spec).reduce((k, p) => k + p.seats.length, 0)} seats` } : r));
+  // A run without a test link still says what it is: a promotion run (by its offers), a changed room (by its seats).
+  const runs = st.runs.map(r => (runLabel(r.meta) ? r : {
+    ...r,
+    label: [hasPromotion(r.spec) ? 'Promotion' : '',
+      sketch && !sameLayout(r.spec, sketch) ? `Changed room, ${seatedPlaces(r.spec).reduce((k, p) => k + p.seats.length, 0)} seats` : ''].filter(Boolean).join(', ')
+  }));
   const places = Object.values(st.cases).filter(c => c.id !== st.caseId)
     .map(c => ({ label: c.placeName || c.label, question: c.question, href: c.id === 'building' ? './' : `./?case=${encodeURIComponent(c.id)}` }));
   renderDrawer($('drawerBody'), { bundle: st.bundle, decisions: st.bundle.decisions, geometry: st.bundle.geometry, runs, place: st.place, places },
@@ -932,7 +948,9 @@ function enterEdit() {
   if (st.selectedAgent != null) closeInspector();
   if (st.selectedIncident) closeCallout();
   setViewMenu(false);
-  editor.open({ spec: st.bundle.rawSpec, sketch: st.caseInfo?.sketch || st.bundle.rawSpec, hasJev: Boolean(st.live.jev) });
+  // An edit changes seats only. Opened from a promotion run, it starts from that room without the promotion.
+  const sketch = st.caseInfo?.sketch || st.bundle.rawSpec;
+  editor.open({ spec: { ...st.bundle.rawSpec, offers: sketch.offers || [] }, sketch, hasJev: Boolean(st.live.jev) });
   setEditing(true);
   $('editPanel').querySelector('button')?.focus();
 }

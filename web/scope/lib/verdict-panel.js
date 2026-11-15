@@ -82,9 +82,11 @@ export function createVerdict(root, { onTest, onCancel, onPick }) {
 
     // words: { tone, headline, detail } from verdictWords; rows from testResult; why from whySentence;
     // toggle: { baseline, change (run ids), labels: [baseline, change], selected (run id on screen), note }.
-    after({ words, rows, runs, why, toggle: t }) {
+    // caution: a line under the verdict (Jev runs differ from run to run). again: offer "Test again" (a new test
+    // of the same world; the panel then shows the newest one).
+    after({ words, rows, runs, why, toggle: t, caution = '', again = false }) {
       const table = el('table', 'vt');
-      const cap = el('caption', null, `Averages over the ${runs} test runs, whole run`);
+      const cap = el('caption', null, runs === 1 ? 'One run each way, whole run' : `Averages over the ${runs} test runs, whole run`);
       const thead = el('thead'), hr = el('tr');
       for (const [i, text] of ['', 'Before', 'After', 'Change'].entries()) {
         const th = el(i ? 'th' : 'td', null, text);
@@ -109,10 +111,12 @@ export function createVerdict(root, { onTest, onCancel, onPick }) {
       set([
         el('h2', `tone-${words.tone}`, words.headline),
         el('p', 'detail', words.detail),
+        caution ? el('p', 'hint', caution) : null,
         table,
         whyP,
         toggle([[t.baseline, t.labels[0]], [t.change, t.labels[1]]], t.selected),
-        t.note ? el('p', 'hint', t.note) : null
+        t.note ? el('p', 'hint', t.note) : null,
+        again ? action('btn quiet small again', 'Test again', onTest) : null
       ]);
     },
 

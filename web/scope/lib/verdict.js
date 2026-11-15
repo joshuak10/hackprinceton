@@ -6,7 +6,7 @@
 // sushi restaurant) tests a promotion instead (§18): its places have one staff per seat, so one more staff there
 // would be a seat with no chair.
 import { clockText } from './frames.js';
-import { outcome } from './layout.js';
+import { outcome, seatedAt, sameLayout } from './layout.js';
 
 const provider = meta => meta?.providerStats?.provider || meta?.provider;
 export const isJev = meta => provider(meta) === 'jev' || provider(meta) === 'replay';
@@ -85,6 +85,22 @@ export function findTest(metas, { runId = null, specHash = null } = {}, need = 3
   return best && { id: best.id, change: best.change, pairs: best.pairs };
 }
 
+// A promotion run from before the run link (§18), known by the promotion in its world. The run on screen is paired
+// with its twin: the same seats, seed and decision-maker, on the other side of the promotion, with no link.
+// For a promotion run, the newest baseline started before it; for a baseline, the newest promotion run.
+// runs: [{ meta, spec }]. → a test like findTest's, with one pair, or null.
+export function findOfferTest(runs, runId) {
+  const me = (runs || []).find(r => r.meta.runId === runId);
+  if (!me || me.meta.link) return null;
+  const promo = hasPromotion(me.spec);
+  const twins = runs.filter(r => r !== me && !r.meta.link && hasPromotion(r.spec) !== promo && sameLayout(r.spec, me.spec)
+    && r.meta.seed === me.meta.seed && isJev(r.meta) === isJev(me.meta)).sort(newestFirst);
+  const twin = promo ? twins.find(r => String(r.meta.createdAt) < String(me.meta.createdAt)) || twins[0] : twins[0];
+  if (!twin) return null;
+  const [baseline, change] = promo ? [twin, me] : [me, twin];
+  return { id: `offers-${change.meta.runId}`, change: promotionIn(change.spec), pairs: [{ seed: me.meta.seed, baseline: baseline.meta.runId, change: change.meta.runId }] };
+}
+
 // ---------- the one change ----------
 
 // Per-place numbers: `metrics.nodes` in engine runs, `metrics.bottlenecks` in the sample data.
@@ -104,6 +120,10 @@ export function staffChange(spec, metrics) {
 // The sushi restaurant's change: a promotion told to everyone who comes in, with `off` taken off every price.
 const PROMOTION_OFF = 0.2;
 export const promotionChange = (off = PROMOTION_OFF) => ({ kind: 'promotion', off });
+
+// A world with the promotion running: known by its offers, whatever started the run (§18).
+export const hasPromotion = spec => (spec?.offers || []).some(o => String(o.id).startsWith('promotion'));
+const promotionIn = spec => promotionChange((spec?.offers || []).find(o => String(o.id).startsWith('promotion_'))?.priceOff || PROMOTION_OFF);
 
 // The change a place tests: the promotion where its case asks for one ("suggestion": "promotion" in
 // mock/index.json), otherwise one more staff at the worst line. Null when the world has no place with a line.
@@ -177,8 +197,8 @@ export function worstLineWords(spec, metrics, { clockStart, duration } = {}) {
   return { nodeId: change.nodeId, headline, why: `It has ${staff}${pace}.${line}` };
 }
 
-// Before a test of the promotion: how many people ate, the reason more did not, and what the promotion is.
-// Meals are counted when they end, so someone still eating at closing time is not counted.
+// Before a test of the promotion: how many people did not get a seat, the reason, and what the promotion is.
+// A person counts as seated from the moment they sit down (layout.js outcome).
 // → { headline, why, offer } or null when the run has no people.
 export function promotionWords(spec, metrics, change, { clockStart, duration } = {}) {
   const o = outcome(metrics);
@@ -186,7 +206,7 @@ export function promotionWords(spec, metrics, change, { clockStart, duration } =
   const when = windowWords(clockStart, duration);
   const seats = (spec?.nodes || []).filter(n => n.kind === 'service').reduce((k, n) => k + (n.seats?.length || Number(n.servers) || 0), 0);
   return {
-    headline: o.left > 0 ? `${o.seated} of ${o.people} people finished a meal ${when}.` : `All ${o.people} people finished a meal ${when}.`,
+    headline: o.left > 0 ? `${o.left} of ${o.people} people did not get a seat ${when}.` : `All ${o.people} people got a seat ${when}.`,
     why: `The room has ${seats} seats, and the wait for one averaged ${minutes(o.wait)}.`,
     offer: `Try a promotion: ${percent(change)} off everything today, told to everyone who comes in. It gives people a reason to wait, but adds no seats.`
   };
@@ -209,9 +229,9 @@ const at = (metrics, id, key) => (metrics?.nodes || []).find(n => n.id === id)?.
 
 // The numbers of a finished test. `pairs` = [{ before, after }], the metrics of each seed's two runs.
 // → { runs, kept: [per seed: customers kept], rows: [{ label, kind, before, after, change, strong }] }
-// Customers kept: fewer walk-aways at the counter for +1 staff; more people who finished a meal for the promotion
-// (each person sits once, so meals served are people). Rows are averages over the test runs; `strong` marks the
-// rows of that measure.
+// Customers kept: fewer walk-aways at the counter for +1 staff; more people who got a seat for the promotion
+// (counted when they sit down, so people still eating at the end count; layout.js outcome). Rows are averages
+// over the test runs; `strong` marks the rows of that measure.
 export function testResult(pairs, change) {
   const ok = (pairs || []).filter(p => p?.before && p?.after);
   const avg = (side, read) => mean(ok.map(p => read(p[side])).filter(Number.isFinite));
@@ -222,16 +242,17 @@ export function testResult(pairs, change) {
     return { label, kind, before, after, change: before == null || after == null ? null : after - before, strong };
   };
   if (isPromotion(change)) {
-    const ate = m => outcome(m).seated;
+    const seated = m => outcome(m).seated;
     const places = ok[0]?.before?.nodes || [];
+    const seatedHere = id => m => seatedAt((m?.nodes || []).find(n => n.id === id));
     return {
       runs: ok.length,
-      kept: ok.map(p => ate(p.after) - ate(p.before)),
+      kept: ok.map(p => seated(p.after) - seated(p.before)),
       rows: [
-        row('Finished a meal', 'count', ate, true),
+        row('Got a seat', 'count', seated, true),
         row('Walked away', 'count', m => m.abandoned),
         row('Average wait', 'minutes', m => m.avgWait),
-        ...places.map(n => row(`Meals at ${n.name || n.id}`, 'count', m => at(m, n.id, 'served'))),
+        ...places.map(n => row(`Got a seat at ${n.name || n.id}`, 'count', seatedHere(n.id))),
         row('Told about the promotion', 'count', m => (m.offers || []).find(o => o.id === 'promotion')?.reached ?? 0)
       ]
     };
@@ -270,10 +291,10 @@ export function verdictWords(result, change, { clockStart, duration, by = 'the r
   const a = Math.round(r.min), b = Math.round(r.max);
   const say = isPromotion(change)
     ? {
-        same: `The same number of people finished a meal ${when}.`,
-        more: (x, one) => `${x} more ${one ? 'person' : 'people'} finished a meal ${when}.`,
-        less: (x, one) => `${x} fewer ${one ? 'person' : 'people'} finished a meal ${when}.`,
-        split: `Between ${-a} fewer and ${b} more people finished a meal ${when}: the runs disagree.`
+        same: `The same number of people got a seat ${when}.`,
+        more: (x, one) => `${x} more ${one ? 'person' : 'people'} got a seat ${when}.`,
+        less: (x, one) => `${x} fewer ${one ? 'person' : 'people'} got a seat ${when}.`,
+        split: `Between ${-a} fewer and ${b} more people got a seat ${when}: the runs disagree.`
       }
     : {
         same: `The same number of people walked away from ${name} ${when}.`,
@@ -363,7 +384,8 @@ export function testWords(change, { by = 'the rule model', seeds = 3, noun = 'lu
       action: 'Test the promotion', title: 'Testing the promotion', again: 'Test the promotion again',
       plan: `Plays the same ${noun} ${seeds} times as it is and ${seeds} times with the promotion, decided by ${by}${sees}. It takes ${wait}.`,
       step: (k, total, withIt) => `Run ${k} of ${total}: the ${noun} ${withIt ? 'with the promotion' : 'as it is'}.`,
-      toggle: ['Baseline', 'Promotion'], done: 'The test of the promotion is done.', loading: 'Loading the test of the promotion…'
+      toggle: ['Baseline', 'Promotion'], done: 'The test of the promotion is done.', loading: 'Loading the test of the promotion…',
+      caution: by === 'Jev' ? 'Jev does not answer the same question the same way twice, so two Jev runs of the same world and seed already differ by a few people. A small difference may be chance.' : ''
     };
   }
   const what = changeWords(change), where = `${what} at ${change.nodeName}`;

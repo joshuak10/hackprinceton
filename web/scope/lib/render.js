@@ -245,7 +245,8 @@ export function createRenderer(canvas) {
       if ((n.floor || 0) !== st.floor || n.kind !== 'service') continue;
       const [sx, sy] = R.toScreen(n.x, n.y);
       if (n.seats?.length) {
-        if (!st.layers.labels) continue;
+        // Seats move while editing; the seat tags and the edit panel name the place then.
+        if (!st.layers.labels || st.edit) continue;
         const [ax, ay] = R.toScreen(...seatLabelSpot(n));
         labelFree(ctx, n.name, [[ax, ay, 'center'], [ax, ay + 16, 'center'], [ax, ay - 16, 'center'], [sx, sy + 15, 'center']], pal, 13, { weight: 500, color: pal.label, halo: pal.room });
         continue;

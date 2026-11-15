@@ -28,7 +28,7 @@ function swap(root, nodes) {
 }
 
 // Four figures in one row. "Visits served" counts counter visits, so it can be higher than the number of people.
-// In a place with seats (st.seated, the sushi restaurant) each person sits once, so the figure is people who ate.
+// In a place with seats (st.seated, the sushi restaurant) each person sits once, so the figure is people seated.
 export function renderCounters(root, st) {
   const f = st.frame;
   if (!f) { root.replaceChildren(); return; }
@@ -46,8 +46,10 @@ export function renderCounters(root, st) {
     items = [
       [fmt(f.c.active), 'People inside'],
       [fmt(inLine), 'In a line'],
+      // The engine counts a person as served when they finish, so at a place with seats everyone sitting now has
+      // a seat too (§18).
       st.seated
-        ? [fmt(f.c.served), 'Finished eating', 'People who have finished their meal so far. Each person sits once, so this counts people.']
+        ? [fmt(f.c.served + agents.filter(a => a.s === 2).length), 'Got a seat', 'People who have sat down so far, including those still eating. Each person sits once.']
         : [fmt(f.c.served), 'Visits served', 'Counter visits served so far. One person can be served at several counters, so this can be higher than the number of people.'],
       [fmt(f.c.abandoned), 'Walked away', 'Times someone left a line, or saw it and did not join, so far.']
     ];
