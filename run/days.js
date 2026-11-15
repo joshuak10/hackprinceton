@@ -115,6 +115,9 @@ export function buildPeople(pool, spec, seed = 7) {
 // { from, to, patch, card, promo, label }. `patch` is a what-if patch (§15), `card` { need, reward },
 // `promo` { text, priceOff, reach }. Days outside from..to run as the baseline.
 // `shopRef` is a place id or a pool's shopRef; `pool` (optional, normalized) gives the reward and the days in a week.
+// What the card says. The return probe asks Jev about the same words (validation/jev-return-probe.js).
+export const sorryText = (shopName, reward) => `${shopName}: sorry we could not serve you last time. Come back within two weeks for ${reward}.`;
+
 export function changeFor(name, spec, shopRef, days, pool = null) {
   const { shop } = shopView(spec, shopRef);
   const k = pool?.daysPerWeek ?? WEEK;
@@ -127,6 +130,18 @@ export function changeFor(name, spec, shopRef, days, pool = null) {
     const first = spec.nodes.find(n => n.id === shop.id), n = Number(staff[1]);
     const label = shop.seated ? `${n} more seat${n === 1 ? '' : 's'} (${first.name})` : `+${n} staff at ${shop.name}`;
     return { ...whole, label, patch: [{ kind: 'node', id: shop.id, field: 'servers', value: first.servers + n }] };
+  }
+  // "faster15": each meal (or order) at the first place takes 15% less time, so more people get through.
+  const faster = /^faster(\d+)$/.exec(name);
+  if (faster && Number(faster[1]) > 0 && Number(faster[1]) < 90) {
+    const first = spec.nodes.find(n => n.id === shop.id), pct = Number(faster[1]);
+    return { ...whole, label: `${shop.seated ? 'Meals' : 'Orders'} ${pct}% quicker (${first.name})`, patch: [{ kind: 'node', id: shop.id, field: 'serviceTime', value: round2(first.serviceTime * (1 - pct / 100)) }] };
+  }
+  // "sorry": a card for anyone turned away, good for two weeks. Only a run over days can test it: it is told to
+  // the people whose last visit ended without being served.
+  if (name === 'sorry') {
+    const reward = pool?.reward || 'a free coffee';
+    return { ...whole, label: `A card for people turned away: ${reward} within two weeks`, recovery: { text: sorryText(shop.name, reward), days: 14 } };
   }
   const price = /^price([+-]\d+(?:\.\d+)?)$/.exec(name);
   if (price) {
@@ -141,7 +156,7 @@ export function changeFor(name, spec, shopRef, days, pool = null) {
   }
   const card = /^card(\d+)$/.exec(name);
   if (card) return { ...whole, label: `Stamp card: buy ${Number(card[1]) - 1}, the next is free`, card: { need: Math.max(2, Number(card[1])), reward: pool?.reward || 'a free coffee' } };
-  throw new Error(`Unknown change "${name}". Use staff+1, seats+2, price+0.5, promo20 or card10.`);
+  throw new Error(`Unknown change "${name}". Use staff+1, seats+2, faster15, sorry, price+0.5, promo20 or card10.`);
 }
 
 const activeOn = (change, d) => Boolean(change) && d >= change.from && d <= change.to;
@@ -177,6 +192,11 @@ export function recordsFor(person, d, ctx) {
   if (person.lastPaid != null && round2(person.lastPaid) !== round2(ctx.price)) { today.wasPrice = person.lastPaid; changed = true; }
   if (ctx.card && person.card) { today.card = { have: person.card.have, need: ctx.card.need, reward: ctx.card.reward }; changed = true; }
   if (ctx.promo && person.reached) { today.offers = [ctx.promo.text]; today.offerPrice = round2(ctx.price * (1 - ctx.promo.priceOff)); changed = true; }
+  // The card for people turned away: told while their last visit, one that ended unserved, is recent enough.
+  const last = person.visits.at(-1);
+  if (ctx.recovery && last?.outcome === 'left' && daysBetween(last.day, d, ctx.k) <= ctx.recovery.days) {
+    today.offers = [...(today.offers || []), ctx.recovery.text]; changed = true;
+  }
   const reference = {
     history, price: ctx.refPrice,
     memory: remembered.map(v => ({ daysAgo: daysBetween(v.day, d, ctx.k), wait: ctx.ordinaryWait, outcome: 'served' }))
@@ -276,7 +296,7 @@ export async function runDays({ pool: rawPool, spec: rawSpec, days = 10, seed = 
     const promo = on && change.promo ? change.promo : null;
     const card = on ? change.card ?? null : null;
     const price = shopView(spec, pool.shopRef).shop.price;
-    const ctx = { shopId: pool.shopRef, shopName: shop.name, price, refPrice, ordinaryWait: pool.ordinaryWait, promo, card, k };
+    const ctx = { shopId: pool.shopRef, shopName: shop.name, price, refPrice, ordinaryWait: pool.ordinaryWait, promo, card, k, recovery: on ? change.recovery ?? null : null };
 
     // 1. Who hears of the shop, and who a promotion reaches.
     for (const person of people) {

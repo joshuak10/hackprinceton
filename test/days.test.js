@@ -146,6 +146,9 @@ describe('days: the pool', () => {
     assert.deepEqual([promo.from, promo.to, promo.promo.priceOff, promo.promo.text], [0, 4, 0.2, 'Crumb & Co: 20% off everything today.']);
     assert.deepEqual(changeFor('card10', spec, 'bakery', 10).card, { need: 10, reward: 'a free coffee' });
     assert.equal(changeFor('none', spec, 'bakery', 10), null);
+    assert.deepEqual(changeFor('faster20', spec, 'bakery', 10).patch, [{ kind: 'node', id: 'bakery', field: 'serviceTime', value: 2 }]);
+    assert.equal(changeFor('faster20', spec, 'bakery', 10).label, 'Orders 20% quicker (Crumb & Co)');
+    assert.match(changeFor('sorry', spec, 'bakery', 10).recovery.text, /^Crumb & Co: sorry we could not serve you last time\. Come back within two weeks for a free coffee\.$/);
     assert.throws(() => changeFor('magic', spec, 'bakery', 10), /Unknown change/);
   });
 });
@@ -199,6 +202,17 @@ describe('days: a person\'s record each morning', () => {
     assert.deepEqual(Object.keys(r.reference).sort(), ['history', 'memory', 'price']);
     assert.deepEqual(Object.keys(r.plain).sort(), ['heard', 'history', 'memory', 'price'], 'plain keeps the remarks and drops the card and the promotion');
     assert.equal(recordsFor(person({ reached: false }), 5, ctx({ promo: { text: 'x', priceOff: 0.2 } })).today.offers, undefined);
+  });
+
+  test('the card for people turned away is told only to them, and only while it is recent', () => {
+    const recovery = { text: 'Crumb & Co: sorry.', days: 14 };
+    const turned = person({ went: [3], visits: [{ day: 3, wait: 0, outcome: 'left', ahead: 6 }] });
+    assert.deepEqual(recordsFor(turned, 4, ctx({ recovery })).today.offers, ['Crumb & Co: sorry.']);
+    assert.equal(recordsFor(turned, 4, ctx({ recovery })).plain.offers, undefined, 'plain: this morning without the card');
+    assert.equal(recordsFor(turned, 15, ctx({ recovery })).today.offers, undefined, 'three weeks on');
+    const servedLast = person({ went: [3], visits: [{ day: 3, wait: 4, outcome: 'served', ahead: null }] });
+    assert.equal(recordsFor(servedLast, 4, ctx({ recovery })).today.offers, undefined);
+    assert.equal(recordsFor(turned, 4, ctx()).today.offers, undefined, 'no card without the change');
   });
 
   test('someone who has never been is told how they know the shop', () => {

@@ -20,6 +20,7 @@ import { normalizeSpec } from '../engine/spec.js';
 import { seedRng } from '../engine/util.js';
 import { JevProvider } from '../providers/jev.js';
 import { morningRequest, friendRemark, shopView } from '../run/morning.js';
+import { sorryText } from '../run/days.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const WORLD = 'worlds/alder-pine-cafe.json';
@@ -82,6 +83,9 @@ export const CONDITIONS = [
   // Turned away at the door on seeing the line: the sentence the multi-day loop writes (§21b).
   { id: 'balk9', who: 'returning', family: 'left', label: 'Found 9 people in line yesterday and left', state: back(mem([{ daysAgo: 1, wait: 0, outcome: 'left', ahead: 9 }])) },
   { id: 'balk3', who: 'returning', family: 'left', label: 'Found 3 people in line yesterday and left', state: back(mem([{ daysAgo: 1, wait: 0, outcome: 'left', ahead: 3 }])) },
+  // The card for people turned away (§21b "sorry"), against a plain message from the shop.
+  { id: 'sorry_card', who: 'returning', family: 'left', label: 'Turned away, then sent the card', state: back(S => ({ memory: [{ daysAgo: 1, wait: 0, outcome: 'left', ahead: 9 }], offers: [sorryText(S, W.reward)] })) },
+  { id: 'sorry_plain', who: 'returning', family: 'left', label: 'Turned away, then sent a plain message', state: back(S => ({ memory: [{ daysAgo: 1, wait: 0, outcome: 'left', ahead: 9 }], offers: [`${S}: ${W.open}`] })) },
   // The same 15 minutes, ending fast or slow (peak-end).
   { id: 'end_plain15', who: 'returning', family: 'ending', label: 'Waited 15 minutes yesterday, served', state: back(mem([visit(15)])) },
   { id: 'end_fast15', who: 'returning', family: 'ending', label: '15 minutes: slow at first, quick at the end', state: back(mem([visit(15, 'served', { ending: 'fast' })])) },
@@ -169,6 +173,7 @@ export const TESTS = [
   { id: 'fade_week', kind: 'explore', title: 'A bad visit 1 week ago against yesterday', type: 'diff', a: 'bad_d7', b: 'bad_d1', expect: 'higher', from: 'open: how fast a memory fades' },
   { id: 'turned_long', kind: 'explore', title: 'Turned away by 9 people against by 3', type: 'diff', a: 'balk9', b: 'balk3', expect: 'lower', from: 'does the line seen matter' },
   { id: 'turned_vs_waited', kind: 'explore', title: 'Turned away at the door against waiting 20 minutes and leaving', type: 'diff', a: 'balk9', b: 'left20', expect: 'higher', from: 'which is the worse memory' },
+  { id: 'sorry', kind: 'explore', title: 'A card for people turned away, against a plain message', type: 'diff', a: 'sorry_card', b: 'sorry_plain', expect: 'higher', from: 'the loop\'s card (§21b)' },
   { id: 'adds_one', kind: 'explore', title: 'One 20-minute wait in the last three visits', type: 'diff', a: 'acc1_new', b: 'acc0', expect: 'lower', from: 'do bad visits add up' },
   { id: 'adds_three', kind: 'explore', title: 'Three 20-minute waits against one', type: 'diff', a: 'acc3', b: 'acc1_new', expect: 'lower', from: 'do bad visits add up' },
   { id: 'adds_recent', kind: 'explore', title: 'The 20-minute wait yesterday against 3 days ago', type: 'diff', a: 'acc1_new', b: 'acc1_old', expect: 'lower', from: 'recency within a list' },
