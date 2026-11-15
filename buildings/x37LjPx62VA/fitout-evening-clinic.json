@@ -1,0 +1,615 @@
+{
+  "model": "x37LjPx62VA",
+  "floor": 0,
+  "title": "Weekday evening: walk-in clinic and pharmacy (fictional fit-out)",
+  "question": "On a weekday evening, where do people end up waiting in this walk-in clinic and pharmacy, who gives up and leaves without what they came for, and which single change would help most?",
+  "context": "A weekday evening, 5 to 8 pm, at a small walk-in clinic with a pharmacy counter on one floor of a medical office building. People come after work to be seen without an appointment, for booked shots and blood draws, or to pick up prescriptions. The clinic closes at 8.",
+  "leaveLabel": "Leave (give up for tonight or go home)",
+  "clockStart": 1020,
+  "duration": 180,
+  "walkMetersPerMinute": 70,
+  "waiting": {
+    "lineShows": "people"
+  },
+  "arrivals": {
+    "total": 200,
+    "start": 0,
+    "end": 140,
+    "shape": "peak"
+  },
+  "gates": [
+    {
+      "id": "front_door",
+      "name": "Front door (street side)",
+      "at": {
+        "x": -8.05,
+        "y": -9.7
+      },
+      "weight": 4
+    },
+    {
+      "id": "hall_door",
+      "name": "Hall door (building corridor)",
+      "at": {
+        "x": -26.0,
+        "y": -6.6
+      },
+      "weight": 1
+    }
+  ],
+  "places": [
+    {
+      "id": "front_desk",
+      "name": "Front desk check-in",
+      "at": {
+        "x": -5.0,
+        "y": -6.0
+      },
+      "servers": 2,
+      "serviceTime": 3,
+      "appeal": 0.6,
+      "price": 0,
+      "tags": [
+        "checkin"
+      ],
+      "about": "Walk-in patients check in here first. Two receptionists take your name, insurance card and reason for coming. Slow, but they sort everything out."
+    },
+    {
+      "id": "kiosk",
+      "name": "Self check-in kiosks (booked visits)",
+      "at": {
+        "x": -9.4,
+        "y": -8.2
+      },
+      "servers": 2,
+      "serviceTime": 1.5,
+      "appeal": 0.45,
+      "price": 0,
+      "tags": [
+        "kiosk",
+        "selfserve"
+      ],
+      "about": "Two touch screens by the front door for people with a booked slot: scan the code from your reminder text. Walk-in patients are sent to the front desk."
+    },
+    {
+      "id": "triage",
+      "name": "Nurse triage station",
+      "at": {
+        "x": -15.3,
+        "y": -5.3
+      },
+      "servers": 2,
+      "serviceTime": 4,
+      "appeal": 0.5,
+      "price": 0,
+      "tags": [
+        "triage"
+      ],
+      "about": "A nurse takes your temperature, blood pressure and story before you see a clinician. Walk-in patients come here after the front desk."
+    },
+    {
+      "id": "exam_a",
+      "name": "Exam room A (walk-in visits)",
+      "at": {
+        "x": -27.7,
+        "y": -2.0
+      },
+      "servers": 1,
+      "serviceTime": 10,
+      "appeal": 0.75,
+      "price": 45,
+      "tags": [
+        "exam",
+        "care"
+      ],
+      "about": "The nurse practitioner sees walk-in patients here. Thorough and kind; her visits often run long. Being seen in one exam room is enough."
+    },
+    {
+      "id": "exam_b",
+      "name": "Exam room B (walk-in visits)",
+      "at": {
+        "x": -28.0,
+        "y": -4.8
+      },
+      "servers": 1,
+      "serviceTime": 8,
+      "appeal": 0.65,
+      "price": 45,
+      "tags": [
+        "exam",
+        "care"
+      ],
+      "about": "The physician assistant sees walk-in patients here. Brisk and to the point; the same care as room A. Being seen in one exam room is enough."
+    },
+    {
+      "id": "exam_c",
+      "name": "Exam room C (children and families)",
+      "at": {
+        "x": -22.3,
+        "y": 0.0
+      },
+      "servers": 1,
+      "serviceTime": 9,
+      "appeal": 0.7,
+      "price": 45,
+      "tags": [
+        "exam",
+        "care",
+        "pediatric"
+      ],
+      "about": "The family doctor sees children first, then anyone else. Parents say she is patient with scared kids. Being seen in one exam room is enough."
+    },
+    {
+      "id": "xray",
+      "name": "X-ray room",
+      "at": {
+        "x": -21.8,
+        "y": -5.5
+      },
+      "servers": 1,
+      "serviceTime": 8,
+      "appeal": 0.4,
+      "price": 60,
+      "tags": [
+        "xray",
+        "imaging"
+      ],
+      "about": "One technician takes pictures of sprains, falls and stubborn coughs. Booked follow-ups and walk-ins share the one machine."
+    },
+    {
+      "id": "shots",
+      "name": "Vaccine and injection room",
+      "at": {
+        "x": -11.0,
+        "y": -0.4
+      },
+      "servers": 1,
+      "serviceTime": 4,
+      "appeal": 0.55,
+      "price": 0,
+      "tags": [
+        "shots",
+        "vaccine"
+      ],
+      "about": "Flu shots, travel vaccines and allergy injections from one nurse. Booked slots, but she fits in walk-ups when it is quiet."
+    },
+    {
+      "id": "lab",
+      "name": "Blood draw lab",
+      "at": {
+        "x": -17.7,
+        "y": -11.0
+      },
+      "servers": 1,
+      "serviceTime": 5,
+      "appeal": 0.45,
+      "price": 0,
+      "tags": [
+        "lab",
+        "samples"
+      ],
+      "about": "One phlebotomist draws blood and hands the sealed samples to the courier. Gentle, never rushed."
+    },
+    {
+      "id": "billing",
+      "name": "Billing and insurance window",
+      "at": {
+        "x": -12.3,
+        "y": -10.9
+      },
+      "servers": 1,
+      "serviceTime": 6,
+      "appeal": 0.25,
+      "price": 0,
+      "tags": [
+        "billing"
+      ],
+      "about": "One clerk sorts out copays, old bills and insurance letters. Nobody enjoys the visit, and each case takes a while."
+    },
+    {
+      "id": "pharmacy",
+      "name": "Pharmacy counter",
+      "at": {
+        "x": -1.5,
+        "y": -0.3
+      },
+      "servers": 2,
+      "serviceTime": 4,
+      "appeal": 0.7,
+      "price": 15,
+      "tags": [
+        "pharmacy",
+        "pickup",
+        "advice"
+      ],
+      "about": "Two staff fill and hand over prescriptions and answer questions about them. A line builds here most evenings after work."
+    },
+    {
+      "id": "lockers",
+      "name": "Prescription pickup lockers",
+      "at": {
+        "x": 2.9,
+        "y": -0.2
+      },
+      "servers": 4,
+      "serviceTime": 1,
+      "appeal": 0.4,
+      "price": 15,
+      "tags": [
+        "pharmacy",
+        "pickup",
+        "selfserve"
+      ],
+      "about": "Self-serve lockers for refills that are ready and paid for; you need the code from the pharmacy's text. Nobody to ask questions here."
+    },
+    {
+      "id": "restroom",
+      "name": "Restroom",
+      "at": {
+        "x": -20.42,
+        "y": -10.8
+      },
+      "servers": 1,
+      "serviceTime": 3,
+      "appeal": 0.1,
+      "price": 0,
+      "tags": [
+        "restroom"
+      ],
+      "about": "Single restroom off the south hall, next to the blood draw lab."
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "walkins",
+      "name": "Walk-in patients",
+      "share": 0.32,
+      "description": "People who are sick or hurt tonight and came without an appointment: check in, see the triage nurse, see a clinician, maybe an X-ray, then the pharmacy.",
+      "info": 0.3,
+      "rationality": 2.2,
+      "weights": {
+        "appeal": 1.2,
+        "wait": 0.8,
+        "distance": 0.4,
+        "price": 0.3
+      },
+      "visits": 4,
+      "patience": 35,
+      "likes": [
+        "checkin",
+        "triage",
+        "exam"
+      ],
+      "needs": [
+        "checkin",
+        "triage",
+        "exam",
+        "xray",
+        "pharmacy",
+        "billing",
+        "restroom"
+      ],
+      "entries": [
+        "front_door"
+      ],
+      "exits": [
+        "front_door",
+        "hall_door"
+      ]
+    },
+    {
+      "id": "pharmacy_customers",
+      "name": "Pharmacy customers",
+      "share": 0.36,
+      "description": "Neighbors and commuters picking up a prescription on the way home. They did not come for the clinic and do not need to check in.",
+      "info": 0.4,
+      "rationality": 2.5,
+      "weights": {
+        "appeal": 1,
+        "wait": 1.6,
+        "distance": 0.6,
+        "price": 0.4
+      },
+      "visits": 1,
+      "patience": 12,
+      "likes": [
+        "pharmacy",
+        "pickup"
+      ],
+      "needs": [
+        "pharmacy",
+        "restroom"
+      ],
+      "entries": [
+        "front_door"
+      ],
+      "exits": [
+        "front_door",
+        "hall_door"
+      ]
+    },
+    {
+      "id": "booked",
+      "name": "Booked appointments",
+      "share": 0.24,
+      "description": "People with a booked slot tonight for a flu shot, a blood draw or a follow-up X-ray. They check in at a kiosk, have the one thing done and go.",
+      "info": 0.5,
+      "rationality": 2.5,
+      "weights": {
+        "appeal": 1,
+        "wait": 1.2,
+        "distance": 0.5,
+        "price": 0.3
+      },
+      "visits": 3,
+      "patience": 15,
+      "likes": [
+        "kiosk",
+        "shots",
+        "lab"
+      ],
+      "needs": [
+        "kiosk",
+        "shots",
+        "lab",
+        "xray",
+        "billing",
+        "pharmacy",
+        "restroom"
+      ],
+      "entries": [
+        "front_door",
+        "hall_door"
+      ],
+      "exits": [
+        "front_door",
+        "hall_door"
+      ]
+    },
+    {
+      "id": "couriers",
+      "name": "Couriers and delivery drivers",
+      "share": 0.08,
+      "description": "The lab courier collecting blood samples and drivers picking up prescriptions to deliver. They come in from the building corridor and are paid by the stop.",
+      "info": 0.8,
+      "rationality": 3,
+      "weights": {
+        "appeal": 0.6,
+        "wait": 2.2,
+        "distance": 0.8,
+        "price": 0
+      },
+      "visits": 1,
+      "patience": 6,
+      "likes": [
+        "lab",
+        "pharmacy"
+      ],
+      "needs": [
+        "lab",
+        "pharmacy"
+      ],
+      "entries": [
+        "hall_door"
+      ],
+      "exits": [
+        "hall_door"
+      ]
+    }
+  ],
+  "minds": [
+    {
+      "id": "marisol",
+      "name": "Marisol Vega",
+      "age": 34,
+      "archetype": "walkins",
+      "bio": "Kindergarten teacher who lost her voice on Monday and now has a fever and a cough that kept her up all night. Came straight from school, worried it is strep and that she will miss her class's concert on Friday.",
+      "personality": "worn out, apologetic, hates making a fuss but will not go home unseen",
+      "goal": "See a clinician tonight and leave with something that works before Friday",
+      "social": "her sister, a nurse, is texting her what to ask for",
+      "informed": false,
+      "entry": "front_door",
+      "weight": 1.5
+    },
+    {
+      "id": "dale",
+      "name": "Dale Purcell",
+      "age": 52,
+      "archetype": "walkins",
+      "bio": "Roofer who came off a ladder this afternoon; his wrist has swollen to twice its size. His boss drove him and is waiting in the truck. Scared it is broken and that he cannot afford weeks without work.",
+      "personality": "gruff, plays the pain down, gets short with people when kept waiting",
+      "goal": "An X-ray and a straight answer about his wrist tonight",
+      "social": "his boss, who keeps phoning from the truck to ask how long",
+      "informed": false,
+      "entry": "front_door",
+      "weight": 1
+    },
+    {
+      "id": "hyejin",
+      "name": "Hye-jin Park",
+      "age": 29,
+      "archetype": "walkins",
+      "bio": "Her two-year-old has pulled at his ear and cried since daycare pickup. She is on her own tonight, has not eaten, and is close to tears herself. The family doctor in Exam room C saw him last winter and he liked her.",
+      "personality": "anxious, protective, will wait as long as it takes for her son",
+      "goal": "Have the family doctor in Exam room C look at his ear",
+      "social": "the daycare parents' group chat, which says the wait is bad tonight",
+      "informed": true,
+      "entry": "front_door",
+      "weight": 1
+    },
+    {
+      "id": "gus",
+      "name": "Gus Lindqvist",
+      "age": 71,
+      "archetype": "walkins",
+      "bio": "Retired bus driver with three days of a burning rash on his side. His late wife always came to these visits with him and this is the first one alone. Embarrassed, and half hoping to be told it is nothing.",
+      "personality": "proud, quiet, confused by screens, gives up easily if he feels ignored",
+      "goal": "Be seen without a fuss and get home before it is late",
+      "social": "nobody tonight; he watches what other people do",
+      "informed": false,
+      "entry": "front_door",
+      "weight": 1
+    },
+    {
+      "id": "ruth",
+      "name": "Ruth Abernathy",
+      "age": 67,
+      "archetype": "pharmacy_customers",
+      "bio": "Picking up her husband's heart pills. He came home from the hospital on Sunday and she has hardly slept since. The refill was not ready yesterday, she dreads another wasted trip, and she wants to ask if they clash with his new tablets.",
+      "personality": "polite, tired, persistent; does not trust machines or lockers",
+      "goal": "Leave with the pills in her bag tonight, whatever the line at the Pharmacy counter",
+      "social": "her daughter phones every evening to check she got them",
+      "informed": false,
+      "entry": "front_door",
+      "weight": 1.5
+    },
+    {
+      "id": "cody",
+      "name": "Cody Brandvold",
+      "age": 31,
+      "archetype": "pharmacy_customers",
+      "bio": "Refilling his allergy tablets, already paid for in the app; the locker code arrived at lunch and he is quietly pleased with himself. Meeting friends for dinner at 6:30.",
+      "personality": "efficient, cheerful, avoids talking to anyone if a machine will do",
+      "goal": "Prescription pickup lockers, then out of the door in two minutes",
+      "social": "trusts the app over people",
+      "informed": true,
+      "entry": "front_door",
+      "weight": 1
+    },
+    {
+      "id": "earl",
+      "name": "Earl Whitcombe",
+      "age": 58,
+      "archetype": "pharmacy_customers",
+      "bio": "Long-haul driver home for one night, out of his blood pressure pills since Tuesday and feeling the headache. Tired and short-tempered. If the line is long he would rather drive to the all-night chain store.",
+      "personality": "blunt, impatient, no loyalty to this pharmacy",
+      "goal": "Pills in hand in ten minutes or he goes elsewhere",
+      "social": "listens to nobody",
+      "informed": false,
+      "entry": "front_door",
+      "weight": 1
+    },
+    {
+      "id": "imani",
+      "name": "Imani Adeyemi",
+      "age": 27,
+      "archetype": "booked",
+      "bio": "Graduate student with a booked flu shot. She is terrified of needles and nearly cancelled twice today. A friend bet her dinner that she would not go through with it.",
+      "personality": "nervous, chatty, looks for reasons to leave",
+      "goal": "Get the shot in the Vaccine and injection room over with before she talks herself out of it",
+      "social": "her friend is texting encouragement and jokes",
+      "informed": true,
+      "entry": "front_door",
+      "weight": 1.3
+    },
+    {
+      "id": "walter",
+      "name": "Walter Koskinen",
+      "age": 63,
+      "archetype": "booked",
+      "bio": "Accountant who has fasted since last night for a cholesterol blood draw his doctor ordered. Lightheaded and irritable, and thinking about the sandwich waiting in his car.",
+      "personality": "punctual, follows the rules, grumbles aloud when others do not",
+      "goal": "Blood drawn at the Blood draw lab at his booked time, then eat",
+      "social": "complains to whoever is standing next to him",
+      "informed": false,
+      "entry": "hall_door",
+      "weight": 1
+    },
+    {
+      "id": "priya",
+      "name": "Priya Nambiar",
+      "age": 41,
+      "archetype": "booked",
+      "bio": "Here for a follow-up chest X-ray after pneumonia. She feels fine and resents the trip, but her doctor will not clear her to fly on Saturday without it. She also has an old bill she believes is wrong.",
+      "personality": "organised, sceptical, argues politely and does not let things drop",
+      "goal": "X-ray room first, then the Billing and insurance window if its line is short",
+      "social": "trusts her own doctor and nobody else",
+      "informed": true,
+      "entry": "front_door",
+      "weight": 0.8
+    },
+    {
+      "id": "deshawn",
+      "name": "Deshawn Mabry",
+      "age": 26,
+      "archetype": "couriers",
+      "bio": "Lab courier on the last sample run of his shift. The laboratory across town shouts at him when the cooler arrives late, and he has two more stops after this one.",
+      "personality": "friendly, on the clock, knows the building well",
+      "goal": "Collect the sealed samples from the Blood draw lab and go",
+      "social": "the dispatch radio in his ear",
+      "informed": true,
+      "entry": "hall_door",
+      "weight": 1
+    },
+    {
+      "id": "lucia",
+      "name": "Lucia Ferrante",
+      "age": 45,
+      "archetype": "couriers",
+      "bio": "Delivers prescriptions to housebound customers. Tonight four people are waiting at home and one of them has already phoned twice. She likes this job and hates letting them down.",
+      "personality": "warm, brisk, not shy about asking staff to hurry",
+      "goal": "Pick up tonight's delivery bags at the Pharmacy counter",
+      "social": "her customers phone her directly",
+      "informed": true,
+      "entry": "hall_door",
+      "weight": 1
+    }
+  ],
+  "assumptions": [
+    {
+      "key": "places",
+      "value": 13,
+      "why": "The scan shows rooms and corridors of a medical office suite, not what each room is used for. Every desk, counter, room use and name here is an invented fit-out placed inside the real walls. No real tenant, clinic or pharmacy is described."
+    },
+    {
+      "key": "gates",
+      "value": 2,
+      "why": "The floor plan marks three openings to space outside the suite. The widest two are used: one beside the large open room (called the front door here) and one on the west side (called the hall door). The third is 0.63 m wide and leads to a closet-sized space, so nobody uses it. Which door is the real main entrance is not known."
+    },
+    {
+      "key": "arrivals.total",
+      "value": 200,
+      "why": "Invented, sized so the evening peak is above what the exam rooms and the pharmacy counter can clear and the Jev run stays cheap. Not measured."
+    },
+    {
+      "key": "archetypes[].share",
+      "value": "0.32 / 0.36 / 0.24 / 0.08",
+      "why": "Walk-in patients, pharmacy customers, booked appointments, couriers. Invented."
+    },
+    {
+      "key": "servers and serviceTime",
+      "value": "per place",
+      "why": "Rough outpatient numbers: about 8 to 10 minutes with a clinician, 4 minutes at triage, 4 minutes at a pharmacy counter with two staff. Not measured."
+    },
+    {
+      "key": "walkMetersPerMinute",
+      "value": 70,
+      "why": "A slow indoor walk; some people here are unwell."
+    },
+    {
+      "key": "order of visits",
+      "value": "not enforced",
+      "why": "Nothing makes a person check in before triage or see a clinician before the pharmacy, and nothing stops a second exam room after the first. The place descriptions say what comes first and that one exam room is enough; the decision model mostly follows them. Known limit."
+    },
+    {
+      "key": "cast",
+      "value": "12 people",
+      "why": "Invented people. Each simulated person copies one of them and keeps their own state."
+    },
+    {
+      "key": "check-in",
+      "value": "front desk for walk-ins, kiosks for booked visits",
+      "why": "Each group has one way to check in, so nobody checks in twice. A design choice of this fit-out."
+    }
+  ],
+  "provenance": {
+    "walls": "data",
+    "doors": "data",
+    "geo.metersPerUnit": "data",
+    "gates (door positions)": "data",
+    "places": "assumed",
+    "arrivals": "assumed",
+    "archetypes": "assumed",
+    "minds": "assumed"
+  }
+}

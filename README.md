@@ -82,6 +82,7 @@ Run as `node bin/swarm.js <command>` (or `npm run swarm -- <command>`). `<world>
 | `runs` | List recorded runs |
 | `compile "<description>"` | Write a world with Claude: the Anthropic API with `ANTHROPIC_API_KEY`, otherwise a headless Claude Code agent (`claude -p`), which draws it as a floor plan |
 | `building --model ID \| --plan-raw FILE --profile FILE` | Compose a walled building world from a Matterport floor plan and a CoStar profile |
+| `matterport-search [words] [--probe]` | Find the Matterport models the key can read by words in their names; `--probe` says which have a floor plan with walls and doors |
 | `import-matterport`, `import-mesh` | Starter worlds with walls from a Matterport model or a 3D mesh |
 | `serve [--port 4173]` | Start the local viewer |
 | `sanity` | Live Jev checks (a few hundred API calls) |

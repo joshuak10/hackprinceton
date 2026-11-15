@@ -225,6 +225,87 @@ export async function fetchModelGeometry({
   return messages.length ? { ...data, errors: messages } : data;
 }
 
+// ---------- finding a model ----------
+
+export const SEARCH_QUERY = `query swarmscopeSearchModels($q: String!, $n: Int!) {
+  models(query: $q, pageSize: $n) { totalResults results { id name } }
+}`;
+
+// Searches the models this token can read by the words in their names; "*" lists them all.
+// Returns { total, models: [{ id, name }] }: `total` is how many match, `models` the first `limit` of them.
+// The same endpoint and HTTP Basic auth as fetchModelGeometry. Credentials are never logged, and are scrubbed
+// from every error message.
+export async function searchModels({
+  query = '*', limit = 25, tokenId = envVar('MATTERPORT_API_KEY'), tokenSecret = envVar('MATTERPORT_API_TOKEN'),
+  endpoint = MATTERPORT_ENDPOINT, fetch: fetchFn = globalThis.fetch, timeoutMs = 30000
+} = {}) {
+  const q = String(query ?? '').trim() || '*';
+  const n = Math.max(1, Math.min(100, Math.round(Number(limit)) || 25));
+  if (!tokenId || !tokenSecret) {
+    throw new Error('searchModels: Matterport credentials are missing; set MATTERPORT_API_KEY (token ID) and MATTERPORT_API_TOKEN (token secret)');
+  }
+  if (typeof fetchFn !== 'function') throw new Error('searchModels: no fetch function is available');
+  const basic = Buffer.from(`${tokenId}:${tokenSecret}`, 'utf8').toString('base64');
+  const secrets = [basic, String(tokenSecret), String(tokenId)].filter(s => s.length >= 4);
+  const scrub = s => secrets.reduce((t, x) => t.split(x).join('[redacted]'), String(s ?? ''));
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res, body;
+  try {
+    res = await fetchFn(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Basic ${basic}` },
+      body: JSON.stringify({ query: SEARCH_QUERY, variables: { q, n } }),
+      signal: ctrl.signal
+    });
+    body = await readBody(res);
+  } catch (err) {
+    const why = err?.name === 'AbortError' ? `timed out after ${timeoutMs} ms` : scrub(err?.message ?? err);
+    throw new Error(`Matterport request failed: ${why}`);
+  } finally {
+    clearTimeout(timer);
+  }
+  const status = Number(res?.status) || 0;
+  const ok = typeof res?.ok === 'boolean' ? res.ok : status >= 200 && status < 300;
+  const messages = arr(body.json?.errors).map(e => scrub(typeof e === 'string' ? e : e?.message ?? JSON.stringify(e)));
+  if (!ok) {
+    const hint = status === 401 || status === 403 ? ' (check the token ID and secret)' : '';
+    const detail = messages.join('; ') || scrub(body.text).replace(/\s+/g, ' ').slice(0, 200);
+    throw new Error(`Matterport API returned HTTP ${status}${hint}${detail ? `: ${detail}` : ''}`);
+  }
+  const found = body.json?.data?.models;
+  if (!isObj(found)) throw new Error(`Matterport GraphQL error for the search "${q}": ${messages.join('; ') || 'the response has no models'}`);
+  return {
+    total: Number.isFinite(Number(found.totalResults)) ? Number(found.totalResults) : arr(found.results).length,
+    models: arr(found.results).filter(m => idStr(m?.id)).map(m => ({ id: idStr(m.id), name: typeof m.name === 'string' ? m.name : '' }))
+  };
+}
+
+// What each floor of a fetched model offers a simulation: rooms, floor area, walls and doors, in meters.
+// `usable` means there is something to walk in: at least four walls and one doorway. Many scans have rooms but no
+// wall edges, and those cannot be imported.
+export function floorSummaries(raw) {
+  const model = raw?.model ?? raw ?? {};
+  const rooms = arr(model.rooms);
+  return arr(model.floors).filter(f => rooms.some(r => r?.floor?.id === f?.id)).map(f => {
+    try {
+      const plan = extractFloorplan(raw, { floor: f.sequence });
+      const xs = plan.walls.flatMap(w => [w.x1, w.x2]), ys = plan.walls.flatMap(w => [w.y1, w.y2]);
+      const span = v => (v.length ? Math.round((Math.max(...v) - Math.min(...v)) * 10) / 10 : 0);
+      return {
+        floor: f.sequence, label: f.label ?? '', rooms: plan.rooms.length,
+        areaM2: Math.round(plan.rooms.reduce((s, r) => s + (Number(r.area) || 0), 0)),
+        walls: plan.walls.length, doors: plan.doors.length, exteriorDoors: plan.doors.filter(d => arr(d.roomIds).includes(null)).length,
+        widthM: span(xs), depthM: span(ys), warnings: plan.warnings.length,
+        usable: plan.walls.length >= 4 && plan.doors.length >= 1
+      };
+    } catch (err) {
+      return { floor: f.sequence, label: f.label ?? '', rooms: 0, areaM2: 0, walls: 0, doors: 0, exteriorDoors: 0, widthM: 0, depthM: 0, warnings: 0, usable: false, error: String(err?.message ?? err).slice(0, 200) };
+    }
+  });
+}
+
 // ---------- reading raw edges ----------
 
 function readPoint(v) {

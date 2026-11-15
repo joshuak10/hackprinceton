@@ -624,6 +624,14 @@ nav.distance(x1, y1, x2, y2)           // → walking distance, or Infinity
 
 ### 13e. Builders
 
+**Finding a building (Nov 15).** `swarm matterport-search [words] [--probe] [--limit 25] [--json]` asks Matterport which models the key can read, by the words in their names; no words lists them all.
+- `--probe` then fetches the floor plan of each of the first 15 and prints, per floor, the rooms, area, size, walls and doors, and whether it is usable (at least four walls and a doorway). Many scans have rooms but no wall edges and cannot be imported.
+- It ends with the next command: `swarm import-matterport <id> --mode visit --save-raw data/<id>.json`, then a fit-out (§14f).
+- The hackathon key reads about 15,000 models, most of them apartments. "medical office" matches 691; of the first three, one is usable: a one-floor suite of 21 rooms, 367 m², 115 walls and 19 doors.
+- **A second building made this way:** `buildings/x37LjPx62VA/fitout-evening-clinic.json` turns that suite into "Weekday evening: walk-in clinic and pharmacy (fictional fit-out)": 13 invented places, four kinds of people and a cast of 12, 200 arrivals from 5 to 8 pm. Rebuild it with `swarm fitout buildings/x37LjPx62VA/fitout-evening-clinic.json --model x37LjPx62VA --out data/worlds/weekday-evening-clinic-pharmacy.json`. The scan does not say which door is the main one, so the two entrances are a guess. One Jev run (827 requests, about 6 cents): 196 of 200 were served at least once, and the exam rooms were the bottleneck.
+- Code: `searchModels` and `floorSummaries` in `builder/matterport.js`, `cmdMatterportSearch` in `bin/swarm.js`. The same endpoint, credentials and error scrubbing as `fetchModelGeometry`. Test: `test/matterport-search.test.js`.
+- `[open]` The search is a command, not part of the dashboard: "Build this place" still draws a floor plan from words and never asks Matterport. Writing the fit-out for a found scan is still done by hand or by an agent.
+
 `builder/matterport.js`:
 ```js
 VECTOR_QUERY                                   // GraphQL query for floors, rooms, boundary edges, openings, holes

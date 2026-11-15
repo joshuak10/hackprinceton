@@ -73,6 +73,10 @@ Usage: swarm <command> [options]
                                     Place a proposed fit-out (gates and places in meters) inside a
                                     real Matterport floor plan; writes a walled, doored world (§14f).
                                     --mesh adds the solid objects in the 3D mesh at walking height (§13f)
+  matterport-search [words] [--probe] [--limit 25] [--json]
+                                    Find Matterport models the key can read, by words in their names
+                                    (no words lists them all). --probe fetches each one's floor plan and
+                                    says whether it has walls and doors to walk in (§13e)
   import-matterport <modelId> [--floor N] [--mode route|visit] [--out worlds/<slug>.json] [--save-raw data/<id>.json]
   import-matterport --from-raw <file.json> [...]
                                     Starter world with walls from a Matterport model (no API call
@@ -130,7 +134,7 @@ and writes advice.md by the same rules (.claude/commands/advise.md).`;
 class CliError extends Error {}
 
 // ---------- argument parsing ----------
-const BOOL_FLAGS = new Set(['json', 'help', 'no-record', 'record', 'force']);
+const BOOL_FLAGS = new Set(['json', 'help', 'no-record', 'record', 'force', 'probe']);
 const JEV_FLAGS = ['model', 'concurrency', 'max-requests'];
 const COMMANDS = {
   'env-build': {
@@ -168,6 +172,7 @@ const COMMANDS = {
     min: 0, max: 1, run: (a, f) => cmdImportLazy('cmdImportMatterport', a, f),
     flags: ['floor', 'mode', 'out', 'save-raw', 'from-raw']
   },
+  'matterport-search': { min: 0, max: 12, flags: ['probe', 'limit', 'json'], run: cmdMatterportSearch },
   'import-mesh': { min: 1, max: 1, flags: ['out', 'up'], run: (a, f) => cmdImportLazy('cmdImportMesh', a, f) },
   serve: { min: 0, max: 0, flags: ['port'], run: cmdServe },
   days: { min: 1, max: 1, flags: ['days', 'seeds', 'seed', 'provider', 'change', 'baseline-from', 'remember', ...JEV_FLAGS, 'out', 'json'], run: cmdDays },
@@ -846,6 +851,48 @@ function missingModule(file, err) {
     return new CliError(`${file} is not available yet (still being written). Try again once the walls track has landed.`);
   }
   return err;
+}
+
+// Find a building to simulate (§13e): the Matterport models this key can read, by words in their names, and with
+// --probe which of them have a floor plan with walls and doors. Keys come from .env.local and are never printed.
+async function cmdMatterportSearch(words, flags) {
+  const { searchModels, fetchModelGeometry, floorSummaries } = await import('../builder/matterport.js');
+  const query = words.join(' ').trim() || '*';
+  const limit = Math.min(100, intFlag(flags, 'limit', 25, 1));
+  const found = await searchModels({ query, limit });
+  const probed = [];
+  if (flags.probe) {
+    // One request per model; a scan without wall edges is common and is reported, not an error.
+    for (const m of found.models.slice(0, 15)) {
+      try {
+        probed.push({ ...m, floors: floorSummaries(await fetchModelGeometry({ modelId: m.id })) });
+      } catch (err) {
+        probed.push({ ...m, floors: [], error: String(err?.message ?? err).slice(0, 160) });
+      }
+    }
+  }
+  if (flags.json) { printJson({ query, total: found.total, models: flags.probe ? probed : found.models }); return 0; }
+  print(`${fmtInt(found.total)} model${found.total === 1 ? '' : 's'} match ${query === '*' ? 'everything this key can read' : `"${query}"`}${found.total > found.models.length ? `; the first ${found.models.length}` : ''}:`);
+  if (!flags.probe) {
+    for (const m of found.models) print(`  ${m.id}  ${m.name}`);
+    if (found.models.length) print('Add --probe to see which have a floor plan with walls and doors.');
+    return 0;
+  }
+  for (const m of probed) {
+    print(`  ${m.id}  ${m.name}`);
+    if (m.error) { print(`      could not be read: ${m.error}`); continue; }
+    if (!m.floors.length) { print('      no floor with rooms'); continue; }
+    for (const f of m.floors) {
+      print(`      floor ${f.floor}${f.label ? ` (${f.label})` : ''}: ${f.rooms} rooms, ${fmtInt(f.areaM2)} m2, ${f.widthM} x ${f.depthM} m, ${f.walls} walls, ${f.doors} doors (${f.exteriorDoors} to outside)  ${f.usable ? 'usable' : 'no walls to walk in'}`);
+    }
+  }
+  if (found.models.length > probed.length) print(`  (${found.models.length - probed.length} more not probed; narrow the words or lower --limit)`);
+  const pick = probed.find(m => m.floors.some(f => f.usable));
+  if (pick) {
+    print(`Next: swarm import-matterport ${pick.id} --mode visit --save-raw data/${pick.id}.json`);
+    print(`      then write a fit-out (docs/PROTOTYPE.md §14f) and run: swarm fitout <fitout.json> --plan-raw data/${pick.id}.json`);
+  }
+  return 0;
 }
 
 async function cmdServe(_args, flags) {
