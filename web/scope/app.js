@@ -1,9 +1,10 @@
 // Swarmscope scope display: wiring. One state object; derive → draw → panels.
 // The page opens straight into the building: the latest Jev run if there is one, otherwise the latest
-// rule-model run, paused at the start (docs/PROTOTYPE.md §9b).
-// URL params for reproducible views: ?run=<run id>&t=40&floor=0&theme=dark&autoplay=1&test=new
+// rule-model run, paused at the start (docs/PROTOTYPE.md §9b). ?case=sushi opens the sushi restaurant instead
+// (§18); Run details links to it under "Other places".
+// URL params for reproducible views: ?case=sushi&run=<run id>&t=40&floor=0&theme=dark&autoplay=1&test=new
 //   test=new ignores tests recorded earlier, so the "before a test" state can be shown again.
-import { prepareFrames, frameIndex, frameAt, agentsAt, clockText } from './lib/frames.js';
+import { prepareFrames, frameIndex, frameAt, agentsAt } from './lib/frames.js';
 import { deriveRun } from './lib/incidents.js';
 import { createHeat, calibrate, advance } from './lib/heat.js';
 import { createRenderer, readPalette, FRUSTRATION } from './lib/render.js';
@@ -13,10 +14,12 @@ import { showCard, hideCard, showProgress } from './lib/prompt.js';
 import { createTour } from './lib/tour.js';
 import { loadCases, loadConfig, loadBundle, apiHealth, apiBuildingRuns, apiLoadRun, apiStartRun, apiRunMetrics } from './lib/source.js';
 import {
-  chooseRun, findTest, staffChange, applyChange, worstLineWords, testResult, verdictWords, whySentence, busiestWindow,
-  providerWords, placeName, runLabel, changeWords, isJev
+  chooseRun, findTest, changeFor, applyChange, worstLineWords, promotionWords, testResult, testWords, verdictWords,
+  whySentence, busiestWindow, providerWords, placeName, runLabel, isJev, windowNoun
 } from './lib/verdict.js';
 import { createVerdict } from './lib/verdict-panel.js';
+import { createEditor } from './lib/edit.js';
+import { seatedPlaces, sameLayout, sameWorld, describeChanges, pairRuns, compare, compareParts } from './lib/layout.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -29,7 +32,7 @@ const TEST_SEEDS = 3;
 const STATE_WORDS = ['walking', 'in a line', 'being served', 'deciding', 'leaving'];
 
 const st = {
-  sample: null, runs: [], metas: [], bundle: null, F: null, run: null, heat: null, heatIncidents: [],
+  cases: {}, caseId: null, caseInfo: null, runs: [], metas: [], bundle: null, F: null, run: null, heat: null, heatIncidents: [],
   t: 0, playing: false, speed: 4, floor: 0, colorBy: 'state',
   layers: { heat: true, agents: true, labels: true },
   filters: { decision: true, congestion: true, complaint: true },
@@ -37,7 +40,7 @@ const st = {
   theme: params.get('theme') || store.get('scope-theme') || 'light',
   live: null, config: {}, question: '', fly: null, lastPanels: -1, dirty: true,
   rankMode: store.get('scope-rank') === 'now' ? 'now' : 'total',
-  test: null, testing: null, sessionTests: new Set(), loading: false
+  test: null, testing: null, sessionTests: new Set(), loading: false, room: null
 };
 
 // ---------- theme ----------
@@ -68,7 +71,7 @@ const T = createTimeline({
   onSpeed: s => setSpeed(s)
 });
 const tour = createTour({ root: $('tour'), body: $('tourBody'), title: $('tourTitle'), closeBtn: $('tourClose'), onClose: () => { st.dirty = true; } });
-const verdict = createVerdict($('verdict'), { onTest: runTest, onCancel: () => testAbort?.abort(), onPick: id => openRun(id, { keepTime: true }) });
+const verdict = createVerdict($('verdict'), { onTest: runTest, onCancel: () => testAbort?.abort(), onPick: id => openRun(id, { keepTime: true, side: true }) });
 
 new ResizeObserver(() => {
   R.resize();
@@ -84,7 +87,8 @@ function drawState() {
     selectedIncident: st.selectedIncident, selectedAgent: st.selectedAgent, frame: frameAt(st.F, st.t),
     nodes: st.bundle.frames.nodes || [], colorBy: st.colorBy, frustration: st.run.frustration.at,
     archIndex: st.archIndex, agentArch: st.agentArch, reducedMotion,
-    ringNode: st.ringNode, hoverNode: st.hoverNode, cursorAgent: st.cursorAgent
+    ringNode: st.ringNode, hoverNode: st.hoverNode, cursorAgent: st.cursorAgent,
+    edit: editor.active ? editor.drawState() : null
   };
 }
 
@@ -101,12 +105,32 @@ function showNotice(text) {
 }
 
 // ---------- recorded runs ----------
-const onServer = runId => st.runs.some(r => r.meta.runId === runId);
 const rawSpec = runId => st.runs.find(r => r.meta.runId === runId)?.spec || null;
+// A place's runs: a case with a runTitle (the sushi restaurant) takes the runs of the world with that title, and
+// the building takes the rest, so one place's runs never show under another.
 async function refreshRuns() {
-  const { runs, metas } = await apiBuildingRuns();
+  const c = st.caseInfo;
+  const filter = c?.runTitle ? { title: c.runTitle, max: 24 } : { notTitles: Object.values(st.cases).map(x => x.runTitle).filter(Boolean) };
+  const { runs, metas } = await apiBuildingRuns(filter);
   st.runs = runs;
   st.metas = metas;
+}
+// The world of the run on screen as the engine takes it, without a tested change: the server's copy, or the packed
+// engine run's own (the sushi restaurant's file). Null for sample data, which cannot be run again.
+function baseWorld() {
+  const meta = st.bundle.meta;
+  if (meta.link?.role === 'change') return meta.link.base ? rawSpec(meta.link.base) : null;
+  return rawSpec(meta.runId) || st.bundle.rawSpec || null;
+}
+// The run the page opens with (chooseRun). At a place drawn from a sketch, only runs of the room as sketched with
+// no offers count, and its packed Jev run counts as a recorded Jev run: null means "open the packed file".
+async function openingRun() {
+  const c = st.caseInfo;
+  if (!c?.sketch) return chooseRun(st.runs);
+  const run = chooseRun(st.runs.filter(r => sameWorld(r.spec, c.sketch)));
+  if (run && isJev(run.meta)) return run;
+  const packed = await loadBundle(c.file).catch(() => null);
+  return packed && isJev(packed.meta) ? null : run;
 }
 // Engine runs are loaded once and reused (switching between the baseline and the change).
 const runCache = new Map();
@@ -122,9 +146,11 @@ function busy(on) {
 }
 
 // Show a recorded run. keepTime keeps the slider where it is (switching between the baseline and the change).
-async function openRun(runId, { keepTime = false, autoplay = false } = {}) {
+// side: the run was picked with a toggle in the verdict panel, so a changed room's comparison stays on screen.
+async function openRun(runId, { keepTime = false, autoplay = false, side = false } = {}) {
   if (st.loading) return;
   const t = st.t, wasPlaying = st.playing;
+  if (!side) st.room = null;
   busy(true);
   pause();
   try {
@@ -149,6 +175,7 @@ function setBundle(bundle) {
   st.archIndex = new Map((bundle.spec.archetypes || []).map((a, i) => [a.id, i]));
   st.agentArch = new Map(bundle.agents.map(a => [a.id, a.archetypeId]));
   st.nodeName = id => st.run.nodes.get(id)?.name || id;
+  st.seated = seatedPlaces(bundle.spec).length > 0;
   st.floorTimes = bundle.geometry.floors.map((_, fi) => st.run.incidents.filter(it => (it.floor || 0) === fi).map(it => it.t));
   st.selectedIncident = null;
   st.cursorAgent = null;
@@ -162,7 +189,7 @@ function setBundle(bundle) {
 
   const geo = bundle.geometry, meta = bundle.meta;
   R.setBounds(geo.floors[0].bounds || geo.bounds);
-  st.place = placeName(bundle.spec?.title ? bundle.spec : { title: meta.title });
+  st.place = st.caseInfo?.placeName || placeName(bundle.spec?.title ? bundle.spec : { title: meta.title });
   $('placeTitle').textContent = st.place;
   const q = st.question ? `“${st.question}”` : meta.question || bundle.spec?.question || '';
   $('placeSub').textContent = q;
@@ -192,6 +219,12 @@ function setBundle(bundle) {
   tour.hide();
   tour.configure({ modelId: geo.source?.provider === 'matterport' ? geo.source.modelId : null, key: st.config.matterportSdkKey });
 
+  // Edit the room (§18): a world with seats, run by the engine.
+  if (editor.active) leaveEdit();
+  $('editBtn').hidden = !editor.available(bundle);
+  $('editBtn').disabled = !st.live;
+  $('editBtn').title = st.live ? 'Move, add or remove seats, then run the changed room' : 'A changed room needs the Swarmscope engine, which is not running here.';
+
   renderFloorTabs();
   renderFilters($('feedFilters'), st, toggleFilter);
   renderLegend();
@@ -214,49 +247,65 @@ function rebuildHeat() {
 // ---------- the verdict: the worst line, the one test, and what it showed ----------
 let testAbort = null;
 
+// Who decides a test's runs: the rule model for +1 staff (§9b). For the promotion, the same decision-maker as the
+// run on screen when it can (§18), because the rule model sees the lower price but not the message.
+const testProvider = change => (change.kind === 'promotion' && isJev(st.bundle.meta) && st.live?.jev ? 'jev' : 'rules');
+const byWords = provider => (provider === 'jev' ? 'Jev' : 'the rule model');
+const wordsFor = (change, provider) => testWords(change, {
+  by: byWords(provider), seeds: TEST_SEEDS, noun: windowNoun(st.bundle.meta.clockStart, st.run.duration)
+});
+const sameProvider = p => (p === 'replay' ? 'jev' : p);
+// A run of the sushi restaurant whose seats differ from the room as sketched (§18).
+const changedRoom = bundle => Boolean(st.caseInfo?.sketch && bundle.rawSpec && !sameLayout(st.caseInfo.sketch, bundle.rawSpec));
+
 function refreshVerdict() {
   const bundle = st.bundle, meta = bundle.meta;
   const timing = { clockStart: meta.clockStart, duration: st.run.duration };
-  const recorded = onServer(meta.runId);
   if (st.testing) {
-    st.ringNode = st.testing.change.nodeId;
-    verdict.running(st.testing);
+    st.ringNode = st.testing.change.nodeId || null;
+    showRunning();
     return;
   }
-  let test = recorded ? findTest(st.metas, { runId: meta.runId, specHash: meta.specHash }, TEST_SEEDS) : null;
+  if (changedRoom(bundle) || (st.room && st.room.sketched === meta.runId)) { refreshRoom(bundle); return; }
+  let test = st.metas.length ? findTest(st.metas, { runId: meta.runId, specHash: meta.specHash }, TEST_SEEDS) : null;
   if (test && params.get('test') === 'new' && !st.sessionTests.has(test.id)) test = null;
   st.test = test;
-  const change = test?.change || staffChange(bundle.spec, bundle.metrics);
+  const change = test?.change || changeFor(st.caseInfo, bundle.spec, bundle.metrics);
   st.ringNode = change?.nodeId || null;
   st.dirty = true;
+  if (!change) { verdict.message('This run has no counters with a line, so there is no change to test.'); return; }
   if (!test) {
-    const words = worstLineWords(bundle.spec, bundle.metrics, timing);
+    const words = change.kind === 'promotion' ? promotionWords(bundle.spec, bundle.metrics, change, timing) : worstLineWords(bundle.spec, bundle.metrics, timing);
     if (!words) { verdict.message('This run has no counters with a line, so there is no change to test.'); return; }
     verdict.before({
-      words, change, canTest: recorded && !!st.live,
-      cannotWhy: 'This is sample data, so a change cannot be tested on it. Start the Swarmscope engine and record a run to test one.',
+      words, test: wordsFor(change, testProvider(change)), canTest: Boolean(st.live && baseWorld()),
+      cannotWhy: providerWords(meta) === 'Sample data'
+        ? 'This is sample data, so a change cannot be tested on it. Start the Swarmscope engine and record a run to test one.'
+        : 'The Swarmscope engine is not running here, so a change cannot be tested on this recorded run.',
       note: isJev(meta) ? 'The numbers above are from the Jev run on screen.' : ''
     });
     return;
   }
 
-  // Both sides' numbers for every seed, and the baseline line over time for "busiest from … to …".
+  // Both sides' numbers for every seed, and for +1 staff the baseline line over time for "busiest from … to …".
   const pair = test.pairs.find(p => p.baseline === meta.runId || p.change === meta.runId) || test.pairs[0];
-  verdict.message(`Loading the test of ${changeWords(change)} at ${change.nodeName}…`);
+  const provider = isJev(st.metas.find(m => m.runId === pair.baseline)) ? 'jev' : 'rules';
+  const words = wordsFor(change, provider);
+  verdict.message(words.loading);
   Promise.all([
     Promise.all(test.pairs.map(async p => ({ before: await apiRunMetrics(p.baseline), after: await apiRunMetrics(p.change) }))),
-    loadEngineRun(pair.baseline)
+    change.kind === 'staff' ? loadEngineRun(pair.baseline) : null
   ]).then(([metrics, base]) => {
     if (st.bundle !== bundle || st.testing) return;
     const result = testResult(metrics, change);
-    const k = (base.frames.services || []).indexOf(change.nodeId);
+    const k = base ? (base.frames.services || []).indexOf(change.nodeId) : -1;
     const window = k >= 0 ? busiestWindow(base.frames.list.map(f => f.t), base.frames.list.map(f => f.q?.[k] || 0)) : null;
     const shown = meta.runId === pair.baseline || meta.runId === pair.change;
     verdict.after({
-      words: verdictWords(result, change, timing), rows: result.rows, runs: result.runs, change,
+      words: verdictWords(result, change, { ...timing, by: byWords(provider) }), rows: result.rows, runs: result.runs,
       why: whySentence(result, change, { clockStart: meta.clockStart, window }),
       toggle: {
-        baseline: pair.baseline, change: pair.change, selected: meta.runId,
+        baseline: pair.baseline, change: pair.change, labels: words.toggle, selected: meta.runId,
         note: shown ? '' : `The map shows the ${providerWords(meta) === 'Jev' ? 'Jev run' : 'run you opened'}. Pick a side to watch the test; the time on the slider is kept.`
       }
     });
@@ -267,36 +316,66 @@ function refreshVerdict() {
   });
 }
 
-// Baseline and +1 staff, 3 seeds each, with the rule model. Every run carries the link the server stores.
+function showRunning() {
+  const { change, provider, done, total } = st.testing;
+  const words = wordsFor(change, provider);
+  verdict.running({ title: words.title, step: words.step(Math.min(total, done + 1), total, done % 2 === 1), done, total });
+}
+
+// A changed room against the room as sketched, on the same seeds and decision-maker (§18), with a toggle between
+// the two runs of the seed on screen. st.room keeps the pair while its sketched side is on the map.
+async function refreshRoom(bundle) {
+  const c = st.caseInfo;
+  const mine = st.room?.sketched === bundle.meta.runId ? st.room.spec : bundle.rawSpec;
+  st.ringNode = null;
+  verdict.message('Comparing your room with the room as sketched…');
+  const provider = sameProvider(bundle.meta.provider);
+  const wanted = st.runs.filter(r => sameProvider(r.meta.provider) === provider && (sameWorld(r.spec, c.sketch) || sameWorld(r.spec, mine)));
+  const runs = await Promise.all(wanted.map(async r => ({ ...r, metrics: await apiRunMetrics(r.meta.runId).catch(() => null) })));
+  if (st.bundle !== bundle) return;
+  const pairs = pairRuns(c.sketch, mine, runs);
+  const pair = pairs.find(p => p.after.meta.runId === bundle.meta.runId || p.before.meta.runId === bundle.meta.runId);
+  st.room = pair ? { sketched: pair.before.meta.runId, mine: pair.after.meta.runId, spec: mine } : null;
+  const parts = compareParts(compare(pairs, provider));
+  const changes = describeChanges(c.sketch, mine).join('. ');
+  verdict.room({
+    headline: parts?.headline || 'This is a changed room.',
+    detail: parts?.detail || 'There is no run of the room as sketched with the same decision-maker to compare it with.',
+    change: changes ? `Your change: ${changes}. Decided by ${byWords(provider)}.` : '',
+    toggle: st.room && { ...st.room, selected: bundle.meta.runId }
+  });
+}
+
+// The baseline and the change, 3 seeds each: +1 staff with the rule model, the promotion with the run's own
+// decision-maker. Every run carries the link the server stores.
 async function runTest() {
   if (st.testing || !st.bundle) return;
   const meta = st.bundle.meta;
-  // The world to test is the baseline's: for a run that already carries the change, its base run's world.
-  const spec = rawSpec(meta.link?.role === 'change' && meta.link.base ? meta.link.base : meta.runId);
-  const change = spec && staffChange(spec, st.bundle.metrics);
+  const spec = baseWorld();
+  const change = spec && changeFor(st.caseInfo, spec, st.bundle.metrics);
   if (!spec || !change) return;
+  const provider = testProvider(change), words = wordsFor(change, provider);
   const id = `t${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const seed0 = Number.isInteger(meta.seed) ? meta.seed : 7;
-  const total = TEST_SEEDS * 2;
-  st.testing = { change, done: 0, total };
+  st.testing = { change, provider, done: 0, total: TEST_SEEDS * 2 };
   testAbort = new AbortController();
   const signal = testAbort.signal;
   refreshVerdict();
-  const step = () => { st.testing.done++; if (st.testing) verdict.running(st.testing); };
+  const step = () => { st.testing.done++; showRunning(); };
   try {
     const changed = applyChange(spec, change);
     let first = null;
     for (let k = 0; k < TEST_SEEDS; k++) {
-      const base = await apiStartRun({ spec, provider: 'rules', seed: seed0 + k, link: { test: id, role: 'baseline', change }, signal });
+      const base = await apiStartRun({ spec, provider, seed: seed0 + k, link: { test: id, role: 'baseline', change }, signal });
       step();
-      await apiStartRun({ spec: changed, provider: 'rules', seed: seed0 + k, link: { test: id, role: 'change', base, change }, signal });
+      await apiStartRun({ spec: changed, provider, seed: seed0 + k, link: { test: id, role: 'change', base, change }, signal });
       step();
       first = first || base;
     }
     st.sessionTests.add(id);
     await refreshRuns();
     st.testing = null;
-    announce(`The test of ${changeWords(change)} at ${change.nodeName} is done.`);
+    announce(words.done);
     // A rule-model run on screen is the same simulation as the test's baseline with its seed: show that one,
     // so the Baseline side of the toggle is the run on the map. A Jev run stays on screen.
     const now = st.bundle.meta;
@@ -309,7 +388,7 @@ async function runTest() {
       refreshVerdict();
       announce('The test was cancelled.');
     } else {
-      verdict.failed({ change, message: `${err.message} Nothing on screen has changed.` });
+      verdict.failed({ again: words.again, message: `${err.message} Nothing on screen has changed.` });
     }
   } finally {
     testAbort = null;
@@ -320,7 +399,7 @@ async function runTest() {
 async function newRun(provider, question) {
   if (st.loading || !st.bundle) return;
   const meta = st.bundle.meta;
-  const spec = rawSpec(meta.link?.role === 'change' && meta.link.base ? meta.link.base : meta.runId);
+  const spec = baseWorld();
   if (!spec) return;
   hideCard($('askCard'));
   busy(true);
@@ -351,10 +430,11 @@ $('askForm').addEventListener('submit', e => {
   if (!st.bundle) return;
   const text = $('askIn').value.trim();
   const cancel = () => { hideCard($('askCard')); $('askIn').focus(); };
-  if (!onServer(st.bundle.meta.runId) || !st.live) {
+  if (!baseWorld() || !st.live) {
+    const sample = providerWords(st.bundle.meta) === 'Sample data';
     showCard($('askCard'), {
-      title: 'This page is showing sample data',
-      lines: ['A new simulation needs the Swarmscope engine, which is not running here. You can still replay the sample.'],
+      title: sample ? 'This page is showing sample data' : 'This page is showing a recorded run',
+      lines: [`A new simulation needs the Swarmscope engine, which is not running here. You can still replay the ${sample ? 'sample' : 'run'}.`],
       onCancel: cancel
     });
     return;
@@ -407,7 +487,8 @@ function renderPanels() {
   const ps = {
     geometry: st.bundle.geometry, frame: frameAt(st.F, st.t), visibleAgents: st.allAgents, t: st.t,
     incidents: st.run.incidents, filters: st.filters, selectedIncident: st.selectedIncident, floor: st.floor,
-    bottlenecks: st.run.bottlenecks.at(fi, st.t), bottlenecksNow: st.run.bottlenecks.now(fi), rankMode: st.rankMode
+    bottlenecks: st.run.bottlenecks.at(fi, st.t), bottlenecksNow: st.run.bottlenecks.now(fi), rankMode: st.rankMode,
+    seated: st.seated
   };
   renderCounters($('counters'), ps);
   updateFloorCounts();
@@ -425,8 +506,14 @@ function inspectorState() {
     visibleAgents: st.allAgents || agentsAt(st.F, st.t), archNames: st.archNames, t: st.t, clockStart: st.bundle.meta.clockStart
   };
 }
+// Run details: the recorded runs of this place (a changed room says so), and the other places the display opens.
 function drawDrawer() {
-  renderDrawer($('drawerBody'), { bundle: st.bundle, decisions: st.bundle.decisions, geometry: st.bundle.geometry, runs: st.runs, place: st.place },
+  const sketch = st.caseInfo?.sketch;
+  const runs = st.runs.map(r => (sketch && !sameLayout(r.spec, sketch) && !runLabel(r.meta)
+    ? { ...r, label: `Changed room, ${seatedPlaces(r.spec).reduce((k, p) => k + p.seats.length, 0)} seats` } : r));
+  const places = Object.values(st.cases).filter(c => c.id !== st.caseId)
+    .map(c => ({ label: c.placeName || c.label, question: c.question, href: c.id === 'building' ? './' : `./?case=${encodeURIComponent(c.id)}` }));
+  renderDrawer($('drawerBody'), { bundle: st.bundle, decisions: st.bundle.decisions, geometry: st.bundle.geometry, runs, place: st.place, places },
     runId => openRun(runId));
 }
 
@@ -576,13 +663,25 @@ $('resetView').addEventListener('click', () => {
 
 const map = $('map');
 let drag = null;
+let seatDrag = false;
+const mapPoint = e => { const r = map.getBoundingClientRect(); return R.toMap(e.clientX - r.left, e.clientY - r.top); };
+const seatReach = () => 16 / R.scale();          // a seat is grabbed within 16 px of its middle
+const endSeatDrag = () => { seatDrag = false; editor.pointerUp(); map.classList.remove('grabbing'); };
 map.addEventListener('pointerdown', e => {
   if (!st.bundle) return;
+  // Edit the room: a press on a seat drags it; anywhere else pans the map as usual.
+  if (editor.active && editor.pointerDown(...mapPoint(e), seatReach())) {
+    seatDrag = true;
+    map.setPointerCapture(e.pointerId);
+    map.classList.add('grabbing');
+    return;
+  }
   drag = { x: e.clientX, y: e.clientY, vx: R.view.x, vy: R.view.y, moved: false };
   map.setPointerCapture(e.pointerId);
 });
 map.addEventListener('pointermove', e => {
   if (!st.bundle) return;
+  if (seatDrag) { editor.pointerMove(...mapPoint(e)); return; }
   if (drag) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; map.classList.add('dragging'); }
@@ -595,6 +694,11 @@ map.addEventListener('pointermove', e => {
     }
     return;
   }
+  if (editor.active) {
+    const [mx, my] = mapPoint(e);
+    map.classList.toggle('grab', seatedPlaces(editor.spec).some(p => p.seats.some(q => Math.hypot(q.x - mx, q.y - my) <= seatReach())));
+    return;
+  }
   const r = map.getBoundingClientRect();
   const x = e.clientX - r.left, y = e.clientY - r.top;
   const ds = drawState();
@@ -604,12 +708,15 @@ map.addEventListener('pointermove', e => {
   if (node !== st.hoverNode) { st.hoverNode = node; st.dirty = true; }
 });
 map.addEventListener('pointerleave', () => { if (st.hoverNode) { st.hoverNode = null; st.dirty = true; } });
+map.addEventListener('pointercancel', () => { if (seatDrag) endSeatDrag(); drag = null; map.classList.remove('dragging'); });
 map.addEventListener('pointerup', e => {
+  if (seatDrag) { endSeatDrag(); return; }
   if (!st.bundle || !drag) return;
   const wasDrag = drag.moved;
   drag = null;
   map.classList.remove('dragging');
   if (wasDrag) return;
+  if (editor.active) { editor.select(null); return; }      // a click on the floor lets go of the selected seat
   const r = map.getBoundingClientRect();
   const hit = R.hit(drawState(), e.clientX - r.left, e.clientY - r.top);
   if (hit?.type === 'agent') selectAgent(hit.id);
@@ -640,7 +747,7 @@ function setCursor(id) {
   announce(`${a?.personaName || `Person ${id}`}, ${STATE_WORDS[now?.s] || 'on the map'}. Press Enter to see what they did.`);
 }
 map.addEventListener('keydown', e => {
-  if (!st.bundle) return;
+  if (!st.bundle || editor.active) return;          // while editing, the editor takes the keys (document handler)
   const people = st.layers.agents ? R.lastAgents : [];
   const cur = people.find(a => a.id === st.cursorAgent);
   if (e.key === 'Enter') {
@@ -756,6 +863,11 @@ document.addEventListener('keydown', e => {
   // Enter activate that control, so Space doesn't also toggle playback; the arrow keys still step the replay.
   const typing = e.target.closest('input:not([type="range"]), select, textarea, [role="tab"], [contenteditable="true"]');
   if (e.key === ' ' && e.target.closest('button, a, [role="button"], input:not([type="range"])')) return;
+  // Edit the room: the editor takes Escape, Delete and the arrow keys; nothing drives the replay meanwhile.
+  if (editor.active && $('askCard').hidden && $('drawer').hidden && $('viewMenu').hidden) {
+    if (!typing && editor.key(e)) e.preventDefault();
+    return;
+  }
   if (e.key === 'Escape') {
     if (!$('viewMenu').hidden) { setViewMenu(false); $('viewBtn').focus(); }
     else if (!$('askCard').hidden) { hideCard($('askCard')); $('askIn').focus(); }
@@ -810,6 +922,74 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+// ---------- edit the room (§18) ----------
+const editor = createEditor({ panel: $('editPanel'), onChange: () => { st.dirty = true; }, onRun: runEdited, onClose: leaveEdit });
+
+// The edit panel takes the side column, and the map shows only the room and its seats.
+function enterEdit() {
+  if (!st.bundle || editor.active || !st.live || !st.bundle.rawSpec) return;
+  pause();
+  if (st.selectedAgent != null) closeInspector();
+  if (st.selectedIncident) closeCallout();
+  setViewMenu(false);
+  editor.open({ spec: st.bundle.rawSpec, sketch: st.caseInfo?.sketch || st.bundle.rawSpec, hasJev: Boolean(st.live.jev) });
+  setEditing(true);
+  $('editPanel').querySelector('button')?.focus();
+}
+function leaveEdit() {
+  const had = $('editPanel').contains(document.activeElement);
+  editor.close();
+  setEditing(false);
+  st.lastPanels = -1;
+  if (st.bundle) update();
+  if (had) $('editBtn').focus();
+}
+function setEditing(on) {
+  $('side').classList.toggle('editing', on);
+  $('editBtn').setAttribute('aria-pressed', String(on));
+  $('editBtn').textContent = on ? 'Stop editing' : 'Edit the room';
+  $('legendMini').hidden = on;
+  $('timeline').hidden = on;
+  map.classList.toggle('editing', on);
+  if (!on) map.classList.remove('grab', 'grabbing');
+  st.dirty = true;
+}
+$('editBtn').addEventListener('click', () => (editor.active ? leaveEdit() : enterEdit()));
+
+// Run the edited room on the seeds the room as sketched already has runs of with this decision-maker (three at
+// most), one after another, then open the first new run. A seed with no run of the sketched room gets one first.
+async function runEdited(provider, spec) {
+  const sketch = editor.sketch;
+  const have = [...new Set(st.runs.filter(r => sameProvider(r.meta.provider) === provider && sameWorld(r.spec, sketch)).map(r => r.meta.seed))]
+    .filter(Number.isFinite).sort((a, b) => a - b).slice(0, TEST_SEEDS);
+  const seeds = have.length ? have : [Number.isInteger(st.bundle.meta.seed) ? st.bundle.meta.seed : 7];
+  const jobs = [];
+  for (const seed of seeds) {
+    if (!have.includes(seed)) jobs.push({ spec: sketch, seed, what: 'the room as sketched' });
+    jobs.push({ spec, seed, what: 'your room', mine: true });
+  }
+  const p = showProgress($('progress'), [...jobs.map((j, i) => ({ label: `Run ${i + 1} of ${jobs.length}: ${j.what}` })), { label: 'Opening the replay' }],
+    provider === 'jev' ? 'Jev decides for every person. This takes about 20 seconds.' : 'The rule model decides for every person. This takes a few seconds.');
+  let first = null;
+  try {
+    for (let i = 0; i < jobs.length; i++) {
+      const j = jobs[i];
+      p.set(i);
+      const id = await apiStartRun({
+        spec: j.spec, provider, seed: j.seed,
+        onStatus: s => p.set(i, `Run ${i + 1} of ${jobs.length}: ${j.what}, ${Math.round(((s.t || 0) / (s.duration || 1)) * 100)}% simulated`)
+      });
+      if (j.mine && first == null) first = id;
+    }
+    p.set(jobs.length);
+    await refreshRuns();
+  } finally {
+    p.done();
+  }
+  leaveEdit();
+  await openRun(first, { autoplay: true });
+}
+
 // ---------- start ----------
 function showEmpty(text) {
   $('placeTitle').textContent = 'Swarmscope';
@@ -823,16 +1003,21 @@ async function start() {
   setSpeed(4);
   requestAnimationFrame(loop);
   const [cases, config, live] = await Promise.all([loadCases(), loadConfig(), apiHealth()]);
-  st.sample = cases.building || null;
+  st.cases = cases;
+  st.caseId = cases[params.get('case')] ? params.get('case') : cases.building ? 'building' : Object.keys(cases)[0] || null;
+  st.caseInfo = cases[st.caseId] || null;
   st.config = config;
   st.live = live;
+  // A place drawn from a sketch (the sushi restaurant): its packed file's world is the room as sketched, which
+  // every changed room is compared with.
+  if (st.caseInfo?.runTitle) st.caseInfo.sketch = await loadBundle(st.caseInfo.file).then(b => b.rawSpec || null).catch(() => null);
   let problem = '';
   if (live) await refreshRuns().catch(err => { problem = `The recorded runs could not be listed: ${err.message}`; });
   const want = params.get('run');
-  const first = (want && st.runs.find(r => r.meta.runId === want)) || chooseRun(st.runs);
+  const first = (want && st.runs.find(r => r.meta.runId === want)) || await openingRun();
   try {
     if (first) setBundle(await loadEngineRun(first.meta.runId));
-    else if (st.sample) setBundle(await loadBundle(st.sample.file));
+    else if (st.caseInfo) setBundle(await loadBundle(st.caseInfo.file));
     else { showEmpty('No simulation has been recorded yet. Record a run of the building with the Swarmscope engine, then reload this page.'); return; }
   } catch (err) {
     showEmpty(`The simulation could not be opened: ${err.message}`);

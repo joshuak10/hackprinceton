@@ -8,6 +8,7 @@
   "clockStart": 690,
   "duration": 135,
   "walkMetersPerMinute": 75,
+  "waiting": { "lineShows": "people" },
   "arrivals": {
     "total": 312,
     "start": 0,

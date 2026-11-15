@@ -1,6 +1,6 @@
 # Suggestions after a run
 
-> **Nov 14 (spec v0.27):** the display no longer has a Suggestions button. Its verdict panel tests one fixed change (+1 staff at the worst line) with the rule model on 3 seeds and shows whether it helped. It does not call the advisor or the quick read described below. See docs/PROTOTYPE.md §9b. The rest of this page describes the server side, which is unchanged, and how the display used it before v0.26.
+> **Nov 14 (spec v0.27):** the display no longer has a Suggestions button. Its verdict panel tests one fixed change (+1 staff at the worst line; a promotion at the sushi restaurant) on 3 seeds and shows whether it helped. It does not call the advisor or the quick read described below. See docs/PROTOTYPE.md §9b. The rest of this page describes the server side, which is unchanged, and how the display used it before v0.26.
 
 The display's **Suggestions** button (top bar) explains what to change for the run on screen. Nothing is requested until someone clicks it. It then shows, in order of preference:
 

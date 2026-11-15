@@ -132,7 +132,7 @@ node bin/swarm.js run data/worlds/floor1-lunch.json --provider jev      # or --p
 # 3. Watch it: open http://127.0.0.1:4173/scope/ (it opens the latest run of the building)
 node bin/swarm.js serve
 # 4. Ask what to change: the advisor tests each proposed change on the same seeds (needs ANTHROPIC_API_KEY,
-#    or run /advise in Claude Code). The display's Suggestions button shows its advice.
+#    or run /advise in Claude Code). The scope display does not show this advice; its verdict panel tests one fixed change.
 node bin/swarm.js advise data/worlds/floor1-lunch.json --question "Where do people get stuck at lunch, and what helps most?"
 ```
 

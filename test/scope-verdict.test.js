@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chooseRun, findTest, staffChange, applyChange, worstLineWords, range, rangeWords, testResult, cellWords,
-  verdictWords, whySentence, busiestWindow, providerWords, placeName, runLabel, changeWords, windowWords
+  verdictWords, whySentence, busiestWindow, providerWords, placeName, runLabel, changeWords, windowWords,
+  changeFor, promotionChange, promotionWords, testWords, windowNoun
 } from '../web/scope/lib/verdict.js';
 import { groupFeed } from '../web/scope/lib/incidents.js';
 import { timeTicks } from '../web/scope/lib/timeline.js';
@@ -74,7 +75,7 @@ const METRICS = { abandoned: 30, abandonRate: 0.25, avgWait: 6, served: 90, node
 ] };
 
 test('the change is one more staff at the place with the worst bottleneck score', () => {
-  assert.deepEqual(staffChange(SPEC, METRICS), { nodeId: 'cafe', nodeName: 'Cafe', from: 1, to: 2 });
+  assert.deepEqual(staffChange(SPEC, METRICS), { kind: 'staff', nodeId: 'cafe', nodeName: 'Cafe', from: 1, to: 2 });
   // No metrics: the first place with a line. No places: no change to test.
   assert.equal(staffChange(SPEC, null).nodeId, 'deli');
   assert.equal(staffChange({ nodes: [SPEC.nodes[0]] }, METRICS), null);
@@ -251,3 +252,90 @@ test('time ticks sit on round clock minutes and thin out when there is no room',
   assert.deepEqual(timeTicks(700, 30, 8).map(t => `${t.t}=${t.label}`), ['5=11:45', '20=12:00']);
   assert.deepEqual(timeTicks(0, 0), []);
 });
+
+// ---------- the sushi restaurant's change: a promotion (§18) ----------
+
+const SUSHI = { title: 'Friday dinner', nodes: [
+  { id: 'door', name: 'Street door', kind: 'gate' },
+  { id: 'counter', name: 'Counter seats', kind: 'service', servers: 4, seats: [[1, 1], [1, 2], [1, 3], [1, 4]] },
+  { id: 'table', name: 'Table', kind: 'service', servers: 4, seats: [[5, 1], [6, 1], [5, 2], [6, 2]] }
+], offers: [{ id: 'other', text: 'Free tea' }] };
+const PROMO = promotionChange();
+const dinner = { clockStart: 1080, duration: 150 };
+
+test('a place that asks for it tests a promotion, not +1 staff; its seats are one staff each', () => {
+  assert.deepEqual(changeFor({ suggestion: 'promotion' }, SUSHI, null), { kind: 'promotion', off: 0.2 });
+  assert.equal(changeFor({}, SUSHI, null).kind, 'staff');
+  assert.equal(changeFor(null, SPEC, METRICS).nodeId, 'cafe');
+  assert.equal(changeFor({ suggestion: 'promotion' }, { nodes: [SUSHI.nodes[0]] }, null), null);
+  // The promotion is three offers: the message for everyone and the discount at each place. Other offers stay.
+  const out = applyChange(SUSHI, PROMO);
+  assert.deepEqual(out.offers.map(o => [o.id, o.place ?? null, o.priceOff ?? 0]),
+    [['other', null, 0], ['promotion', null, 0], ['promotion_counter', 'counter', 0.2], ['promotion_table', 'table', 0.2]]);
+  assert.equal(out.offers[1].text, 'Promotion today: 20% off everything for everyone who comes in.');
+  assert.equal(SUSHI.offers.length, 1, 'the input is not changed');
+  assert.equal(applyChange(out, PROMO).offers.length, 4, 'applying it twice does not add it twice');
+  assert.equal(changeWords(PROMO), 'The promotion');
+  assert.equal(runLabel({ link: { role: 'change', change: PROMO } }), 'Promotion, 20% off');
+  assert.equal(runLabel({ link: { role: 'baseline', change: PROMO } }), 'Baseline');
+});
+
+test('before the promotion test: how many people ate, and why not more', () => {
+  assert.deepEqual(promotionWords(SUSHI, { spawned: 36, served: 22, avgWait: 9.625 }, PROMO, dinner), {
+    headline: '22 of 36 people finished a meal from 6:00 pm to 8:30 pm.',
+    why: 'The room has 8 seats, and the wait for one averaged 9.6 min.',
+    offer: 'Try a promotion: 20% off everything today, told to everyone who comes in. It gives people a reason to wait, but adds no seats.'
+  });
+  assert.equal(promotionWords(SUSHI, { spawned: 10, served: 10, avgWait: 1 }, PROMO, dinner).headline, 'All 10 people finished a meal from 6:00 pm to 8:30 pm.');
+  assert.equal(promotionWords(SUSHI, {}, PROMO, dinner), null);
+  assert.equal(windowNoun(1080, 150), 'evening');
+  assert.equal(windowNoun(690, 135), 'lunch');
+});
+
+// Seed by seed, people who ate: 22 → 24, 24 → 24, 22 → 25; walk-aways 18 → 12 on average and the wait rises.
+const night = (served, lost, wait, told) => ({ spawned: 36, served, abandoned: lost, avgWait: wait,
+  nodes: [{ id: 'counter', name: 'Counter seats', served: served - 10 }, { id: 'table', name: 'Table', served: 10 }],
+  offers: told == null ? [] : [{ id: 'promotion', reached: told }] });
+const NIGHTS = [
+  { before: night(22, 18, 9.6), after: night(24, 12, 12.3, 36) },
+  { before: night(24, 16, 9.0), after: night(24, 13, 11.0, 36) },
+  { before: night(22, 20, 10.1), after: night(25, 11, 12.9, 36) }
+];
+
+test('the promotion\'s result counts customers kept as more people who ate, and says who decided', () => {
+  const r = testResult(NIGHTS, PROMO);
+  assert.deepEqual(r.kept, [2, 0, 3]);
+  assert.deepEqual(r.rows.map(x => [x.label, cellWords(x.kind, x.before), cellWords(x.kind, x.after), cellWords(x.kind, x.change, true), x.strong]), [
+    ['Finished a meal', '23', '24', '+1', true],
+    ['Walked away', '18', '12', '−6', false],
+    ['Average wait', '9.6 min', '12.1 min', '+2.5 min', false],
+    ['Meals at Counter seats', '13', '14', '+1', false],
+    ['Meals at Table', '10', '10', 'no change', false],
+    ['Told about the promotion', '0', '36', '+36', false]
+  ]);
+  assert.deepEqual(verdictWords(r, PROMO, { ...dinner, by: 'Jev' }), {
+    tone: 'helped', headline: 'The promotion kept up to 3 more customers.',
+    detail: 'Up to 3 more people finished a meal from 6:00 pm to 8:30 pm. Tested with Jev, 3 runs each way.'
+  });
+  // With the rule model, the verdict says what that model cannot see.
+  assert.match(verdictWords(r, PROMO, dinner).detail, /Tested with the rule model, 3 runs each way\. It sees the lower price, not the message\.$/);
+  assert.equal(verdictWords({ runs: 3, kept: [0, 0, 0] }, PROMO, dinner).headline, 'The promotion changed nothing.');
+  assert.match(verdictWords({ runs: 3, kept: [-1, -1, -1] }, PROMO, dinner).detail, /^1 fewer person finished a meal/);
+  assert.equal(whySentence(r, PROMO),
+    'People waited for a seat instead of leaving: walk-aways fell from 18 to 12, and the average wait rose from 9.6 min to 12 min. It adds no seats, so the room cannot seat many more.');
+  const same = testResult([{ before: night(22, 18, 9.6), after: night(22, 18, 9.6, 36) }], PROMO);
+  assert.equal(whySentence(same, PROMO), 'As many people gave up: 18 walk-aways with and without it.');
+});
+
+test('the words around a test name the change, the decision-maker and the time it takes', () => {
+  const staff = testWords(STAFF, { noun: 'lunch' });
+  assert.equal(staff.action, 'Test +1 staff here');
+  assert.equal(staff.plan, 'Plays the same lunch 3 times with 1 staff and 3 times with 2, using the rule model. It takes a few seconds.');
+  assert.equal(staff.step(2, 6, true), 'Run 2 of 6: the lunch with 2 staff.');
+  assert.deepEqual(staff.toggle, ['Baseline (1 staff)', '+1 staff']);
+  const promo = testWords(PROMO, { by: 'Jev', noun: 'evening' });
+  assert.equal(promo.plan, 'Plays the same evening 3 times as it is and 3 times with the promotion, decided by Jev. It takes about a minute.');
+  assert.equal(promo.step(1, 6, false), 'Run 1 of 6: the evening as it is.');
+  assert.match(testWords(PROMO).plan, /decided by the rule model, which sees the lower price but not the message\./);
+});
+

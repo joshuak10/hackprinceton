@@ -4,7 +4,7 @@
 // module fails to load, and the optional Claude SDK behind compile loads only when asked for.
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
@@ -50,11 +50,13 @@ async function lib(path) {
   }
 }
 
-export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd() } = {}) {
+// `roomFetch` stands in for the network on the Ask-the-room route, so its live path can be tested without Jev.
+export function startServer({ port = 4173, host = '127.0.0.1', root = process.cwd(), roomFetch } = {}) {
   const base = resolve(root);
   const ctx = {
     worldsDir: join(base, 'worlds'), runsDir: join(base, 'runs'), wallsFile: join(base, 'engine', 'walls.js'),
-    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null
+    loopback: LOOPBACK.has(host), jobs: new Map(), jevJob: null,
+    roomDir: join(base, 'data', 'room'), roomRecord: null, roomSaved: 0, roomChain: Promise.resolve(), roomWaiting: 0, roomFetch
   };
   ctx.feedback = createAnalysisService({ runsDir: ctx.runsDir, webDir: WEB_DIR });
   const server = http.createServer((req, res) => {
@@ -93,7 +95,9 @@ const ROUTES = [
   ['GET', ['runs', ':id', 'status'], getStatus],
   ['GET', ['runs', ':id', 'agents', ':agentId'], getAgent],
   ['GET', ['runs', ':id', 'advice'], getAdvice],
-  ['GET', ['runs', ':id', ':file'], getRunFile]
+  ['GET', ['runs', ':id', ':file'], getRunFile],
+  ['GET', ['room'], getRoom],
+  ['POST', ['room', 'ask'], postRoomAsk]
 ];
 
 async function handle(ctx, req, res) {
@@ -369,6 +373,105 @@ async function getAdvice(ctx, req, res, { id }) {
   send(res, 200, { advice, markdown: (await readText('advice.md')) ?? '' });
 }
 
+// ---------- ask the room (docs/PROTOTYPE.md §17) ----------
+
+const ROOM_WORLD = 'alder-pine-cafe.json';
+// Recorded Jev answers for the example world, so the page works with no key and no network.
+const ROOM_SEED = join(WEB_DIR, 'room', 'seed-record.json');
+
+// Recorded answers by request hash: the committed seed first, then this machine's own (data/room/, never committed).
+async function roomRecord(ctx) {
+  if (ctx.roomRecord) return ctx.roomRecord;
+  const record = new Map();
+  for (const file of [ROOM_SEED, join(ctx.roomDir, 'record.json')]) {
+    try {
+      for (const [hash, value] of Object.entries(JSON.parse(await readFile(file, 'utf8')))) if (value && value.answers) record.set(hash, value);
+    } catch (err) {
+      if (err.code !== 'ENOENT' && !(err instanceof SyntaxError)) throw err;
+    }
+  }
+  ctx.roomRecord = record;
+  ctx.roomSaved = record.size;
+  return record;
+}
+
+async function saveRoomRecord(ctx) {
+  const record = ctx.roomRecord;
+  if (!record || record.size === ctx.roomSaved) return;
+  await mkdir(ctx.roomDir, { recursive: true });
+  await writeFile(join(ctx.roomDir, 'record.json'), JSON.stringify(Object.fromEntries(record)));
+  ctx.roomSaved = record.size;
+}
+
+const roomWorldName = value => {
+  if (value == null || value === '') return ROOM_WORLD;
+  if (typeof value !== 'string') throw new HttpError(400, 'The world name must be text.');
+  return safeName(value, 'world name');
+};
+
+// One ask at a time, so a second browser cannot multiply the questions sent to Jev. A few more wait their turn
+// (answers on record come back in milliseconds); beyond that the caller is told to try again.
+const ROOM_WAITING_MAX = 4;
+async function roomTurn(ctx, run) {
+  if (ctx.roomWaiting >= ROOM_WAITING_MAX) throw new HttpError(429, 'The room is still answering earlier questions. Try again in a moment.');
+  ctx.roomWaiting++;
+  const earlier = ctx.roomChain;
+  let release;
+  ctx.roomChain = new Promise(done => { release = done; });
+  try {
+    await earlier;
+    return await run();
+  } finally {
+    ctx.roomWaiting--;
+    release();
+  }
+}
+
+async function getRoom(ctx, req, res) {
+  const file = roomWorldName(new URL(req.url, 'http://localhost').searchParams.get('world'));
+  const raw = await readWorld(ctx, file);
+  const { roomView } = await lib('../run/room.js');
+  let view;
+  try { view = roomView(raw); } catch (err) { throw new HttpError(400, err.message); }
+  send(res, 200, { world: file, ...view, live: hasKey('TYPESAFE_API_KEY'), recorded: (await roomRecord(ctx)).size });
+}
+
+// Each ask is at most 4 questions per cast member: before, now, now with the plain sign, and now with the
+// person as written. The live provider gives up quickly (4 seconds, 2 attempts), so a stalled network costs
+// the page seconds and not minutes; the page keeps its last answers when Jev answers nobody.
+async function postRoomAsk(ctx, req, res) {
+  const body = await readJsonBody(req);
+  const file = roomWorldName(body.world);
+  const raw = await readWorld(ctx, file);
+  const { askRoom, recordProvider } = await lib('../run/room.js');
+  const record = await roomRecord(ctx);
+  const live = hasKey('TYPESAFE_API_KEY') && body.offline !== true;
+  const out = await roomTurn(ctx, async () => {
+    let provider = recordProvider(record);
+    if (live) {
+      const { makeProvider } = await lib('../providers/index.js');
+      provider = makeProvider('jev', {
+        shuffle: false, cache: record, concurrency: 32, maxRequests: 120,
+        timeoutMs: 4000, retry: { attempts: 2, maxRetryAfterMs: 1000 }, fetch: ctx.roomFetch
+      });
+    }
+    let result;
+    try {
+      result = await askRoom({
+        spec: raw, scenario: body.scenario, compareTo: body.compareTo ?? null,
+        edits: body.edits && typeof body.edits === 'object' ? body.edits : {},
+        only: Array.isArray(body.only) ? body.only : null, provider
+      });
+    } catch (err) {
+      throw new HttpError(/rejected the API key/.test(err?.message || '') ? 502 : 400, err?.message || 'The room could not be asked.');
+    }
+    // Answers already received are worth more than the file: a failed save is logged, not returned as an error.
+    if (live) await saveRoomRecord(ctx).catch(err => console.error(`[room] could not save the record: ${err.message}`));
+    return { ...result, error: (live && result.failed && provider.stats().firstError) || null };
+  });
+  send(res, 200, { world: file, ...out, live, recorded: record.size });
+}
+
 async function getAgent(ctx, req, res, { id, agentId }) {
   if (!/^\d{1,9}$/.test(agentId)) throw new HttpError(400, 'The agent id must be a whole number.');
   const n = Number(agentId);
@@ -450,9 +553,13 @@ function runOptions(body) {
 
 // Optional `link` on POST /api/runs (§9b): this run is one side of a test of one change. The display starts
 // a baseline and a changed run on several seeds and gives all of them the same `test` id.
-//   { test, role: 'baseline' | 'change', base?: <run id of the baseline with the same seed>,
-//     change: { nodeId, from, to } }   (staff at one counter; the engine's field is `servers`)
-// The world in the request must already match the role: `from` staff for a baseline, `to` for the change.
+//   { test, role: 'baseline' | 'change', base?: <run id of the baseline with the same seed>, change }
+// `change` is one of:
+//   { kind: 'staff', nodeId, from, to }   staff at one counter (the engine's field is `servers`); kind may be left out
+//   { kind: 'promotion', off }            a promotion told to everyone (the sushi restaurant): the offer with id
+//                                         "promotion", and `off` (a share, 0 to 1) off the price at each place
+// The world in the request must already match the role: `from` staff for a baseline and `to` for the change;
+// no "promotion" offer for a baseline, and that offer for the change.
 async function runLink(ctx, body, spec) {
   const l = body.link;
   if (l === undefined || l === null) return null;
@@ -461,16 +568,7 @@ async function runLink(ctx, body, spec) {
   if (l.role !== 'baseline' && l.role !== 'change') throw new HttpError(400, 'link.role must be "baseline" or "change".');
   const c = l.change;
   if (!c || typeof c !== 'object' || Array.isArray(c)) throw new HttpError(400, 'link.change must be an object.');
-  const node = (spec.nodes || []).find(n => n.id === c.nodeId && n.kind === 'service');
-  if (!node) throw new HttpError(400, 'link.change.nodeId must name a place with a line in this world.');
-  const { from, to } = c;
-  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < 1 || to > 1000 || from === to) {
-    throw new HttpError(400, 'link.change.from and link.change.to must be different whole numbers, 1 or more.');
-  }
-  const expected = l.role === 'change' ? to : from;
-  if (Number(node.servers) !== expected) {
-    throw new HttpError(400, `link says ${node.name || node.id} has ${expected} staff in this run, but the world has ${node.servers}.`);
-  }
+  const change = c.kind === 'promotion' ? promotionLink(l.role, c, spec) : staffLink(l.role, c, spec);
   let base = null;
   if (l.base !== undefined && l.base !== null) {
     if (l.role !== 'change') throw new HttpError(400, 'link.base is only for the run with the change.');
@@ -482,7 +580,30 @@ async function runLink(ctx, body, spec) {
     }
     base = l.base;
   }
-  return { test: l.test, role: l.role, base, change: { kind: 'staff', nodeId: node.id, nodeName: node.name || node.id, from, to } };
+  return { test: l.test, role: l.role, base, change };
+}
+
+function staffLink(role, c, spec) {
+  if (c.kind !== undefined && c.kind !== 'staff') throw new HttpError(400, 'link.change.kind must be "staff" or "promotion".');
+  const node = (spec.nodes || []).find(n => n.id === c.nodeId && n.kind === 'service');
+  if (!node) throw new HttpError(400, 'link.change.nodeId must name a place with a line in this world.');
+  const { from, to } = c;
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < 1 || to > 1000 || from === to) {
+    throw new HttpError(400, 'link.change.from and link.change.to must be different whole numbers, 1 or more.');
+  }
+  const expected = role === 'change' ? to : from;
+  if (Number(node.servers) !== expected) {
+    throw new HttpError(400, `link says ${node.name || node.id} has ${expected} staff in this run, but the world has ${node.servers}.`);
+  }
+  return { kind: 'staff', nodeId: node.id, nodeName: node.name || node.id, from, to };
+}
+
+function promotionLink(role, c, spec) {
+  if (typeof c.off !== 'number' || !(c.off > 0 && c.off < 1)) throw new HttpError(400, 'link.change.off must be a share between 0 and 1.');
+  const has = (spec.offers || []).some(o => o.id === 'promotion');
+  if (role === 'change' && !has) throw new HttpError(400, 'link says this run has the promotion, but the world has no offer "promotion".');
+  if (role === 'baseline' && has) throw new HttpError(400, 'link says this run is the baseline, but the world already has the offer "promotion".');
+  return { kind: 'promotion', off: c.off };
 }
 
 async function postRun(ctx, req, res) {

@@ -28,6 +28,8 @@ The surface is in Operate mode. Design work on it is refinement, not a new visua
 
 - Plain HTML, CSS, ES modules and canvas. There is no build step.
 - The display tests one change: one more staff at the counter with the worst line. It runs the baseline and the change with the rule model on 3 seeds each and shows a range.
+- A second place, a sushi restaurant drawn from a sketch, opens at `?case=sushi` or from Run details. Its one change is a promotion (one staff per seat leaves no use for +1 staff), tested the same way with the run's own decision-maker. Its seats can be moved in "Edit the room".
+- English only. The language button was removed from the scope display (owner's decision, Nov 14).
 - The link between a baseline run and its changed run is stored on the server, in the run's `meta.json`.
 - Words: "staff at the counter", "rule model", "Jev". Technical detail belongs in Run details, not in the main view.
 - No money figures.

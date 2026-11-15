@@ -31,7 +31,7 @@ Not modeled yet: resources held for a long time while doing other things (a park
 | `question` | string, ≤ 400 | `"Where are the bottlenecks?"` | The decision the run informs. Make it a ranking question ("which…", "where…", "which fix…"). |
 | `context` | string, ≤ 300 | the title | One or two sentences **agents are told** about the setting: day, time, place, what people are doing. Every Jev decision sees it. Example: `"Friday night in Larkfield. People are deciding where to get emergency care."` |
 | `leaveLabel` | string, ≤ 60 | `"Leave and go home"` | Visit mode: label of the leave option, e.g. `"Give up and eat somewhere else"`. |
-| `waiting` | object | none | Visit mode, optional: how people are asked about lines. `tellPatience` (boolean, default `true`): `false` stops telling each person in words how a line compares with their group's patience ("more than they will put up with"), so the decision model judges that from the person. `askAgainEvery` (minutes, 5 to 240, default `0`): above 0, a person who keeps waiting is asked again that often and is never made to leave; `0` asks once. Rules runs are unaffected. See docs/PROTOTYPE.md §16. |
+| `waiting` | object | none | Visit mode, optional: how people are asked about lines. `tellPatience` (boolean, default `true`): `false` stops telling each person in words how a line compares with their group's patience ("more than they will put up with"), so the decision model judges that from the person. `askAgainEvery` (minutes, 5 to 240, default `0`): above 0, a person who keeps waiting is asked again that often and is never made to leave; `0` asks once. `lineShows` (`"wait"` or `"people"`, default `"wait"`): `"people"` tells a person without a live wait app the number of people in line and the staff serving instead of a wait in minutes, with no patience verdict. Use it for counter service; keep `"wait"` where waits are posted. Rules runs are unaffected by all three. See docs/PROTOTYPE.md §16 and §16b. |
 | `mode` | `"visit"` or `"route"` | `"visit"` | Any value other than `"route"` means visit. |
 | `duration` | integer minutes, 30–1440 | 600 visit, 180 route | Length of the simulated period. Leave time after `arrivals.end` for people to finish. |
 | `clockStart` | integer minutes after midnight, 0–1439 | 480 (8:00 am) | Wall-clock time at minute 0. 690 = 11:30 am, 1080 = 6:00 pm. |
@@ -78,6 +78,7 @@ Common fields:
 | `servers` | `service` | integer, 1–1000 | 10 | People served at the same time: desks, beds, cooks, ride seats, tables' seats. |
 | `serviceTime` | `service` | minutes, 0.2–720 | 5 | Average minutes per person per server. Capacity per hour = `servers` ÷ `serviceTime` × 60. |
 | `serviceDist` | `service` | `uniform`, `exp`, `fixed` | `uniform` | Spread of service times: uniform 0.6–1.4 × `serviceTime`; exponential with mean `serviceTime`; or exactly `serviceTime`. |
+| `seats` | `service` | up to 64 points `{ x, y }`, 0–100 | none | Where the people being served are drawn, one person per seat: a person takes the first free seat when their service starts and keeps it until they finish. Display only: the walk still ends at the place, and lines form there. Give one seat per server. With more servers than seats, the people left over are drawn around the place. With walls, a seat that has a wall or object between it and the place is ignored with a warning. |
 | `appeal` | `service` | 0–1 | 0.5 | Popularity and reputation as a number. Used by the rules policy (section 8). |
 | `price` | `service` | dollars, ≥ 0 | 0 | What it costs one person. Agents see "free" or "about $N". |
 | `tags` | `service` | up to 12 lowercase strings | `[]` | What the place offers (`"pediatric"`, `"coffee"`, `"thrill"`). Matched against archetype `needs` and `likes`; shown to agents as "offers". |
@@ -172,7 +173,7 @@ The cast is the heart of a world. Each agent is assigned one persona: first a gr
 
 ## 8. How the fields drive decisions
 
-Agents decide through Jev at decision moments. The engine computes the facts and turns them into words: waits, distances, prices and patience appear as phrases like "long, about 45 min" and "more than they will put up with" (the patience phrase is left out when the world sets `waiting.tellPatience: false`). Jev sees the person (cast fields, group name, app or not), `context`, the time, their history so far, the valid options, up to 4 recent remarks they heard, and up to 3 offers they received (section 15). It never sees `appeal`, `weights` or `rationality`; those drive only the rules policy.
+Agents decide through Jev at decision moments. The engine computes the facts and turns them into words: waits, distances, prices and patience appear as phrases like "long, about 45 min" and "more than they will put up with" (the patience phrase is left out when the world sets `waiting.tellPatience: false`; with `waiting.lineShows: "people"` a person without a live wait app sees "6 people in line, 2 staff serving" instead of minutes). Jev sees the person (cast fields, group name, app or not), `context`, the time, their history so far, the valid options, up to 4 recent remarks they heard, and up to 3 offers they received (section 15). It never sees `appeal`, `weights` or `rationality`; those drive only the rules policy.
 
 **Visit mode moments:**
 - **Choose** (arrive, finish somewhere, walk away from a line, give up): which place next, or leave. Options are places not yet visited whose `tags` match the archetype's `needs`, each with its `about`, `tags` ("offers"), price, distance and line (if visible).
@@ -306,7 +307,7 @@ These are deliberately small. A real world should have a 10–20 person cast.
 }
 ```
 
-Full examples: [theme-park](theme-park.json) and [er-network](er-network.json) (visit), [food-hall-lunch](food-hall-lunch.json) (visit with seating as a place), [rush-hour-roads](rush-hour-roads.json) (route, roads), [office-lobby-morning](office-lobby-morning.json) (route, a building: doors, turnstiles, elevators and stairs as links).
+Full examples: [theme-park](theme-park.json) and [er-network](er-network.json) (visit), [food-hall-lunch](food-hall-lunch.json) (visit with seating as a place), [sushi-restaurant](sushi-restaurant.json) (visit, one walled room where each person being served sits in a drawn seat), [rush-hour-roads](rush-hour-roads.json) (route, roads), [office-lobby-morning](office-lobby-morning.json) (route, a building: doors, turnstiles, elevators and stairs as links).
 
 ## 13. Checklist
 

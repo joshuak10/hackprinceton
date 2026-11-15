@@ -1,0 +1,64 @@
+{
+  "title": "Friday dinner at an eight-seat sushi restaurant (drawn from a sketch)",
+  "question": "On a Friday evening, who waits for one of the eight seats, who gives up and eats somewhere else, and which change would seat more of them?",
+  "context": "Friday evening at a small neighborhood sushi restaurant with no reservations. One room: a kitchen where one chef works, four counter seats along the wall, and one table with four seats. People who cannot be seated wait by the door, where they can see every seat, or leave and eat somewhere else.",
+  "leaveLabel": "Eat somewhere else",
+  "mode": "visit",
+  "duration": 150,
+  "clockStart": 1080,
+  "travelSpeed": 195,
+  "arrivals": {"total": 36, "start": 0, "end": 110, "shape": "peak"},
+  "waiting": {"tellPatience": false, "askAgainEvery": 10},
+  "nodes": [
+    {"id": "door", "name": "Street door", "kind": "gate", "x": 55.06, "y": 66.2, "weight": 1},
+    {"id": "counter", "name": "Counter seats", "kind": "service", "x": 56.8, "y": 54.2, "servers": 4, "serviceTime": 30, "appeal": 0.8, "price": 38, "tags": ["sushi", "counter", "quick"], "about": "Four seats in a row. You order piece by piece and are out in about half an hour. Regulars ask for these.", "seats": [{"x": 56.6, "y": 37.2}, {"x": 56.6, "y": 41.4}, {"x": 56.6, "y": 45.3}, {"x": 56.6, "y": 49}]},
+    {"id": "table", "name": "Table", "kind": "service", "x": 52.2, "y": 59.3, "servers": 4, "serviceTime": 40, "appeal": 0.6, "price": 32, "tags": ["sushi", "table", "relaxed"], "about": "The only table, with four seats, shared when the room is full. Slower and easier to talk at than the counter.", "seats": [{"x": 44.2, "y": 57.5}, {"x": 47.7, "y": 57.5}, {"x": 44.2, "y": 61.1}, {"x": 47.7, "y": 61.1}]}
+  ],
+  "archetypes": [
+    {"id": "regulars", "name": "Neighborhood regulars", "share": 0.28, "description": "Live nearby and come most weeks. They know the chef and how long a seat usually takes.", "needs": ["sushi"], "likes": ["counter"], "visits": 1, "patience": 25, "info": 0},
+    {"id": "dates", "name": "Date night", "share": 0.24, "description": "Out for the evening with one other person and in no hurry once seated.", "needs": ["sushi"], "likes": ["table", "relaxed"], "visits": 1, "patience": 18, "info": 0},
+    {"id": "groups", "name": "Small groups and families", "share": 0.18, "description": "Three or four people who want to sit together and talk.", "needs": ["table"], "likes": ["relaxed"], "visits": 1, "patience": 15, "info": 0},
+    {"id": "walkins", "name": "Walk-ins", "share": 0.3, "description": "Passing by, hungry, with other places to eat on the same street.", "needs": ["sushi"], "likes": ["quick"], "visits": 1, "patience": 10, "info": 0}
+  ],
+  "minds": [
+    {"id": "hiro", "name": "Hiro Tanabe", "age": 58, "archetype": "regulars", "bio": "Has eaten at the counter every Friday for nine years and always takes the seat nearest the chef.", "personality": "patient, loyal, a little possessive of his seat", "goal": "His usual counter seat and a word with the chef", "social": "brings up the restaurant with everyone at his office"},
+    {"id": "ana", "name": "Ana Ferreira", "age": 34, "archetype": "regulars", "bio": "Nurse who lives upstairs and stops in after a twelve-hour shift, still in scrubs.", "personality": "worn out, kind, cannot stand for long tonight", "goal": "To sit down and eat something good before she falls asleep", "social": "tells her building's group chat when the wait is bad"},
+    {"id": "walter", "name": "Walter Brandt", "age": 71, "archetype": "regulars", "bio": "Widower who used to come here with his wife on Fridays and still does.", "personality": "gentle, unhurried, dislikes a fuss", "goal": "A quiet dinner in the place they always came to", "social": "chats with whoever sits next to him"},
+    {"id": "maya", "name": "Maya Okafor", "age": 27, "archetype": "dates", "bio": "On a third date and chose this place herself after reading about it.", "personality": "nervous, wants the evening to go well, embarrassed by waiting", "goal": "A table where the two of them can actually talk", "social": "will text her sister how it went"},
+    {"id": "julian", "name": "Julian Reyes", "age": 41, "archetype": "dates", "bio": "Tenth anniversary tonight. The babysitter leaves at nine.", "personality": "romantic, watching the clock, hates feeling rushed", "goal": "One unhurried dinner with his wife", "social": "posts photos of good meals"},
+    {"id": "claire", "name": "Claire Dubois", "age": 45, "archetype": "groups", "bio": "Brought her two children after a swim meet. The younger one is hungry and close to tears.", "personality": "practical, protective, out of patience by evening", "goal": "All three of them fed at one table, soon", "social": "talks to the other swim parents"},
+    {"id": "sam", "name": "Sam Whitfield", "age": 23, "archetype": "groups", "bio": "Meeting two college friends who are in town for one night only.", "personality": "easygoing, cares more about the company than the food", "goal": "Somewhere the three of them can sit together", "social": "the group decides together by text"},
+    {"id": "priya", "name": "Priya Menon", "age": 30, "archetype": "walkins", "bio": "Has a film starting at 7:30 a few blocks away and has not eaten since breakfast.", "personality": "decisive, anxious about being late", "goal": "A fast dinner that does not make her miss the film", "social": "nobody tonight"},
+    {"id": "tom", "name": "Tom Gallagher", "age": 52, "archetype": "walkins", "bio": "In town for a conference, eating alone, and curious about the place because the line looked like a good sign.", "personality": "curious, patient when alone, likes watching a chef work", "goal": "One memorable meal on an otherwise dull trip", "social": "writes online reviews"},
+    {"id": "dana", "name": "Dana Kowalski", "age": 19, "archetype": "walkins", "bio": "Student treating herself after her last exam, with about forty dollars to spend.", "personality": "excited, careful with money, easily put off by a crowd", "goal": "A small celebration she can afford", "social": "shares everything with her roommates"}
+  ],
+  "walls": [
+    {"x1": 40.25, "y1": 35, "x2": 59.75, "y2": 35, "source": "drawn"},
+    {"x1": 59.75, "y1": 35, "x2": 59.75, "y2": 65, "source": "drawn"},
+    {"x1": 56.38, "y1": 65, "x2": 59.75, "y2": 65, "source": "drawn"},
+    {"x1": 40.25, "y1": 65, "x2": 53.75, "y2": 65, "source": "drawn"},
+    {"x1": 40.25, "y1": 35, "x2": 40.25, "y2": 65, "source": "drawn"}
+  ],
+  "objects": [
+    {"id": "kitchen", "name": "Kitchen", "kind": "room", "source": "drawn", "polygon": [[40.25, 35], [51.88, 35], [51.88, 52.06], [40.25, 52.06]], "about": "Staff only. Customers do not go in."}
+  ],
+  "doors": [
+    {"id": "street_door", "name": "Street door", "x1": 53.75, "y1": 65, "x2": 56.38, "y2": 65, "exterior": true}
+  ],
+  "geo": {"metersPerUnit": 0.4, "clearance": 0.5, "floor": "Sushi restaurant", "source": "drawn"},
+  "provenance": {
+    "walls": "assumed",
+    "objects": "assumed",
+    "nodes[1].seats": "assumed",
+    "nodes[2].seats": "assumed",
+    "doors": "assumed",
+    "geo.metersPerUnit": "assumed",
+    "nodes[*].servers": "assumed",
+    "nodes[*].serviceTime": "assumed",
+    "nodes[*].price": "assumed",
+    "arrivals": "assumed",
+    "archetypes": "assumed",
+    "minds": "assumed",
+    "context": "assumed"
+  }
+}

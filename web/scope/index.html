@@ -43,6 +43,7 @@
         <canvas id="map" tabindex="0" role="application" aria-label="Map of the place with people and incidents. Press Enter to pick a person, the arrow keys to move between people, and Enter again to see what they did." aria-describedby="mapKeys"></canvas>
         <div class="map-corner" id="mapTools" hidden>
           <button type="button" class="btn small" id="resetView" hidden>Reset view</button>
+          <button type="button" class="btn small" id="editBtn" hidden aria-pressed="false">Edit the room</button>
           <button type="button" class="btn small" id="viewBtn" aria-expanded="false" aria-controls="viewMenu">View</button>
           <div class="menu" id="viewMenu" hidden>
             <fieldset>
@@ -95,6 +96,7 @@
 
     <aside class="side idle" id="side" aria-label="What the simulation shows">
       <section class="verdict" id="verdict" aria-label="Did the change help?" aria-live="polite"></section>
+      <section class="edit-panel" id="editPanel" hidden aria-label="Edit the room"></section>
       <section class="counters" id="counters" aria-label="Right now"></section>
       <div class="side-body" id="sideBody">
         <section class="block">

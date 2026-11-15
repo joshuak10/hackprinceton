@@ -418,16 +418,16 @@ Reject path traversal in `:file` and `:id` (only `[A-Za-z0-9._-]`). JSON bodies 
 
 ## 9b. Scope display (`web/scope/`)
 
-The owner's view: try one change on simulated customers and see whether it helped. It sits next to the generic viewer and reads the same run files, plus the additions below. It shows one place, the building. The parking-lot mock still exists (`mockgen/`), but the display does not offer it (v0.27).
+The owner's view: try one change on simulated customers and see whether it helped. It sits next to the generic viewer and reads the same run files, plus the additions below. It opens on the building. The sushi restaurant (§18) is the one other place: `?case=sushi`, or "Other places" in Run details. The parking-lot mock still exists (`mockgen/`), but the display does not offer it (v0.27).
 
-**What opens.** No case picker. The page opens the latest Jev run if one exists, otherwise the latest rule-model run, paused at the start (`chooseRun` in `web/scope/lib/verdict.js`). A run that carries a tested change never opens first; its baseline does. Without the engine server, the page shows the building sample data and says a change cannot be tested on it. URL parameters: `run=<run id>`, `t`, `floor`, `theme=dark`, `autoplay=1`, and `test=new` (ignore earlier tests, so the "before a test" state shows again).
+**What opens.** No case picker. The page opens the latest Jev run if one exists, otherwise the latest rule-model run, paused at the start (`chooseRun` in `web/scope/lib/verdict.js`). A run that carries a tested change never opens first; its baseline does. Without the engine server, the page shows the building sample data and says a change cannot be tested on it. URL parameters: `case=sushi`, `run=<run id>`, `t`, `floor`, `theme=dark`, `autoplay=1`, and `test=new` (ignore earlier tests, so the "before a test" state shows again). At the sushi restaurant only runs of the room as sketched with no offers can open first, and its packed Jev run (`web/scope/mock/sushi-restaurant.json`) counts as a recorded Jev run (§18).
 
 **RunBundle.** The display loads `{ meta, spec, geometry, frames, metrics, agents, remarks, decisions }`. Mock runs (`web/scope/mock/*.json`, `web/scope/data/*.json`) are written in this shape by `scripts/mock_runs.js`. For a recorded run, `geometry` comes from `spec.geometry` and `decisions` from the endpoint below.
 
 **Engine runs** (`web/scope/lib/engine.js`). The engine keeps walls, doors and scale in `frames.walls`, `frames.doors` and `spec.geo`, and drops unknown spec fields, so the display builds the geometry from those: one floor, walls as drawn, doors as openings (exterior or interior), the view fitted to the walls and places, and a floor fill flooded from the service points with exterior doors closed (no fill if the walls leak). Gates become entries. Objects (`spec.objects`, §13f) are drawn as hatched shapes with a thin outline, not as thick walls: their edges are matched in `frames.walls` at the frames' 0.01 precision and the shapes are rasterized into the floor's `obstacles` grid. The cast's `bio`, `goal` and `social` are read as `about`, `wants` and `listens_to`. A run with no decision records (the inline rules provider) gets its walk-aways from agent traces ("Saw N people in line at X … and walked away", "Gave up on X after M min in line").
 
 **The verdict (v0.27).** The top of the side panel answers "did the change help?". Pure functions are in `web/scope/lib/verdict.js`; `verdict-panel.js` draws them. There is no dialog.
-- **The one change** is a fixed rule, not AI: `staffChange(spec, metrics)` picks the service node with the highest `metrics.nodes[].score` and proposes `servers + 1` there. The display calls this "+1 staff". The engine's field is still `servers`.
+- **The one change** is a fixed rule, not AI: `staffChange(spec, metrics)` picks the service node with the highest `metrics.nodes[].score` and proposes `servers + 1` there. The display calls this "+1 staff". The engine's field is still `servers`. At the sushi restaurant the one change is a promotion instead (§18).
 - **Before a test:** `worstLineWords` names the worst line ("Lucky Noodle Bar loses the most people: 56 walked away over lunch.") and the reason (staff at the counter, minutes per order, longest line). One button: "Test +1 staff here". The counter is ringed on the map.
 - **The test:** the display posts 6 runs to `POST /api/runs`, one after another: the baseline world and the changed world (`applyChange`), each on 3 seeds (the seed of the run on screen, +1 and +2), always with `provider: 'rules'`. A progress line and a Cancel button show while it runs.
 - **After:** `testResult` takes the 6 runs' metrics. `verdictWords` gives the verdict in customers kept, which is fewer walk-aways at that counter, as a range across seeds ("+1 staff kept 20 to 22 more customers."), and says "Tested with the rule model". A table shows before, after and change for walk-aways, longest line and average wait at the counter and walk-aways on the whole floor (averages of the 3 runs; the change is taken from the rounded numbers shown). `whySentence` gives one sentence of cause from the two sides, and `busiestWindow` adds when the line is busiest.
@@ -436,20 +436,21 @@ The owner's view: try one change on simulated customers and see whether it helpe
   ```js
   { test: '<id shared by the 6 runs>', role: 'baseline' | 'change',
     base: '<run id of the baseline with the same seed>' | null,        // only on the change
-    change: { kind: 'staff', nodeId, nodeName, from, to } }
+    change: { kind: 'staff', nodeId, nodeName, from, to }              // +1 staff at the worst line
+          | { kind: 'promotion', off } }                               // the sushi restaurant's promotion (§18)
   ```
-  The server checks it: `test` is 1 to 64 letters, digits, dashes or underscores; `nodeId` is a service node of the posted world; `from` and `to` are different whole numbers; the world's `servers` at that node equals `from` for a baseline and `to` for a change; `base` names an existing run. It reads `nodeName` from the world. A bad link is refused with 400 and no run starts. `findTest(metas, { runId, specHash })` finds the newest test with 3 finished pairs that belongs to the run on screen: the run is one of its runs, or the test's baselines have the same `specHash`. So every browser shows "Baseline" and "+1 staff at <counter>". Nothing about tests is kept in `localStorage`.
+  The server checks it: `test` is 1 to 64 letters, digits, dashes or underscores; `base` names an existing run. For staff, `nodeId` is a service node of the posted world; `from` and `to` are different whole numbers; the world's `servers` at that node equals `from` for a baseline and `to` for a change (a link with no `kind` is a staff link). For a promotion, `off` is a share between 0 and 1, and the posted world has the offer with id `promotion` for a change and no such offer for a baseline. It reads `nodeName` from the world. A bad link is refused with 400 and no run starts. `findTest(metas, { runId, specHash })` finds the newest test with 3 finished pairs that belongs to the run on screen: the run is one of its runs, or the test's baselines have the same `specHash`. So every browser shows "Baseline" and "+1 staff at <counter>". Nothing about tests is kept in `localStorage`.
 - The display does not call `GET /api/runs/:id/advice` or `POST /api/insights`; both endpoints remain.
 
 **Layout and wording (v0.27).**
-- **Top bar:** brand, prompt box, theme toggle. The prompt does not change the simulation yet. Its card says so, shows the typed question above the map, and offers a new run of the same world (rule model, or Jev when the server has a key).
+- **Top bar:** brand, prompt box, theme toggle. There is no language button (it was removed from this display on Nov 14; §19). The prompt does not change the simulation yet. Its card says so, shows the typed question above the map, and offers a new run of the same world (rule model, or Jev when the server has a key).
 - **Map strip:** a name people would say for the place (`placeName`: the part of the world's title after the colon, without brackets; not the listing name), the question, the run's side of a test and who decided ("Baseline · Rule model", "Jev"), and Run details.
 - **Side panel, top to bottom:** verdict, four live counters ("Visits served" counts counter visits, so it can be higher than the number of people), bottleneck ranking (top 3), incident feed. Ranking rows and feed rows are buttons. A ranking bar has two parts: minutes waited, and in red the people who walked away (30 minutes each); the longest bar is the current worst place. The feed merges repeats (`groupFeed` in `incidents.js`: "Walked away at Lucky Noodle Bar ×14"); a row opens its most recent incident.
 - **A selected person** opens in place of the ranking and feed, with "Back to bottlenecks". The verdict and counters stay.
 - **Map:** one "View" menu (color people by; show trouble, people, counter names). "Reset view" shows only after zooming or panning. Counter names are drawn above the people; doors and stairs are faint dots that show a name on hover; rooms have no labels. Coloring by frustration is disabled, with the reason, when the run has no frustration data.
 - **Keyboard:** every control is reachable with Tab. On the map, Enter picks the person nearest the middle, the arrow keys move to the nearest person in that direction, Enter opens them and Escape lets go.
 - **Timeline:** the incident histogram has clock ticks every 15, 30 or 60 minutes (`timeTicks`).
-- **Run details:** the drawer holds everything technical (run id, seed, Jev requests, cost), where the data came from, the legend, the keys, and the list of other recorded runs, which can be opened from there.
+- **Run details:** the drawer holds everything technical (run id, seed, Jev requests, cost), where the data came from, the legend, the keys, the other places the display opens ("Other places": the sushi restaurant from the building, and the building from the restaurant), and the list of other recorded runs, which can be opened from there. A run of a changed room is listed as "Changed room, N seats".
 - **Words:** "staff", "rule model", "Jev". No "server", "seed" or "Jev requests", and no shell commands, outside Run details.
 - **Color and type:** red means people lost and nothing else (walk-away glyphs, the lost part of a ranking bar). IBM Plex Sans on five sizes (12, 13, 15, 18, 22 px); Bricolage Grotesque only for the wordmark.
 
@@ -958,3 +959,139 @@ Both behaviors stay the default. A visit world can switch them off with an optio
 - Validation: a non-boolean `tellPatience` becomes `true`; `askAgainEvery` between 0 and 5 becomes 5 and above 240 becomes 240; each with a warning.
 - `[open]` `feeling` is still handed to Jev as the engine's word for the person's last frustration score. In the same test, frustration answers separated by person only when it was left out.
 - `[open]` There is no "speak up" action: a message such as "tell the nurse now and you go first" can only be answered by staying in line or leaving it.
+
+### 16b. What a customer sees of a line: `waiting.lineShows` (Nov 14)
+
+**Why.** A customer at a counter sees how many people are in line and how many staff are serving. They do not see a wait in minutes. Lu, Musalem, Olivares & Schilkrut ("Measuring the Effect of Queues on Customer Purchases", Management Science 59(8), 2013) measured a supermarket deli for seven months and found that whether a customer buys depends on the number of people in line, not on how many staff are serving. The engine used to tell every person a wait estimate in words ("short, about 7 min"). That estimate is (people ahead + 1) × serviceTime ÷ staff, so it tells Jev how many staff are serving, and Jev's answers followed it.
+
+**The probe.** `validation/jev-line-probe.js` asks Jev the join-the-line question for 8 people from the building's cast at Bridge Coffee, with 0 to 15 people ahead and 1 to 3 staff serving: 1,112 requests, about $0.04. Each version is built by `visitObservation` (results under `data/validation/`, not committed). Run on Nov 14 with jev-1.14.0:
+
+| What the person is told | Join probability, 1 → 3 staff at the same line length (average change) | Same wait, longer line (6 min: 2 ahead with 1 staff, 5 with 2, 8 with 3) |
+|---|---|---|
+| Wait in minutes and the patience verdict (the default) | +0.30 | 0.62 / 0.59 / 0.62 |
+| Wait in minutes, no verdict (`tellPatience: false`) | +0.12 | 0.45 / 0.44 / 0.44 |
+| People in line and staff serving (`lineShows: "people"`) | +0.03 | 0.39 / 0.32 / 0.28 |
+
+With minutes, Jev reacts to the wait and hardly at all to the line length. With the head count, it reacts to the line length and hardly at all to the staff. That is the deli's finding. Repeat asks of one question differ by about 2 points on average (§17), so +0.03 is close to noise.
+
+**The setting.** `waiting.lineShows`, `"wait"` (default) or `"people"`. With `"people"`, a person without a live wait app is told:
+- at the join question: "Just reached Bridge Coffee. 6 people in line, 2 staff serving." ("There is no line; 2 staff serving." when nobody is ahead);
+- at the keep-waiting question: "Has waited about 15 minutes in line at Bridge Coffee. 3 people still ahead, 2 staff serving." ("Next to be served" when nobody is ahead);
+- for every place they can see, in every visit observation: `people_ahead` and `staff` in place of `line` and `line_vs_patience`. Places they cannot see still read "unknown (can't see it from here)".
+
+There is no patience verdict in this mode, because the verdict compares a wait in minutes. A person with a live wait app (`informed`) is told exactly what `"wait"` mode tells them: the app shows minutes.
+
+- **Only the words change.** When the questions come (the join question when the estimated wait is over 8 minutes and over half the tolerance), the rule answers and the inline rule policy all still use the engine's wait estimate. A rules run is identical in both modes, and so are the times and order of Jev's questions (tested).
+- **Recorded runs are safe.** `"wait"` adds nothing to the normalized spec, so worlds without the field hash and replay as before. Ask the room (§17) builds its own arrival observation from its own world (`alder-pine-cafe.json`, unchanged), so its recorded answers still match.
+- **Where it is on.** `buildings/6FNMVoyPrL1/fitout-floor1-lunch.json` (the building's food hall and market) sets `"people"`. Worlds with posted waits, such as the theme park, keep `"wait"`. The café and sushi worlds are unchanged.
+- `[open]` **The rule model still credits extra staff with a faster line.** Its walk-away rule compares the wait estimate with patience, so in a rules run, +1 staff helps both by shortening the line and by lowering the estimate each arriving person compares. Basing the rule on the head count needs each counter's usual staffing, which the engine does not know once a test has changed the staff. A first try, one service time per person whatever the staff, raised the building's rules baseline from 193 to 351 walk-aways (seed 1) and was dropped. The display's "+1 staff" test runs with rules, so it may overstate the gain until this is settled.
+- `[open]` **Jev turns away from lines more than the deli's customers did.** With the head count, Jev's join probability falls from about 0.42 with 1 person ahead to about 0.22 with 15. In the deli, 15 or more in line cut purchases by about a tenth (30% to 27%). The probe asks only people who reached the counter and are deciding, so the two numbers are not directly comparable, but the gap is large. With nobody ahead, Jev joins only about a third of the time, which the engine never asks (the question needs a wait over 8 minutes). A count of real customers at a counter (`validation/livestream/`) is the planned check.
+
+---
+
+## 17. Ask the room: one moment, every customer, live (Nov 14)
+
+**Why.** A run answers "what happens over a morning" in tens of seconds. An owner, or a judge, also wants to try a change and see who reacts while they are still looking at the page. Asking Jev one moment for every cast member takes about a quarter of a second, so that is what this does.
+
+**What it is.** `run/room.js` builds, for each cast member, the arrival question the engine itself asks ("Just arrived. Choosing where to go first.") through `visitObservation`, with the line, price and sign taken from the page. For the same person and moment the request is byte-identical to the engine's (tested). It never states a patience verdict, whatever the world's `waiting` says.
+
+- `roomView(spec)`: the service places, the cast, the default scenario, limits.
+- `normalizeScenario(spec, raw)`: `{ shop, ahead: { placeId: people in line }, price, priorPrice, sign, minute }`, all clamped; a value left out or empty takes the default. The shop is the first service place unless named. A line of n people reads as a wait of (n + 1) × serviceTime ÷ servers, and as no wait when nobody is in line. `sign` holds the words only: a typed "Sign on the door:" is dropped, and the person is told `Sign on the door of <shop name>: <words>`, because a sign with no shop named left Jev to guess whose door it was on (the same cash-only sign read 22 points below the plain sign unnamed, 28 below with the café named, and 10 above with the chain named).
+- `askRoom({ spec, scenario, compareTo, edits, only, provider })` asks each person up to four questions:
+  - **before:** the default moment (or `compareTo`), with the person as written in the world;
+  - **now:** the page's scenario, with the page's rewrite of that person (`edits[id]` may replace `bio`, `personality`, `goal` for this ask only);
+  - **neutral:** as now, with a fixed plain sign about restrooms, only when the scenario has a sign;
+  - **written:** as now, with the person as written, only for a rewritten person.
+- `recordProvider(record)`: answers only from recorded Jev answers.
+
+**Rules the page follows, each from a measured finding (§16, the Nov 14 café tests and the Nov 14 review of this page).**
+- A sign is judged against the plain sign, never against no sign: any added sentence moves Jev's answers, by 5 points for the room and by up to 12 for one person.
+- There are two bars. The room's share counts as changed at 5 points (`ROOM_NOISE`). One person counts as moved at 15 points (`ROOM_NOISE_PERSON`). Asking the same question twice differs by about 2 points on average, by 5 or more one time in eight, and by 14 at most (840 repeats). With the 5-point bar applied to single people, eight checks where nothing real changed (signs that say nothing, rewrites that keep the meaning) named 22 movers in 96 comparisons, at least one in every check; a 10-point bar still named one person in half of them. Changes between 5 and 14 points are drawn in grey and labelled "too small to tell". Whole points are compared, so a change that reads as 5 is always treated as 5.
+- A rewritten person is compared with the same moment as they were written, so the number beside them is the rewrite's own effect.
+- When a sign sits on top of a price or line change, the bars show the sign's own effect and the page also states the share before any change.
+- The opening view reports no comparison, because nothing has been changed.
+- Prices are whole dollars, because `priceWords` rounds to dollars. A new price is taken to be remembered: `(it was about $5 last week)` is appended to the price the person is told unless the box is cleared. That wording lives here, not in the engine: it is a stand-in for the planned memory of past visits.
+- Option order is fixed (`shuffle: false`) in every question, so adding a sign cannot reorder the choices.
+
+**Server.** `GET /api/room[?world=file]` returns the view plus `live` (a Jev key is set) and `recorded` (answers on record). `POST /api/room/ask` takes `{ world?, scenario, compareTo?, edits?, only?, offline? }` and returns each person's `before`, `now`, `neutral`, `written`, what they were `told`, and `source` (`live`, `recorded` or `failed`), with the shop's shares, `askedLive` (questions sent to Jev just now) and `error` (Jev's first error, when someone could not answer). Asks run one at a time and up to three more wait their turn (429 beyond that); at most 4 questions per cast member and 120 per ask. The live provider waits 4 seconds and tries twice, so a stalled network costs the page about 8 seconds at worst and not minutes (the run defaults of 15 seconds and 5 attempts held the page for 78 to 156 seconds in a test with a silent network).
+
+**Recorded answers.** Every live answer is kept by request hash in `data/room/record.json` (never committed). `web/room/seed-record.json` holds 925 recorded answers for the example world: prices $1 to $10 with and without the remembered price, lines of 0 to 20 at each place, the four preset signs and one typed sign at $5, $6 and $7, and one rewrite. `node run/room-seed.js` rebuilds it: it asks Jev only what is not on record yet and keeps exactly the answers its scenario list needs (`--check` asks nothing and reports what is missing). With no key the page answers from the record, and a question that was never asked live is not invented: the page keeps the last answers on screen and says why. A test fails if the example world and the seed drift apart.
+
+**Page.** `web/room/` (served at `/room/`): controls on the left (sign, price, lines), every cast member on the right with what they are like, a bar for the chance of choosing the shop, a tick for the comparison, and the change. Price buttons, the remembered-price box, the sliders and the preset signs ask at once; a typed sign asks on Enter. A click made while an ask is running is kept and runs next. A pill above the headline says whether the answers were asked just now, with the count and the time, or asked before and saved. When the room's share is flat but people moved, the headline names the people. Opening a person shows exactly what they were told and lets you rewrite them; what is typed is kept as it is typed, so either Ask button carries it. One person is asked about the moment everyone last answered, whatever the controls say now. The arithmetic is in `web/room/maths.js` and is tested. `?world=file` loads another visit world from `worlds/`.
+
+**Example world.** `worlds/alder-pine-cafe.json`: a fictional independent café with a chain across the street, 12 cast members, `waiting.tellPatience: false`.
+
+**What it does not show.** One moment, not a morning: no line dynamics, no word of mouth, no repeat visits. The people are unvalidated. Jev reacts weakly to price unless a person's description mentions money, so price answers show direction only, and only for those people (in the example world Tomas, Omar and Priyanka; Bill reacts to the price having changed). The plain-sign answer is one recorded answer per person and moment, so a person whose plain-sign answer happens to sit high or low leans the same way under every sign; the 15-point bar is what keeps that from being named. A warm or sad sign can lower the share, because five of the twelve start near 100% and have no room to rise.
+
+## 18. Seats, and the sushi restaurant as a third place in the scope display (Nov 14)
+
+**Why.** The scope display had two places: a building and a parking lot. The team's audience is now independent local businesses (`INDEPENDENT_BUSINESS_SPEC.md`), so the third place is one of those: a small sushi restaurant, drawn by hand as one room with a kitchen, four counter seats and four seats at a table. In a room this small the picture an owner reads is who is in which seat and who is standing by the door. The engine had no notion of a seat: people being served were drawn as a cluster on the place.
+
+**Seats (`nodes[i].seats`, visit-mode service places).** Up to 64 points `{ x, y }` (or `[x, y]`).
+- A person takes the first free seat when their service starts and keeps it until they finish. In frames they are recorded exactly at the seat.
+- Seats are for drawing only. The walk still ends at the place's own point, lines form there, and waits, choices and decision requests are the same with and without seats.
+- With more servers than seats, the people left over are drawn around the place as before.
+- With walls, a seat that has a wall or an object between it and the place is dropped with a warning, because the dot moves from the place to the seat in a straight line.
+- `frames.nodes[i]` carries `seats: [[x, y], ...]` only for places that have them.
+- A world without seats normalizes, hashes, runs and replays exactly as before: the key exists only when seats are given.
+
+**The world (`worlds/sushi-restaurant.json`).** What comes from the sketch and what is assumed:
+
+| From the sketch | Assumed |
+|---|---|
+| One tall rectangular room. | Scale: one square of the sketch's grid is 1 m, so the room is 7.8 m by 12 m. |
+| The kitchen fills the upper left: 60% of the width and 57% of the height. | The street door: the sketch has none. It is a 1 m gap in the bottom wall, right of centre. |
+| Four seats in one column on the right, beside the kitchen. | Seat times: about 30 minutes at the counter and 40 at the table. Prices: $38 and $32. |
+| Four seats in a 2 by 2 block in the lower left. | 36 people arriving between 6:00 and 7:50 pm on a Friday; four groups and ten cast members, all fictional. |
+
+- The kitchen is one object of kind `room`: solid, so nobody walks in, and drawn hatched with its name.
+- The two places ("Counter seats", "Table") have 4 servers each, one per seat. Each place's own point is in the open floor by the door: that is where people wait. The seats are where they sit.
+- The room is small on the engine's map on purpose. The engine words distance and sight in map units: `distanceWords` says "far" from 35 units, and a line is visible within 30. The first version drew the room 52 by 80 units, and a person at the door was told the counter was "far" and its line "unknown (can't see it from here)", which is false in one room. At 19.5 by 30 units (0.4 m per unit) both places read "close" and every line is in view.
+- `waiting` is `{ tellPatience: false, askAgainEvery: 10 }` (§16): the person decides whether to keep waiting, and is asked again every ten minutes.
+
+**Recorded run.** One Jev run (seed 7, `jev-1.14.0`, 103 decisions, under half a cent): of 36 people, 22 were seated and 14 left without eating. Both places had people waiting about 10 minutes on average, with up to 5 waiting at once. It is one seed and has not been checked against a real restaurant.
+- `scripts/pack_run.js <run folder> <out file>` packs a recorded run folder into one file: `{ meta, spec, frames, metrics, agents, remarks, decisions }`, the same parts `GET /api/runs/<id>/<part>` serves. `web/scope/mock/sushi-restaurant.json` is that Jev run, so the display can replay it with no key and no engine server.
+- To record it again after changing the world: `node bin/swarm.js run worlds/sushi-restaurant.json --provider jev --seed 7`, then pack the new run folder to the same file.
+
+**Display.** "Sushi restaurant" is the second place of the scope display (`?case=sushi`, or "Other places" in Run details; there is no case picker, §9b), listed in `web/scope/mock/index.json` with a `runTitle` and a `placeName`. The counter for people served reads "Finished eating" there: each person sits once, and a meal counts when it ends.
+- A case file may be a packed engine run: `loadBundle` passes it through `adaptEngineRun`.
+- Served by the engine, a case with a `runTitle` takes the recorded runs with that title and the building takes the rest, so the restaurant's runs never appear under the building.
+- Every seat is drawn as a small chair whether or not someone sits on it. An object of kind `room` is labelled with its name. A place with seats is named at its seats, not where people wait.
+
+**Edit the room.** "Edit the room" sits beside View in the map's corner on a world that has seats, and works when the engine serves the page (`web/scope/lib/edit.js`, rules in `lib/layout.js`). While editing, the edit panel takes the side column and the map shows only the room and its seats.
+- Drag a seat to move it, click one and remove it (or use Delete and the arrow keys), or add a seat to a place. A place always has one server per seat.
+- A spot is refused, with the reason shown, when it is within 0.25 m of a wall or the kitchen, within 0.55 m of another seat, or has a wall between it and where people wait. Those are the engine's own rules, so every room the editor allows validates with no warning.
+- "Run it with the rule model" or "Run it with Jev" posts the changed world to `POST /api/runs` once per seed, on the seeds the room as sketched already has runs of with that provider (three at most), then opens the first new run.
+- For a run of a changed room, the verdict panel (§9b) compares the two rooms on the same seeds and decision-maker (`compareParts` in `lib/layout.js`), for example "24 of 36 people finished a meal. Before your change: 21.3." and "Averaged over 3 runs each." When the change is no larger than the spread between the sketched room's own runs, it says the difference could be chance. An "As sketched / Your room" toggle switches the map between the two runs of the seed on screen. Run details marks runs of a changed room.
+- Only seats can be changed. Walls, the kitchen and the door cannot.
+
+**The promotion (the restaurant's one change).** It was first a suggestion in the Suggestions dialog (`web/scope/lib/feedback.js`). Since the merge with the v0.27 redesign it lives in the verdict panel at the top of the side panel (§9b), in place of "+1 staff": a place with one staff per seat has no use for one more staff without a chair. The case asks for it with `"suggestion": "promotion"` in `mock/index.json` (`changeFor` in `web/scope/lib/verdict.js`).
+- It is a fixed rule, not written by AI. `applyChange` adds three offers (§15b) for everyone: the message "Promotion today: 20% off everything for everyone who comes in.", and 20% off at each of the two places, so the price a person is told and pays is the promotion price.
+- Before a test the panel says how many people finished a meal and why not more (the seats and the wait), what the promotion is, and "Test the promotion". The test runs the room as it is and with the promotion on 3 seeds each, like +1 staff, with the same decision-maker as the run on screen when it can: Jev for a Jev run when the server has a Jev key, otherwise the rule model. The rule model prices each place at what the person pays, but it does not read the message, so the panel says so.
+- After the test: the verdict in customers kept (more people who finished a meal), a table (finished a meal, walked away, average wait, meals at each place, people told about the promotion), one sentence of why, and a "Baseline / Promotion" toggle. The runs carry the server-stored `link` with `change: { kind: 'promotion', off: 0.2 }` (§9b); nothing is kept in the browser.
+- A promotion adds a reason to come in and to wait. It does not add seats or bring more people to the door. On seed 7 with Jev (before the merge, one run each way): served 22 to 24, walk-aways 18 to 12, average wait 9.6 to 12.3 minutes. The three baseline seeds alone serve 22, 24 and 22, so the two extra people served are within what a different seed gives; the longer wait and the fewer walk-aways are the clearer effect. With the rule model (3 seeds each way, Nov 14) the promotion changed nothing: 21 meals and 24 walk-aways either way.
+- A run with a promotion is not a baseline: "Edit the room" compares only runs with the same seats and the same offers (`sameWorld` in `lib/layout.js`).
+
+**What it does not show.**
+- Parties. Each simulated person is one diner who takes one seat and decides alone. A couple is two arrivals, and nothing keeps them together.
+- Reservations, takeout, a waiting list, or waiting outside.
+- The real door, the real seat times and the real number of people on a Friday: all assumed.
+- More than one seed, or any check against real customers.
+
+## 19. The language button: English and Simplified Chinese (Nov 14)
+
+**Removed from the scope display (Nov 14, owner's decision).** The scope display (`/scope/`) has no language button and no Chinese: it does not load `i18n.js`, and its map labels are drawn in English only. Ask the room (`/room/`) keeps its button. Its page imports `web/scope/lib/i18n.js`, which reads `web/scope/lib/zh.js`, so both files stay where they are; the strings in `zh.js` for the scope display are no longer used. The rest of this section describes Ask the room.
+
+**Why.** An owner should be able to read the page in their own language. Ask the room (`/room/`) has a button in the header that switches everything on screen between English and Simplified Chinese.
+
+**How.** The pages are written in English and are not changed. `web/scope/lib/i18n.js` translates what is on screen, one piece at a time: the text of a DOM text node, a placeholder, a title, an aria-label, or a string drawn on a canvas (through `tr()`; the scope display's map no longer calls it).
+- `web/scope/lib/zh.js` holds the Chinese: `EXACT` for whole pieces of text, and `PATTERNS` (a regular expression and a Chinese sentence with `$1`, `$2`) for text with changing parts such as numbers, names and places. Each captured part is translated on its own, so a place name inside a sentence gets its Chinese too.
+- In Chinese mode a `MutationObserver` translates text as the app writes it. In English mode nothing runs: no observer and no change to the page.
+- Switching back restores the English that was there. The choice is remembered in the browser; `?lang=zh` opens a page in Chinese.
+- An element with `data-i18n-skip` is left alone (the button itself). Typed text (the sign box, the rewrite boxes) is never translated.
+
+**Limits.**
+- Text that is not in `zh.js` stays in English. That includes anything typed, and wording nobody listed.
+- People were asked in English and Jev answered in English. The Chinese shown for what a person was told is a translation for the reader, not what Jev read. A sign typed in Chinese is sent to Jev as typed.
+- The translations were produced by machine on Nov 14 and have not been read by a native speaker.
+- The older run viewer at `/` has no language button.

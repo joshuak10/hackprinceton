@@ -484,6 +484,7 @@ h1, h2, h3, p { margin: 0; }
 .verdict .why { margin-top: 8px; }
 .verdict .hint { margin-top: 8px; }
 .verdict .btn { margin-top: 12px; }
+.verdict .offer { margin-top: 8px; }
 .verdict progress { display: block; width: 100%; height: 6px; margin-top: 10px; }
 .vt { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: var(--fs-s); }
 .vt caption { caption-side: bottom; padding-top: 4px; text-align: left; color: var(--faint); font-size: var(--fs-xs); }
@@ -625,11 +626,28 @@ h1, h2, h3, p { margin: 0; }
 .runs { list-style: none; margin: 0 -8px; padding: 0; }
 .runs .row { grid-template-columns: 1fr; gap: 0; padding: 5px 8px; }
 .runs .row:disabled { cursor: default; background: var(--panel-2); }
+.runs a.row { color: inherit; text-decoration: none; }
 .runs .name { font-weight: 500; }
 .runs .val { color: var(--muted); font-size: var(--fs-s); }
 .legend { display: grid; gap: 5px; font-size: var(--fs-s); }
 .legend div { display: flex; align-items: center; gap: 10px; }
 .legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* ---------- Edit the room (§18): the panel takes the side column; the map shows the room and its seats ---------- */
+.side.editing > :not(#editPanel) { display: none; }
+.edit-panel { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 18px 16px; }
+.edit-panel h2 { font-size: var(--fs-l); font-weight: 600; line-height: 1.3; }
+.edit-places { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+.edit-places li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.edit-places b { font-weight: 600; margin-right: 8px; }
+.edit-row, .edit-run { display: flex; flex-wrap: wrap; gap: 8px; }
+.edit-changes { font-size: var(--fs-s); }
+.edit-status { min-height: 1.45em; font-size: var(--fs-s); color: var(--muted); }
+.edit-status.warn { color: var(--text); font-weight: 500; }
+.edit-panel .btn.quiet { align-self: flex-start; margin-left: -10px; }
+#map.editing { cursor: default; }
+#map.editing.grab { cursor: grab; }
+#map.editing.grabbing { cursor: grabbing; }
 
 @media (prefers-reduced-motion: reduce) {
   .progress li.now i { animation: none; border-top-color: var(--text); }

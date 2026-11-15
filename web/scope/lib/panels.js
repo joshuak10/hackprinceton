@@ -28,6 +28,7 @@ function swap(root, nodes) {
 }
 
 // Four figures in one row. "Visits served" counts counter visits, so it can be higher than the number of people.
+// In a place with seats (st.seated, the sushi restaurant) each person sits once, so the figure is people who ate.
 export function renderCounters(root, st) {
   const f = st.frame;
   if (!f) { root.replaceChildren(); return; }
@@ -45,7 +46,9 @@ export function renderCounters(root, st) {
     items = [
       [fmt(f.c.active), 'People inside'],
       [fmt(inLine), 'In a line'],
-      [fmt(f.c.served), 'Visits served', 'Counter visits served so far. One person can be served at several counters, so this can be higher than the number of people.'],
+      st.seated
+        ? [fmt(f.c.served), 'Finished eating', 'People who have finished their meal so far. Each person sits once, so this counts people.']
+        : [fmt(f.c.served), 'Visits served', 'Counter visits served so far. One person can be served at several counters, so this can be higher than the number of people.'],
       [fmt(f.c.abandoned), 'Walked away', 'Times someone left a line, or saw it and did not join, so far.']
     ];
   }
@@ -272,7 +275,8 @@ const when = iso => {
   return `${today ? 'Today' : d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 };
 
-// st: { bundle, decisions, geometry, runs: [{ meta }], place }. onPickRun(runId) opens another recorded run.
+// st: { bundle, decisions, geometry, runs: [{ meta, label? }], place, places: [{ label, question, href }] }.
+// onPickRun(runId) opens another recorded run. `places` are the other places the display can open (?case=…).
 export function renderDrawer(root, st, onPickRun) {
   const m = st.bundle.meta, ps = m.providerStats || {};
   const lat = st.decisions.map(d => d.decision?.latencyMs).filter(Number.isFinite).sort((a, b) => a - b);
@@ -301,12 +305,27 @@ export function renderDrawer(root, st, onPickRun) {
       const current = r.meta.runId === m.runId;
       const b = button('row', () => onPickRun(r.meta.runId));
       if (current) { b.setAttribute('aria-current', 'true'); b.disabled = true; }
-      b.append(el('span', 'name', `${runLabel(r.meta) || 'Single run'}${current ? ' (on screen)' : ''}`));
+      b.append(el('span', 'name', `${r.label || runLabel(r.meta) || 'Single run'}${current ? ' (on screen)' : ''}`));
       b.append(el('span', 'val', [providerWords(r.meta), when(r.meta.createdAt), `seed ${r.meta.seed ?? '?'}`].filter(Boolean).join(' · ')));
       li.append(b);
       ol.append(li);
     }
     runsSec.append(ol);
+  }
+
+  const placesSec = document.createDocumentFragment();
+  if (st.places?.length) {
+    placesSec.append(el('h3', null, 'Other places'));
+    const ul = el('ul', 'runs');
+    for (const p of st.places) {
+      const a = el('a', 'row');
+      a.href = p.href;
+      a.append(el('span', 'name', p.label), el('span', 'val', p.question));
+      const li = el('li');
+      li.append(a);
+      ul.append(li);
+    }
+    placesSec.append(ul);
   }
 
   const legend = el('div', 'legend');
@@ -330,6 +349,7 @@ export function renderDrawer(root, st, onPickRun) {
       ['Time window', `${clockText(m.clockStart, 0)} to ${clockText(m.clockStart, m.duration)}`],
       ['People', fmt(st.bundle.agents.length)]
     ]),
+    placesSec,
     runsSec,
     sec('Technical', [
       ['Run id', m.runId || 'n/a'],

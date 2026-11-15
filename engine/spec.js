@@ -13,7 +13,7 @@ const PROVENANCE_LABELS = ['data', 'vision', 'assumed', 'owner-reported'];
 const DEFAULT_TITLE = 'Untitled world';
 const DEFAULT_QUESTION = 'Where are the bottlenecks?';
 const DEFAULT_LEAVE = 'Leave and go home';
-const MAX = { nodes: 60, edges: 150, archetypes: 6, minds: 40, tags: 12, walls: 4000, doors: 500, via: 12, provenance: 300, offers: 50, objects: 400, objectPoints: 64 };
+const MAX = { nodes: 60, edges: 150, archetypes: 6, minds: 40, tags: 12, walls: 4000, doors: 500, via: 12, provenance: 300, offers: 50, objects: 400, objectPoints: 64, seats: 64 };
 const OBJECT_SOURCES = ['mesh-slice', 'matterport-vector', 'drawn'];
 const OFFER_TEXT = 160;      // characters of an offer's text
 const DEFAULT_CLEARANCE = 0.2;
@@ -23,13 +23,14 @@ const DOOR_END_SLACK = 0.02; // a door may touch walls within this distance of i
 const DOOR_NEAR_WALL = 0.5;  // a door with no wall this close to either end is not in a wall gap
 const WAITING_ASK_MIN = 5;   // waiting.askAgainEvery: shortest gap in minutes between "keep waiting?" questions
 const WAITING_ASK_MAX = 240; // ... and the longest
+const LINE_SHOWS = ['wait', 'people']; // waiting.lineShows: what a person without a live wait app is told about a line
 
 const KNOWN = {
   top: ['$schema', 'title', 'question', 'context', 'leaveLabel', 'mode', 'duration', 'clockStart', 'travelSpeed', 'walkSpeed',
     'arrivals', 'nodes', 'edges', 'archetypes', 'minds', 'walls', 'objects', 'geo', 'doors', 'provenance', 'offers', 'waiting'],
   arrivals: ['total', 'start', 'end', 'shape'],
-  waiting: ['tellPatience', 'askAgainEvery'],
-  node: ['id', 'name', 'kind', 'x', 'y', 'servers', 'serviceTime', 'serviceDist', 'appeal', 'price', 'tags', 'about', 'weight'],
+  waiting: ['tellPatience', 'askAgainEvery', 'lineShows'],
+  node: ['id', 'name', 'kind', 'x', 'y', 'servers', 'serviceTime', 'serviceDist', 'appeal', 'price', 'tags', 'about', 'weight', 'seats'],
   edge: ['from', 'to', 'name', 'length', 'capacity', 'twoWay', 'costModel', 'via'],
   archetype: ['id', 'name', 'description', 'share', 'weights', 'visits', 'patience', 'info', 'rationality', 'likes', 'needs',
     'origins', 'destinations', 'entries', 'exits'],
@@ -244,12 +245,18 @@ function build(raw, rep) {
         rep.warn('waiting.askAgainEvery', `${fmt(askAgainEvery)} is under ${WAITING_ASK_MIN} minutes; using ${WAITING_ASK_MIN}`);
         askAgainEvery = WAITING_ASK_MIN;
       }
-      if (!tellPatience || askAgainEvery > 0) spec.waiting = { tellPatience, askAgainEvery };
+      // lineShows 'people': a person without a live wait app is told the head count and the staff serving, never a
+      // wait in minutes (Lu et al. 2013; docs/PROTOTYPE.md §16b). The rule policy and when questions come are unchanged.
+      const lineShows = choice(rep, 'waiting.lineShows', wt.lineShows, LINE_SHOWS, 'wait');
+      if (!tellPatience || askAgainEvery > 0 || lineShows !== 'wait') {
+        spec.waiting = { tellPatience, askAgainEvery, ...(lineShows !== 'wait' ? { lineShows } : {}) };
+      }
     }
   }
 
   // ----- nodes -----
   const ids = new Set(), ref = new Map(), names = new Map(), nodePath = new Map(), edgePaths = [];
+  const seatAt = new Map(); // node id → the input index of each kept seat, so messages name the seat as written
   const allowed = route ? KINDS_ROUTE : KINDS_VISIT;
   const defaultKind = route ? 'intersection' : 'service';
   list(rep, 'nodes', raw.nodes, MAX.nodes).forEach((n, i) => {
@@ -269,7 +276,7 @@ function build(raw, rep) {
     const name = text(rep, `${p}.name`, n.name, 40) || id;
     if (!names.has(name)) names.set(name, id);
     nodePath.set(id, p);
-    spec.nodes.push({
+    const node = {
       id, name, kind,
       x: number(rep, `${p}.x`, n.x, 50, 3, 97), y: number(rep, `${p}.y`, n.y, 50, 3, 97),
       servers: number(sr, `${p}.servers`, n.servers, 10, 1, 1000, true),
@@ -279,7 +286,28 @@ function build(raw, rep) {
       price: number(sr, `${p}.price`, n.price, 0, 0, Infinity),
       tags: tags(sr, `${p}.tags`, n.tags), about: text(sr, `${p}.about`, n.about, 160),
       weight: number(wr, `${p}.weight`, n.weight, 1, 0.01, Infinity)
-    });
+    };
+    // seats (§18): where the people being served at this place are drawn, one person per seat. The key exists only
+    // when seats are given, so worlds without seats normalize, hash and replay exactly as before.
+    if (!missing(n.seats)) {
+      if (route || kind !== 'service') rep.warn(`${p}.seats`, 'applies to visit-mode service places only; ignored');
+      else {
+        const seats = [], at = [];
+        list(rep, `${p}.seats`, n.seats, MAX.seats).forEach((s, k) => {
+          const q = `${p}.seats[${k}]`;
+          const pt = Array.isArray(s) ? { x: s[0], y: s[1] } : s;
+          // Only numbers and numeric text are coordinates: true, [5] or blank text would otherwise become a seat.
+          if (!isObj(pt) || !isNum(pt.x) || !isNum(pt.y)) {
+            rep.warn(q, `${show(s)} is not a point { x, y }; ignored`);
+            return;
+          }
+          seats.push({ x: number(rep, `${q}.x`, pt.x, 50, 0, 100), y: number(rep, `${q}.y`, pt.y, 50, 0, 100) });
+          at.push(k);
+        });
+        if (seats.length) { node.seats = seats; seatAt.set(id, at); }
+      }
+    }
+    spec.nodes.push(node);
   });
   const byId = new Map(spec.nodes.map(n => [n.id, n]));
   const resolveNode = r => {
@@ -497,6 +525,7 @@ function build(raw, rep) {
   const { wallLabels, doorPaths } = buildingFields(raw, spec, rep);
   const wallName = k => wallLabels[k] ?? `walls[${k}]`;
   checkObjects(spec, rep, nodePath);
+  checkSeats(spec, rep, nodePath, seatAt);
   checkWalls(spec, rep, { nodePath, edgePaths, wallName });
   checkDoors(spec, rep, { doorPaths, wallName });
   return spec;
@@ -731,6 +760,23 @@ function checkObjects(spec, rep, nodePath) {
   }
 }
 
+// A seat is where a served person is drawn, and the dot moves there straight from the place. A wall or an object
+// in between would put that move through a wall, so such a seat is dropped with a warning.
+function checkSeats(spec, rep, nodePath, seatAt) {
+  if (!spec.walls.length) return;
+  for (const n of spec.nodes) {
+    if (!n.seats) continue;
+    const p = nodePath.get(n.id) ?? `nodes.${n.id}`;
+    const at = seatAt.get(n.id) ?? [];
+    const kept = n.seats.filter((s, k) => {
+      const blocked = crossesWall(spec.walls, n.x, n.y, s.x, s.y) >= 0;
+      if (blocked) rep.warn(`${p}.seats[${at[k] ?? k}]`, `a wall or object lies between this seat at (${fmt(s.x)}, ${fmt(s.y)}) and "${n.name}"; seat ignored`);
+      return !blocked;
+    });
+    if (kept.length) n.seats = kept; else delete n.seats;
+  }
+}
+
 // §13a: nobody may be placed on, or routed through, a wall, and every place must be reachable on foot.
 // All of these are fatal: the engine guarantees that no movement crosses a wall. Path searches on a big
 // floor take a while and every Sim normalizes its spec, so results are cached by the geometry they read.
@@ -931,7 +977,8 @@ export function cleanSpec(spec) {
       : n.kind === 'service'
         ? {
           id: n.id, name: n.name, kind: n.kind, x: xy(n.x), y: xy(n.y), servers: n.servers, serviceTime: n.serviceTime,
-          serviceDist: n.serviceDist, appeal: n.appeal, price: n.price, tags: n.tags, about: n.about
+          serviceDist: n.serviceDist, appeal: n.appeal, price: n.price, tags: n.tags, about: n.about,
+          ...(n.seats ? { seats: n.seats.map(s => ({ x: s.x, y: s.y })) } : {})
         }
         : { id: n.id, name: n.name, kind: n.kind, x: xy(n.x), y: xy(n.y), weight: n.weight }),
     ...(route ? {
@@ -986,7 +1033,12 @@ export function cleanSpec(spec) {
         place: o.place, priceOff: o.priceOff, from: o.from, until: o.until
       }))
     } : {}),
-    ...(spec.waiting ? { waiting: { tellPatience: spec.waiting.tellPatience, askAgainEvery: spec.waiting.askAgainEvery } } : {})
+    ...(spec.waiting ? {
+      waiting: {
+        tellPatience: spec.waiting.tellPatience, askAgainEvery: spec.waiting.askAgainEvery,
+        ...(spec.waiting.lineShows ? { lineShows: spec.waiting.lineShows } : {})
+      }
+    } : {})
   };
 }
 

@@ -18,6 +18,10 @@ export function parseEnv(text) {
   return out;
 }
 
+// Other names accepted for a key, when the canonical name is not set: [canonical, alias].
+// JEV_API_KEY is the name TypeSafe's own docs use for the Jev key.
+export const KEY_ALIASES = [['TYPESAFE_API_KEY', 'JEV_API_KEY']];
+
 export function loadEnv({ cwd = process.cwd(), files = ['.env.local', '.env'] } = {}) {
   const loaded = [];
   for (const f of files) {
@@ -29,6 +33,12 @@ export function loadEnv({ cwd = process.cwd(), files = ['.env.local', '.env'] } 
         process.env[k] = v;
         loaded.push(k);
       }
+    }
+  }
+  for (const [name, alias] of KEY_ALIASES) {
+    if (!hasKey(name) && hasKey(alias)) {
+      process.env[name] = process.env[alias];
+      loaded.push(name);
     }
   }
   return loaded;

@@ -66,6 +66,32 @@ describe('POST /api/runs with a link', () => {
     assert.equal(listed.find(m => m.runId === changedId).link.base, baseId);
   });
 
+  test('a promotion test stores its change; the world must match the side', async () => {
+    const promo = { kind: 'promotion', off: 0.2 };
+    const withPromo = { ...SPEC, offers: [{ id: 'promotion', text: 'Promotion today: 20% off everything for everyone who comes in.' },
+      { id: `promotion_${place.id}`, text: `20% off at ${place.name} today`, place: place.id, priceOff: 0.2 }] };
+    const a = await post({ spec: SPEC, provider: 'rules', seed: 7, link: { test: 'p-1', role: 'baseline', change: promo } });
+    assert.equal(a.status, 202);
+    const baseId = (await a.json()).runId;
+    await finished(baseId);
+    const b = await post({ spec: withPromo, provider: 'rules', seed: 7, link: { test: 'p-1', role: 'change', base: baseId, change: { ...promo, extra: 'dropped' } } });
+    assert.equal(b.status, 202);
+    const changedId = (await b.json()).runId;
+    await finished(changedId);
+    assert.deepEqual((await meta(baseId)).link, { test: 'p-1', role: 'baseline', base: null, change: promo });
+    assert.deepEqual((await meta(changedId)).link, { test: 'p-1', role: 'change', base: baseId, change: promo });
+    for (const [extra, re] of [
+      [{ link: { test: 'p', role: 'change', change: promo } }, /has no offer "promotion"/],
+      [{ spec: withPromo, link: { test: 'p', role: 'baseline', change: promo } }, /already has the offer "promotion"/],
+      [{ link: { test: 'p', role: 'baseline', change: { kind: 'promotion', off: 2 } } }, /off must be a share/],
+      [{ link: { test: 'p', role: 'baseline', change: { ...change, kind: 'discount' } } }, /kind must be "staff" or "promotion"/]
+    ]) {
+      const res = await post({ spec: SPEC, provider: 'rules', seed: 7, ...extra });
+      assert.equal(res.status, 400, JSON.stringify(extra.link));
+      assert.match((await res.json()).error, re);
+    }
+  });
+
   test('a bad link is refused and starts no run', async () => {
     const count = async () => (await (await fetch(`${srv.url}/api/runs`)).json()).length;
     const start = await count();

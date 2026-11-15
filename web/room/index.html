@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ask the room · Swarmscope</title>
+<meta name="description" content="Change a price, a line or a sign and see how each simulated customer reacts.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <a class="brand" href="../scope/" aria-label="Swarmscope display">Swarmscope</a>
+    <h1 class="title">Ask the room</h1>
+    <span class="badge" id="mode" role="status">Loading…</span>
+    <button class="btn ghost small" id="langBtn" type="button" data-i18n-skip lang="zh-Hans" aria-label="切换到简体中文">中文</button>
+    <button class="btn ghost small" id="themeBtn" type="button">Light</button>
+  </header>
+
+  <main class="grid">
+    <section class="controls" aria-label="What to change">
+      <div class="shop">
+        <p class="eyebrow">The shop</p>
+        <h2 id="shopName">…</h2>
+        <p class="about" id="shopAbout"></p>
+        <p class="rival" id="rivalLine"></p>
+      </div>
+
+      <form id="form" autocomplete="off">
+        <fieldset>
+          <legend id="signLegend">A sign on the door</legend>
+          <label class="visually-hidden" for="sign">Sign text</label>
+          <textarea id="sign" rows="2" maxlength="160" placeholder="Type any sign and press Enter. For example: No laptops before 9 am."></textarea>
+          <div class="chips" id="chips"></div>
+          <p class="hint">A sign is compared with a plain sign about restrooms, because any sign at all nudges the answers.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Your price</legend>
+          <div class="price-row">
+            <button class="btn small" type="button" id="priceDown" aria-label="Lower the price by one dollar">−</button>
+            <output id="priceOut" for="priceDown priceUp">$5</output>
+            <button class="btn small" type="button" id="priceUp" aria-label="Raise the price by one dollar">+</button>
+            <label class="check"><input type="checkbox" id="remember"> <span id="rememberText">They know it used to be different</span></label>
+          </div>
+          <p class="hint">Whole dollars only. Jev reacts to a price mostly for people whose description mentions money, so read other price moves with care.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>The line when they arrive</legend>
+          <div id="lines"></div>
+        </fieldset>
+
+        <div class="ask-bar">
+          <div class="actions">
+            <button class="btn primary" type="submit" id="askBtn">Ask everyone</button>
+            <button class="btn" type="button" id="resetBtn">Reset</button>
+          </div>
+          <p class="status" id="status" role="status"></p>
+        </div>
+      </form>
+    </section>
+
+    <section class="room" aria-label="How each person answers">
+      <div class="summary" id="summary">
+        <p class="asked" id="asked" role="status"></p>
+        <p class="big" id="sumLine" aria-live="polite">Ask the room to see where each person goes.</p>
+        <p class="sub" id="sumSub" aria-live="polite"></p>
+        <p class="honest" id="honest"></p>
+      </div>
+      <div class="bar-key">
+        <span aria-hidden="true"><i class="k now"></i> chooses the shop now</span>
+        <span aria-hidden="true"><i class="k tick"></i> <span id="tickKey">before</span></span>
+        <span aria-hidden="true"><i class="k up"></i> more likely</span>
+        <span aria-hidden="true"><i class="k down"></i> less likely</span>
+        <span aria-hidden="true"><i class="k small"></i> <span id="smallKey">too small to tell</span></span>
+        <span class="sort"><button class="btn ghost small" type="button" id="sortBtn">Sort by group</button></span>
+      </div>
+      <ol class="people" id="people"></ol>
+    </section>
+  </main>
+</div>
+</body>
+</html>
