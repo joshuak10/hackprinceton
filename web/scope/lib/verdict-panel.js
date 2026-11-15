@@ -120,12 +120,10 @@ export function createVerdict(root, { onTest, onCancel, onPick }) {
       ]);
     },
 
-    // A changed room against the room as sketched (layout.js compareParts). change: what was moved, in words.
-    // toggle: { sketched, mine (run ids, same seed and decision-maker), selected } or null when there is no pair.
-    room({ headline, detail, change, toggle: t }) {
+    // A changed room. change: what was moved, in words. toggle: { sketched, mine (run ids, same seed and
+    // decision-maker), selected } to switch the map between the two, or null when there is no pair.
+    room({ change, toggle: t }) {
       set([
-        el('h2', null, headline),
-        detail ? el('p', 'detail', detail) : null,
         change ? el('p', 'why', change) : null,
         t ? toggle([[t.sketched, 'As sketched'], [t.mine, 'Your room']], t.selected) : null
       ]);

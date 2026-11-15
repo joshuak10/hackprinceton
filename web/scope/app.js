@@ -20,7 +20,7 @@ import {
 } from './lib/verdict.js';
 import { createVerdict } from './lib/verdict-panel.js';
 import { createEditor } from './lib/edit.js';
-import { seatedPlaces, sameLayout, sameWorld, describeChanges, pairRuns, compare, compareParts } from './lib/layout.js';
+import { seatedPlaces, sameLayout, sameWorld, describeChanges, pairRuns } from './lib/layout.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -39,7 +39,7 @@ const st = {
   filters: { decision: true, congestion: true, complaint: true },
   selectedAgent: null, selectedIncident: null, cursorAgent: null, hoverNode: null, ringNode: null,
   theme: params.get('theme') || store.get('scope-theme') || 'light',
-  live: null, config: {}, question: '', fly: null, lastPanels: -1, dirty: true,
+  live: null, config: {}, fly: null, lastPanels: -1, dirty: true,
   rankMode: store.get('scope-rank') === 'now' ? 'now' : 'total',
   test: null, testing: null, sessionTests: new Set(), loading: false, room: null,
   worlds: { building: [], others: [], buildingName: '' }
@@ -208,9 +208,6 @@ function setBundle(bundle) {
   R.setBounds(geo.floors[0].bounds || geo.bounds);
   st.place = st.caseInfo?.placeName || placeName(bundle.spec?.title ? bundle.spec : { title: meta.title });
   $('placeTitle').textContent = st.place;
-  const q = st.question ? `“${st.question}”` : meta.question || bundle.spec?.question || '';
-  $('placeSub').textContent = q;
-  $('placeSub').title = q;
   const label = runLabel(meta), who = providerWords(meta);
   $('runNote').textContent = [label, who].filter(Boolean).join(' · ');
   $('runNote').title = isJev(meta) ? 'Every decision in this run came from Jev.'
@@ -363,12 +360,9 @@ async function refreshRoom(bundle) {
   const pairs = pairRuns(c.sketch, mine, runs);
   const pair = pairs.find(p => p.after.meta.runId === bundle.meta.runId || p.before.meta.runId === bundle.meta.runId);
   st.room = pair ? { sketched: pair.before.meta.runId, mine: pair.after.meta.runId, spec: mine } : null;
-  const parts = compareParts(compare(pairs, provider));
   const changes = describeChanges(c.sketch, mine).join('. ');
   verdict.room({
-    headline: parts?.headline || 'This is a changed room.',
-    detail: parts?.detail || 'There is no run of the room as sketched with the same decision-maker to compare it with.',
-    change: changes ? `Your change: ${changes}. Decided by ${byWords(provider)}.` : '',
+    change: changes ? `Your change: ${changes}. Decided by ${byWords(provider)}.` : 'This is a changed room.',
     toggle: st.room && { ...st.room, selected: bundle.meta.runId }
   });
 }
@@ -425,7 +419,7 @@ async function runTest() {
 }
 
 // ---------- a new run from the prompt ----------
-async function newRun(provider, question) {
+async function newRun(provider) {
   if (st.loading || !st.bundle) return;
   const meta = st.bundle.meta;
   const spec = baseWorld();
@@ -443,7 +437,6 @@ async function newRun(provider, question) {
     });
     p.set(2);
     await refreshRuns();
-    st.question = question;
     setBundle(await loadEngineRun(runId));
     play();
   } catch (err) {
@@ -546,15 +539,14 @@ $('askForm').addEventListener('submit', e => {
     title: canBuild ? 'Build a new place from your words?' : `Simulate ${st.place} again?`,
     lines: [
       buildLine,
-      canBuild ? `Or keep ${st.place}: run it again and your words show above its map as the question. That does not change who comes in or what they do yet.`
-        : 'This screen shows one place at a time. Pick another from the list below. A question does not change who comes in or what they do yet.',
-      text && !canBuild ? `Your question will show above the map: “${text}”` : null
+      canBuild ? `Or keep ${st.place} and run it again. Your words do not change who comes in or what they do.`
+        : 'This screen shows one place at a time. Pick another from the list below. A question does not change who comes in or what they do yet.'
     ],
     places,
     actions: [
       ...build,
-      { label: canBuild ? 'Run this one again' : 'Run it again', solid: !canBuild, onClick: () => newRun('rules', text) },
-      ...(st.live.jev ? [{ label: canBuild ? 'Run this one with Jev' : 'Run it with Jev', onClick: () => newRun('jev', text) }] : [])
+      { label: canBuild ? 'Run this one again' : 'Run it again', solid: !canBuild, onClick: () => newRun('rules') },
+      ...(st.live.jev ? [{ label: canBuild ? 'Run this one with Jev' : 'Run it with Jev', onClick: () => newRun('jev') }] : [])
     ],
     onCancel: cancel
   });

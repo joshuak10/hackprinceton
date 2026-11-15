@@ -219,34 +219,3 @@ export function pairRuns(baseSpec, editedSpec, runs) {
   }
   return pairs.sort((a, b) => a.provider.localeCompare(b.provider) || a.seed - b.seed);
 }
-
-// Means over the pairs of one provider. `noise` is the largest difference in people seated between two base runs
-// with different seeds: a change smaller than that could be chance.
-export function compare(pairs, provider) {
-  const mine = pairs.filter(p => p.provider === provider);
-  if (!mine.length) return null;
-  const mean = f => mine.reduce((s, p) => s + f(p), 0) / mine.length;
-  const b = mine.map(p => outcome(p.before.metrics)), a = mine.map(p => outcome(p.after.metrics));
-  const avg = list => ({ people: list.reduce((s, o) => s + o.people, 0) / list.length, seated: list.reduce((s, o) => s + o.seated, 0) / list.length, left: list.reduce((s, o) => s + o.left, 0) / list.length, wait: list.reduce((s, o) => s + o.wait, 0) / list.length });
-  const seatedBefore = b.map(o => o.seated);
-  return {
-    provider, seeds: mine.map(p => p.seed), before: avg(b), after: avg(a),
-    change: mean(p => outcome(p.after.metrics).seated - outcome(p.before.metrics).seated),
-    noise: seatedBefore.length > 1 ? Math.max(...seatedBefore) - Math.min(...seatedBefore) : null
-  };
-}
-
-// A changed room against the room as sketched, for the verdict panel: { headline, detail }.
-export function compareParts(c) {
-  if (!c) return null;
-  const n = v => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
-  const runs = c.seeds.length === 1 ? 'one run' : `${c.seeds.length} runs`;
-  const small = c.noise != null && Math.abs(c.change) <= c.noise;
-  return {
-    headline: `${n(c.after.seated)} of ${n(c.after.people)} people got a seat. Before your change: ${n(c.before.seated)}.`,
-    detail: c.seeds.length === 1
-      ? 'One run each, so a difference of two or three people could be chance.'
-      : small ? `Averaged over ${runs} each. The runs before your change already differ by ${n(c.noise)}, so this could be chance.`
-        : `Averaged over ${runs} each.`
-  };
-}
