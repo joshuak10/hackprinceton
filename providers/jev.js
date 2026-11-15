@@ -38,6 +38,12 @@ const YES_NO_QUESTIONS = {
   keep_waiting: {
     instructions: 'Does the person in `person` keep waiting in the line described in `now`?',
     criteria: { true: 'They stay in line.', false: 'They give up on this line.' }
+  },
+  // The morning question of a multi-day run (§20b), asked alone before the day starts. Its instructions are a
+  // function, so they name only the memory fields this observation has.
+  visit_today: {
+    instructions: obs => `Does the person in \`person\` go to the shop in \`shop\` today${given(obs, ['history', 'memory', 'card', 'heard', 'offers'])}?`,
+    criteria: { true: 'They go to this shop today.', false: 'They do not: they go somewhere else or go without.' }
   }
 };
 
@@ -62,7 +68,10 @@ const CHOICE_INSTRUCTIONS = {
 };
 
 // A yes/no line question, with ", given `offers`" before the question mark when the observation has offers.
-const yesNoInstructions = (q, obs) => q.instructions.replace(/\?$/, `${given(obs, ['offers'])}?`);
+// A question whose instructions are a function writes its own list of fields.
+const yesNoInstructions = (q, obs) => (typeof q.instructions === 'function'
+  ? q.instructions(obs)
+  : q.instructions.replace(/\?$/, `${given(obs, ['offers'])}?`));
 
 // Where a remark would be about: "at <place name>" or "on <stretch name>". Names come from the
 // spec when available, otherwise from the observation, otherwise the raw id.

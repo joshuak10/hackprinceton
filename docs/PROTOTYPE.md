@@ -1098,3 +1098,122 @@ There is no patience verdict in this mode, because the verdict compares a wait i
 - People were asked in English and Jev answered in English. The Chinese shown for what a person was told is a translation for the reader, not what Jev read. A sign typed in Chinese is sent to Jev as typed.
 - The translations were produced by machine on Nov 14 and have not been read by a native speaker.
 - The older run viewer at `/` has no language button.
+
+---
+
+## 20. The morning question and the return probe (Nov 14)
+
+**Why.** [REPEAT_CUSTOMERS_SPEC.md](../REPEAT_CUSTOMERS_SPEC.md) simulates the same people over days. Each morning every person is asked whether they go to the shop today, and what they are told includes their memory of earlier visits. Before any of that is built, one thing has to be known: does Jev read a memory and answer the way real customers were measured to? This section defines the question, the words, and a probe that checks them. Nothing here changes a run: the Sim never asks this question.
+
+### 20a. What a person is told
+
+`morningObservation(ctx)` in `engine/observe.js` builds the state. Every fact is written by code as a fact in words, never as a verdict (§16).
+
+| Field | Content | Example |
+|---|---|---|
+| `setting`, `time`, `person` | As in every observation (§5). `person` has no app field. | |
+| `now` | Fixed sentence naming the shop. | "Deciding whether to go to Alder & Pine Coffee today." |
+| `shop` | `name`, `known_for`, `offers` (tags), `cost`, `rating`. | `cost`: "$5.50 (it was $5.00 last week)"; "$4.00 with the offer (usually $5.00)". `rating`: "4.5 out of 5 stars from online reviews". |
+| `other_places` | The world's other service places: `name`, `known_for`, `cost`. No lines: nobody can see a line from home. | |
+| `history` | How well they know the shop. | "Has been to Alder & Pine Coffee 8 times in the last 4 weeks." "Has never been to Alder & Pine Coffee; has walked past it." |
+| `memory` | Up to 5 remembered events, newest first, from `memoryWords`. | "Yesterday: waited about 20 minutes in line at Alder & Pine Coffee, then left without ordering." |
+| `card` | Stamp-card progress. | "Stamp card for Alder & Pine Coffee: 8 of 10 stamps filled. A full card earns a free coffee." |
+| `heard` | Remarks from people they listen to, as strings. | "A friend (yesterday): long line at Alder & Pine Coffee" |
+| `offers` | Messages from the shop (§15b's field). | "Alder & Pine Coffee: 20% off everything today." |
+
+- **Prices are exact here** ("$5.50"), unlike the "about $5" used inside a visit, because a 50-cent change is the fact being remembered.
+- **A memory record** is `{ daysAgo, wait, outcome: "served" | "left", ending: "fast" | "slow", paid, promo, first }` for a visit to the shop, or `{ daysAgo, text }` for anything else. `wait` is the worst wait of that visit in minutes; `ending` says how the line moved at the end (the peak-end rule: people remember the worst and the last moment). The evening update of the multi-day loop will write these records from `agents.json`; today only the probe writes them.
+- A field with nothing in it is left out, and the question names only the fields that are present.
+
+### 20b. The question
+
+A new yes/no question in `providers/jev.js`, `visit_today`, asked alone:
+
+> Does the person in `person` go to the shop in `shop` today, given `history`, `memory`, …?
+> true: "They go to this shop today." false: "They do not: they go somewhere else or go without."
+
+- **Yes/no, not a choice between places.** Jev leans toward the first option of a choice (§6), and the option order is shuffled by a seed taken from the state. Two versions of a memory would then be asked with different orders, and the order effect would be mixed into the difference being measured. A yes/no question has no order.
+- `run/morning.js` builds the DecisionRequest: `morningRequest({ spec, shopId, mind, state })`, kind `morning`, `asks: { yesNo: "visit_today" }`, rule answer yes. `state` is one person's record: `{ history, memory, card, heard, offers, price, wasPrice, offerPrice, rating }`.
+- Adding the question changes no existing request body or hash.
+
+### 20c. The return probe
+
+`validation/jev-return-probe.js`, built like the line probe (§16b). World: `worlds/alder-pine-cafe.json`, shop Alder & Pine Coffee, with Brewline across the street. It asks the morning question for the café's cast and changes one fact at a time.
+
+- **Who is asked what.** A person's written bio decides which states they can be put in without contradicting it. 11 of the 12 can be a returning customer (everyone but Greta, who is in town for one day). 7 can be a newcomer (Ellie, Dev, Karen, Shanice, Greta, Omar, Lucy). A returning customer's `history` gives a visit count that fits their bio (June 28 times in 4 weeks, Tomas 3).
+- **Repeats.** Jev does not answer the same question the same way twice (§17), so every question is asked 5 times and the answers averaged. Each pass uses a fresh provider, so nothing comes from a cache.
+- **Reference.** A returning customer's reference memory is "Yesterday: waited about 5 minutes in line at Alder & Pine Coffee, then was served." A newcomer's reference is no memory. Each condition differs from its reference, or from the condition it is compared with, by one fact.
+- **Neutral controls.** Any added sentence moves Jev's answers by about 5 points (§17). A message from the shop is compared with a message that carries no offer ("open 7 am to 3 pm today, as usual"), a friend's remark with a remark about something else, and a memory with a sentence about the weather.
+
+**Tests.** Each compares two conditions person by person. The effect is the average difference in the chance of going, with a 95% interval from resampling people.
+
+| Test | Compares | Passes when | From |
+|---|---|---|---|
+| Reads a memory at all | A very good last visit against a very bad one | Good is clearly higher | sanity |
+| A neutral sentence does nothing | A sentence about the weather against no memory | Within 5 points | §17 |
+| Same fact, other words | "waited about 20 minutes" against a paraphrase | Within 5 points | sanity |
+| Longer last wait | Last wait 0, 5, 10, 20, 30 minutes, served | The chance falls as the wait grows | de Vries et al. 2018 |
+| Walked away | Left without ordering against served, same wait | Left is lower | de Vries et al. 2018 |
+| How it ended | 15 minutes ending fast against ending slow | Fast is higher | peak-end rule |
+| Price rise | $5.50 against $5.00 | Lower | Hardie et al. 1993 |
+| Loss aversion | The drop from +50¢ against the gain from −50¢ | The drop is larger | Hardie et al. 1993 |
+| Near the reward | 8 of 10 stamps against 2 of 10 | Higher, and visits 10 to 30% closer together | Kivetz et al. 2006 |
+| Head start | 2 of 10 stamps given free against 0 of 8 | Higher | Nunes & Drèze 2006 |
+| A deal brings newcomers | 20% off today against the plain message, newcomers | Higher | Dholakia 2011 |
+| A deal buys no loyalty | First visit on a deal against first visit at full price, both at full price today | Not higher | REPEAT_CUSTOMERS_SPEC §9 |
+| Rating | 4.5 stars against 3.5, newcomers | Higher; the study saw 5 to 9% more revenue per star | Luca 2016 |
+| A friend's remark | Good against neutral against bad, newcomers | Good above neutral above bad | Trusov et al. 2009 |
+
+Also measured, with no pass rule: how fast a bad memory fades (yesterday, 1 week, 4 weeks), whether bad visits add up (0, 1 or 3 of the last 3), what a deal does for regulars, and what a stamp card does by being there.
+
+- **Verdicts.** Pass: the interval is wholly on the expected side. Fail: wholly on the wrong side. Unclear: the interval includes zero. "Within 5 points" tests pass when the average difference is under 5 points.
+- **Run it.** `node validation/jev-return-probe.js [--repeats 5] [--only <family>]`. About 2,400 Jev requests and about 10 cents. Results go to `data/validation/jev-return-probe.json` and `.md` (not committed).
+- **What a pass means.** That signal may be given to Jev in the multi-day loop. A fail or a flat response means the loop uses the measured effect as a rule for that signal instead (REPEAT_CUSTOMERS_SPEC §3).
+
+### 20d. What the probe found (Nov 14, jev-1.14.0)
+
+One run: 473 questions asked 5 times each, 2,365 requests, 11 seconds, about 7 cents, none unanswered. Two asks of the same question differed by 1.2 points on average and 8.0 at most. All numbers below are the chance of going today, averaged over 11 returning customers or 7 newcomers; intervals are 95%, from resampling people. Full results: `data/validation/jev-return-probe.md` (not committed; `--from` rescores saved answers without asking Jev again).
+
+**Jev reads memory. All 5 sanity checks pass.**
+- A very good last visit against a very bad one: +34.9 points (29.2 to 40.7), odds ×5.7. Every one of the 11 people moved, by 19 to 53 points.
+- It reads the number: after a last wait of 0, 5, 10, 20 and 30 minutes the chance is 69, 58, 51, 43 and 40%.
+- It reads the outcome: leaving without ordering costs a further 10.0 points after 20 minutes and 13.8 after 10.
+- It reads the date: a 30-minute wait that ended in leaving gives 32% if it was yesterday, 37% a week ago, 44% four weeks ago.
+- It adds visits up: with none, one or three 20-minute waits among the last three visits the chance is 60, 50 and 42%; the same single wait counts for more yesterday (50%) than three days ago (56%).
+- It reads the visit count: people told a higher count get a higher chance (rank correlation 0.91).
+- It ignores what does not matter: a sentence about the weather moves the chance by 0.9 points, and the 20-minute wait in other words by 1.2.
+
+**It answers like measured customers on 12 of 16 published effects. None goes the wrong way.**
+
+| Effect | Result | Verdict |
+|---|---|---|
+| Longer last wait | −9.2 points per 10 minutes (−11.2 to −7.2); 30 minutes against no line −28.9 | pass |
+| Walked away against served | −10.0 at 20 minutes, −13.8 at 10 | pass |
+| A 50-cent rise; a 50-cent cut | −4.3 (odds ×0.77); +5.4 (odds ×1.27) | pass |
+| 8 of 10 stamps against 2 of 10 | +10.3; visits 15% closer together (study: about 20%) | pass |
+| 20% off today, newcomers | +11.0 against a message with no offer (regulars: +7.9) | pass |
+| First visit on a deal against at full price | +0.7 (−0.7 to +2.4): a deal buys a first visit, not loyalty | pass |
+| Star rating, newcomers | +4.5 points per star, 13% more likely to come (study: 5 to 9% more revenue per star) | pass |
+| A friend's remark, newcomers | good +20.3 (odds ×2.5), bad −4.9 (odds ×0.76) | pass |
+| The same 15 minutes, ending fast against slow | +0.7 (−0.1 to +1.8) | no response |
+| A rise hurts more than an equal cut helps | 50 cents: 4.3 down, 5.4 up. 1 dollar: 6.0 down, 7.8 up | no response |
+| 2 free stamps of 10 against 0 of 8 | +0.1 (−0.3 to +0.6) | no response |
+
+- **The four it misses are the three human biases in the list:** the peak-end rule, loss aversion (two tests) and the head start. Jev answers them as a calculator would: the same 15 minutes is the same, 50 cents up mirrors 50 cents down, and 8 purchases to go is 8 to go. On the odds scale they are still flat (×1.04, ×1.02, ×1.01).
+- **Who reacts is sensible.** A 30-minute wait costs the most for the people in a hurry (Shanice −46, Karen −44, Lucy −39, Omar −38) and the least for Ellie, Priyanka and Tomas (−13 to −14). A 50-cent rise costs Bill 21 points ("dislikes change and notices it") and June 8, and nobody else more than 5. Stamps near the reward pull Tomas (+28) and Omar (+24), who look for deals, and do nothing for June, Marcus and Bill, who come anyway. The deal brings Omar (+40) and not Greta (+1), who prefers local places whatever the price.
+- **Loss aversion shows in some people and is reversed in others.** Bill and June lose more from a rise than they gain from an equal cut. Omar, Tomas and Dev, who look for the cheapest option, gain more from the cut. Over the cast they cancel.
+
+**Two cautions about size.**
+- **The level is squeezed toward the middle.** Told only their visit count, people who come on half of weekdays or fewer are given 1.5 times the chance the count implies (Tomas: told 3 visits in 4 weeks, given 34%). People who come every weekday are given 0.9 times (85 to 90%). Used as it is, Jev's answer would make occasional customers come about half as often again as they do.
+- **Waits may count for too much.** A 5-minute wait against no line already costs 11 points (odds ×0.61). No published figure gives a size per minute, so this is unchecked, and §16b found Jev turns away from lines more readily than real customers.
+
+**It repeats.** A second full run gave the same verdict on all 21 scored tests, and no effect moved by more than 0.9 points.
+
+**Limits.** One café, 12 written people, one wording per fact (one paraphrase checked), one model version. The intervals rest on 7 to 11 people. A pass means the direction is right and clear of noise; only the stamp and rating tests check a size, loosely.
+
+**Decisions for the multi-day loop (made from these results; not yet reviewed by the team).**
+1. **Jev is given these as words:** the last wait and how it ended (served or left), the date of each memory, up to three recent visits, the price against last week's, stamp-card progress, a message or deal from the shop, the star rating, a friend's remark, and the visit count.
+2. **Three effects are rules in the runner, not Jev's:** how a wait ended (the evening update writes one remembered wait, weighted toward the worst and the last moment, and the "quick at the end" words are dropped), loss aversion (a price rise's shift is scaled up against an equal cut's), and the head start (a card that starts with free stamps gets the study's lift). Sizes come from the studies and are `[open]`.
+3. **The level comes from the person, the change from Jev.** A person's chance today is their own usual rate (from the owner's data, or their group's), moved by the odds between Jev's answer for today's record and Jev's answer for their reference record: `logit(p) = logit(usual) + logit(jev today) − logit(jev reference)`. This keeps what Jev is good at, direction and who reacts, and removes the squeezed level. The reference answer is asked again only when the person's record changes.
+4. **One ask per person per day.** At 1.2 points of noise an ask, averaging is not needed for a pool; results are still reported as ranges over seeds.
+5. `[open]` The size of the wait effect needs a real number: the per-minute figures in de Vries et al., or an owner's data.

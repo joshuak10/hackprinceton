@@ -1,7 +1,7 @@
 # Swarmscope: new and returning customers over days (draft spec)
 
-> **Version:** v0.3 draft · Nov 14, 2026 · HackPrinceton Fall 2026
-> **Scope:** item 1 of [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md) §9, "Repeat visits with memory", worked out in detail. Nothing here is built. The engine contract, [docs/PROTOTYPE.md](docs/PROTOTYPE.md), still governs the code; when this is approved, its engine parts go there as a new section before any code.
+> **Version:** v0.4 draft · Nov 14, 2026 · HackPrinceton Fall 2026
+> **Scope:** item 1 of [INDEPENDENT_BUSINESS_SPEC.md](INDEPENDENT_BUSINESS_SPEC.md) §9, "Repeat visits with memory", worked out in detail. **Built so far:** the morning question and the return probe (section 8, step 1; results in section 8b). The multi-day loop is not built. The engine contract, [docs/PROTOTYPE.md](docs/PROTOTYPE.md), still governs the code; when this is approved, its engine parts go there as a new section before any code.
 > **Before Sunday's submission:** only the return probe and the "next morning" mode in Ask the room (section 8, steps 1 and 2). The multi-day loop comes after the hackathon.
 > **Source:** two research passes on Nov 14. The first (one research agent) gathered the published effects in section 4. The second (three read-only agents: one read the engine code, one traced vendor benchmarks to their origin, one worked out capacity and margin, removed in v0.3) added sections 2b, 4b, 5b and 9b. Web sources are listed in section 11. The published figures were gathered from papers, abstracts and summaries and have not all been checked against the full papers. Treat each as "to confirm" until someone reads the source.
 
@@ -104,7 +104,7 @@ These circulate in vendor material and in prompts. The second pass traced each t
 - remarks they heard from people they listen to;
 - their usual days and times.
 
-**Each morning, one Jev question per person:** "Do you go to <shop> today, go somewhere else, or skip?" What they are told includes their memory, written by code as facts in words, never as verdicts (Jev reads literally, §16). For example:
+**Each morning, one Jev question per person:** "Do you go to <shop> today?", yes or no (v0.4; it was a three-way choice, but Jev leans toward the first option of a choice, and that would be mixed into every comparison). The person's chance today is their own usual rate moved by Jev's answer, not Jev's answer itself (section 8b, decision 3). What they are told includes their memory, written by code as facts in words, never as verdicts (Jev reads literally, §16). For example:
 - "Last visit 3 days ago: waited about 20 min, 9 people ahead, left without ordering."
 - "The latte went up 50 cents since last week."
 - "A friend said the line was long on Tuesday."
@@ -157,7 +157,7 @@ The stamp-card message as a patch. `applyPatch` accepts it on the sushi world as
 
 ## 8. First steps
 
-1. **Return probe** (a few hours, a few cents). `validation/jev-return-probe.js`, built like `validation/jev-line-probe.js`. It asks the morning question of about 8 cast members, changing one fact at a time against the neutral control:
+1. **Return probe: done (Nov 14).** `validation/jev-return-probe.js`, built like `validation/jev-line-probe.js`; contract in [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §20. It asks the morning question of the Alder & Pine café's 12 cast members, 5 times each, changing one fact at a time against the neutral control:
    - last wait 0, 5, 10, 20 or 30 minutes;
    - served or walked away;
    - the same wait with a fast or a slow ending (peak-end);
@@ -167,11 +167,34 @@ The stamp-card message as a patch. `applyPatch` accepts it on the sushi world as
    - a 20%-off promotion, for people who do not know the shop yet and for regulars;
    - stamps at 2 of 10 and at 8 of 10.
 
-   About 1,000 to 2,000 requests. Each response curve is checked against the direction and rough size in section 4.
+   It also measures how fast a bad memory fades, whether bad visits add up, and whether the chance follows the visit count. 2,365 requests, about 7 cents. Results: section 8b.
 2. **Demo shortcut.** A "next morning" mode in Ask the room ([docs/PROTOTYPE.md](docs/PROTOTYPE.md) §17), with controls for the last visit, a friend's remark and the rating. It shows memory working live before the multi-day loop exists.
 3. **The multi-day loop** (section 5), for signals that passed step 1.
 
 **Before Sunday's submission, steps 1 and 2 only.** The loop needs people who persist, arrivals from a list and new engine fields (section 5b), and its results could not pass section 9b's bars in the time left.
+
+## 8b. What the return probe found (Nov 14)
+
+Full numbers and limits: [docs/PROTOTYPE.md](docs/PROTOTYPE.md) §20d. Run it again with `node validation/jev-return-probe.js`.
+
+**Jev reads memory.** A very good last visit against a very bad one moves the chance of going today by 35 points, and every one of 11 people moves. It reads the number (a last wait of 0, 5, 10, 20, 30 minutes gives 69, 58, 51, 43, 40%), the outcome (leaving without ordering costs 10 to 14 points more), the date (a bad visit fades from 32% to 44% over four weeks) and several visits together. A sentence about the weather moves it by under 1 point.
+
+**It answers like measured customers on 12 of 16 published effects, and none goes the wrong way.** Passed: the last wait, walking away, a price rise and a price cut, stamps near the reward (visits 15% closer together; the study found about 20%), a deal bringing newcomers, a deal buying no loyalty, the star rating, and a friend's remark.
+
+**It does not show the three human biases in the list.** The same wait ending fast or slow, a rise against an equal cut, and a stamp card with a head start all get the same answer from Jev: +0.7, about 0 and +0.1 points.
+
+**Who reacts is sensible.** People in a hurry lose the most after a long wait. Bill, who dislikes change, loses 21 points to a 50-cent rise. Tomas and Omar, who look for deals, respond most to stamps and to 20% off.
+
+**Two cautions about size.**
+- The level is squeezed toward the middle: occasional customers are given 1.5 times the chance their visit count implies, and daily ones 0.9 times.
+- Waits may count for too much: 5 minutes against no line already costs 11 points. No published figure gives a size per minute.
+
+**Decisions for the loop (made from these results; not yet reviewed by the team).**
+1. Jev is given, as words: the last wait and how it ended, each memory's date, up to three recent visits, the price against last week's, stamp progress, a message or deal, the rating, a friend's remark, and the visit count.
+2. Three effects are rules in the runner, with sizes from the studies (`[open]`): how a wait ended (the evening update writes one remembered wait, weighted toward the worst and the last moment), loss aversion, and the stamp card's head start.
+3. The level comes from the person and the change from Jev: a person's chance today is their usual rate (from the owner's data, or their group's) moved by the odds between Jev's answer for today and Jev's answer for their reference record.
+4. One ask per person per day is enough: two asks of the same question differ by 1.2 points on average.
+5. `[open]` The size of the wait effect needs a real number before multi-day results are reported.
 
 ## 9. Benchmark: how we test loyalty
 
@@ -179,14 +202,14 @@ No ready-made benchmark exists for simulated customers' loyalty. We test in thre
 
 **Level 1: signal tests** (the return probe, section 8). Each has a pass rule from a published study (section 4):
 
-| Test | Pass if the simulation shows |
-|---|---|
-| Last wait → coming back (de Vries et al. 2018) | The chance of returning falls as the last wait gets longer, and people who walked away return less than people who were served. |
-| Price change (Hardie et al. 1993) | A 50-cent rise lowers returns more than a 50-cent cut raises them. |
-| Stamp card, near the reward (Kivetz et al. 2006) | Visits come about 10–30% closer together at 8 of 10 stamps than at 2 of 10 (study: about 20%). |
-| Stamp card, head start (Nunes & Drèze 2006) | A card that starts with 2 free stamps is finished clearly more often (study: 34% against 19%). |
-| Promotion (Dholakia 2011) | The newcomers a 20%-off deal brings come back at full price no more often than newcomers who came without it. The study's 19.9% is about the same as any first-timer's return rate (section 2b), so a deal buys a first visit, not extra loyalty. |
-| Star rating (Luca 2016) | A higher rating brings more first-time visitors, around the 5–9% revenue gain per star. |
+| Test | Pass if the simulation shows | Jev, Nov 14 (section 8b) |
+|---|---|---|
+| Last wait → coming back (de Vries et al. 2018) | The chance of returning falls as the last wait gets longer, and people who walked away return less than people who were served. | Pass: −9.2 points per 10 minutes; walked away −10 to −14 more. |
+| Price change (Hardie et al. 1993) | A 50-cent rise lowers returns more than a 50-cent cut raises them. | A rise lowers (−4.3) and a cut raises (+5.4): pass. The rise does not hurt more: no response, so loss aversion is a rule. |
+| Stamp card, near the reward (Kivetz et al. 2006) | Visits come about 10–30% closer together at 8 of 10 stamps than at 2 of 10 (study: about 20%). | Pass: 15% closer together. |
+| Stamp card, head start (Nunes & Drèze 2006) | A card that starts with 2 free stamps is finished clearly more often (study: 34% against 19%). | No response (+0.1 points): a rule. The probe measures the chance of going today, not finishing the card. |
+| Promotion (Dholakia 2011) | The newcomers a 20%-off deal brings come back at full price no more often than newcomers who came without it. The study's 19.9% is about the same as any first-timer's return rate (section 2b), so a deal buys a first visit, not extra loyalty. | Pass: +0.7 points (−0.7 to +2.4). The deal itself brings newcomers: +11. |
+| Star rating (Luca 2016) | A higher rating brings more first-time visitors, around the 5–9% revenue gain per star. | Pass: 13% more likely to come per star. |
 
 Two notes:
 - **The promotion test compares newcomers with newcomers.** An earlier rule ("about 20% come back at full price") would have passed even if the promotion changed nothing, because ordinary first-timers return at about 19% (section 2b). Adopted in v0.3.
@@ -256,6 +279,10 @@ Added by the second pass:
 
 ## 12. Change log
 
+- **v0.4 draft · Nov 14, 2026.** The morning question and the return probe are built and run (section 8, step 1). Not yet reviewed by the team.
+  - What the probe found, and five decisions for the loop (section 8b).
+  - The morning question is yes or no, and a person's chance is their usual rate moved by Jev's answer (section 5).
+  - Level 1 results beside each pass rule (section 9).
 - **v0.3 draft · Nov 14, 2026.** Not yet reviewed by the team.
   - Removed sections 6b (capacity and margin) and 6c (return and customer value estimate) on Josh's decision: their dollar figures rested on an assumed margin and one vendor's figures, and were easy to quote as findings.
   - Adopted the promotion pass rule that compares deal newcomers with other newcomers (section 9).

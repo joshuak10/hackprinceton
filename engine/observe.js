@@ -9,6 +9,7 @@ export const SEE_RANGE = 30;          // map units within which a line is visibl
 export const HEARD_MAX = 4;
 export const OFFERS_MAX = 3;          // offer texts one observation shows (§15b)
 export const HEARD_WINDOW = { visit: 90, route: 30 };   // sim minutes
+export const MEMORY_MAX = 5;          // remembered events one morning observation shows (§20a)
 
 const REMARK_TEXT = {
   long_line: x => `long line at ${x}`,
@@ -72,7 +73,7 @@ function personObj(p, appField) {
     wants: person.goal,
     listens_to: person.social,
     group: person.groupName,
-    [appField]: Boolean(person.informed)
+    ...(appField ? { [appField]: Boolean(person.informed) } : {})
   });
 }
 
@@ -315,5 +316,107 @@ export function arriveObservation(ctx) {
     took: c.took,
     time_taken: `${tripWords(trip)}, ${vsEmpty}`,
     worst_stretch: c.worstEdgeName
+  });
+}
+
+// ---------- morning (repeat visits, §20) ----------
+
+// "$5.50": the morning question gives exact prices, because a 50-cent change is the fact being remembered.
+export function moneyWords(p) {
+  const x = Number(p);
+  return Number.isFinite(x) && x > 0 ? `$${x.toFixed(2)}` : 'free';
+}
+
+// "Yesterday", "3 days ago", "1 week ago", "4 weeks ago".
+function whenWords(daysAgo) {
+  const d = Math.max(0, Math.round(Number(daysAgo) || 0));
+  if (d === 0) return 'Earlier today';
+  if (d === 1) return 'Yesterday';
+  if (d % 7 === 0) return d === 7 ? '1 week ago' : `${d / 7} weeks ago`;
+  return `${d} days ago`;
+}
+
+function minutesWords(m) {
+  const n = Math.max(1, Math.round(Number(m) || 0));
+  return `about ${n} minute${n === 1 ? '' : 's'}`;
+}
+
+// One remembered event as a fact in words, never a verdict (§16, §20a). A visit to the shop is
+// { daysAgo, wait, outcome: 'served' | 'left', ending: 'fast' | 'slow', paid, promo, first }; anything else is
+// { daysAgo, text }. `wait` is the worst wait of the visit in minutes, and `ending` how the line moved at the
+// end, because people remember the worst and the last moment of a wait (the peak-end rule).
+export function memoryWords(m, shopName = 'the shop') {
+  const r = m || {};
+  const when = whenWords(r.daysAgo) + (r.first ? ' (first visit)' : '');
+  if (typeof r.text === 'string' && r.text.trim()) return `${when}: ${r.text.trim().replace(/[.\s]+$/, '')}.`;
+  const wait = Math.max(0, Number(r.wait) || 0);
+  const left = r.outcome === 'left';
+  const parts = [];
+  if (wait < 1) parts.push(left ? `no line at ${shopName}` : `no line at ${shopName}, served right away`);
+  else {
+    const moved = r.ending === 'fast' ? ', slow at first and quick at the end'
+      : r.ending === 'slow' ? ', quick at first and stalled just before the counter' : '';
+    parts.push(`waited ${minutesWords(wait)} in line at ${shopName}${moved}`);
+  }
+  if (left) parts.push('then left without ordering');
+  else if (wait >= 1) parts.push('then was served');
+  let text = parts.join(', ');
+  if (!left && r.paid != null) text += `, and paid ${moneyWords(r.paid)}${r.promo ? ` with a ${r.promo}` : ''}`;
+  return `${when}: ${text}.`;
+}
+
+// The shop's price today, with the offer price or what the person paid last week when either is given.
+function morningCost(shop) {
+  const now = moneyWords(shop.price);
+  if (shop.offerPrice != null && Number(shop.offerPrice) < Number(shop.price)) {
+    return `${moneyWords(shop.offerPrice)} with the offer (usually ${now})`;
+  }
+  if (shop.wasPrice == null) return now;
+  return moneyWords(shop.wasPrice) === now ? `${now} (the same as last week)` : `${now} (it was ${moneyWords(shop.wasPrice)} last week)`;
+}
+
+function ratingWords(r) {
+  const x = Number(r);
+  return r != null && r !== '' && Number.isFinite(x) ? `${x.toFixed(1)} out of 5 stars from online reviews` : undefined;
+}
+
+// { visits, weeks, via }: how well the person knows the shop. `via` says how someone who has never been knows of it.
+function historyWords(h, shopName) {
+  if (!h || h.visits == null || !Number.isFinite(Number(h.visits))) return undefined;
+  const n = Math.max(0, Math.round(Number(h.visits)));
+  if (n === 0) return `Has never been to ${shopName}${h.via ? `; ${String(h.via)}` : ''}.`;
+  const weeks = Math.round(Number(h.weeks));
+  const span = weeks > 0 ? ` in the last ${weeks === 1 ? 'week' : `${weeks} weeks`}` : '';
+  return `Has been to ${shopName} ${n === 1 ? 'once' : `${n} times`}${span}.`;
+}
+
+// { have, need, free, reward }: stamp-card progress. `free` stamps were given at sign-up (the head start).
+function cardWords(card, shopName) {
+  if (!card || !Number.isFinite(Number(card.need)) || Number(card.need) < 1) return undefined;
+  const have = Math.max(0, Math.round(Number(card.have) || 0)), need = Math.round(Number(card.need));
+  const free = Math.max(0, Math.round(Number(card.free) || 0));
+  const given = free > 0 ? ` (the first ${free} ${free === 1 ? 'was' : 'were'} given free at sign-up)` : '';
+  return `Stamp card for ${shopName}: ${have} of ${need} stamps filled${given}. A full card earns ${card.reward || 'a free one'}.`;
+}
+
+// The §20a morning observation: does this person go to the shop today? Nothing is seen from inside a visit,
+// so there are no lines. ctx: { spec, t, person, shop: { name, about, tags, price, wasPrice, offerPrice, rating },
+// others: [{ name, about, price }], history, memory: [records], card, heard: [strings], offers: [strings] }.
+export function morningObservation(ctx) {
+  const c = ctx || {};
+  const shop = c.shop || {};
+  const name = shop.name || 'the shop';
+  const tags = Array.isArray(shop.tags) ? shop.tags.filter(Boolean) : [];
+  return compact({
+    ...base(c),
+    person: personObj(c.person),
+    now: `Deciding whether to go to ${name} today.`,
+    shop: compact({ name, known_for: shop.about, offers: tags.join(', '), cost: morningCost(shop), rating: ratingWords(shop.rating) }),
+    other_places: (Array.isArray(c.others) ? c.others : []).map(o => compact({ name: o.name, known_for: o.about, cost: moneyWords(o.price) })),
+    history: historyWords(c.history, name),
+    memory: (Array.isArray(c.memory) ? c.memory : []).slice(0, MEMORY_MAX).map(m => memoryWords(m, name)),
+    card: cardWords(c.card, name),
+    heard: heardList(c.heard),
+    offers: offerList(c.offers)
   });
 }
